@@ -313,9 +313,39 @@ module file
 | `c_int`, `c_uint`, `c_char`, `c_size_t`, `c_void`, … | `int`, `unsigned int`, `char`, `size_t`, `void`, … | FFI interop aliases (native width) |
 | `type Name;`    | `Name`           | Opaque C type (from an extern header)  |
 
+## Standard Library
+
+The bundled standard library (`Sandbox/std/`) doubles as the reference for idiomatic Sage:
+
+| Module    | Purpose                                                                 |
+|-----------|-------------------------------------------------------------------------|
+| `console` | Terminal I/O (`print`, `print_line`, `read`, `run`).                    |
+| `memory`  | Raw heap primitives (`alloc`/`release`, `unsafe`). Prefer `new`/`delete`.|
+| `file`    | File I/O over `<stdio.h>` (opaque `FILE`, `c_*` aliases).               |
+| `http`    | HTTP client — consume APIs via `curl` (`fetch`, `post`, `download`).    |
+| `server`  | Minimal HTTP server on Winsock (links `ws2_32`).                        |
+| `test`    | Unit-testing assertions that emit `[PASS]`/`[FAIL]` lines.              |
+
+## Testing
+
+Tests are ordinary Sage programs (`Sandbox/tests/*.test.sg`) that use the `test` module:
+
+```rust
+use test;
+
+func main(): none
+{
+    test::assert_eq_i32("add", 2 + 3, 5);
+    test::assert_true("truth", 1 < 2);
+}
+```
+
+The VS Code extension surfaces these in the **Testing** view (each assertion is a result), or run a
+file directly with `sage <file>.test.sg` and read the `[PASS]`/`[FAIL]` output.
+
 ## Project Status
 
-The project is currently in **v0.7.0 (Alpha)**.
+The project is currently in **v0.8.0 (Alpha)**.
 
 * [x] **CLI & Project System** (`new`, `build`, `run`, `--version`)
 * [x] **Variable Declarations** (`var`) & **Constants** (`const`)
