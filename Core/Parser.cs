@@ -115,14 +115,13 @@ namespace Sage.Core
 
             while (Current.Type != TokenType.CloseBrace && Current.Type != TokenType.EndOfFile)
             {
-                if (Current.Type == TokenType.Keyword_Func)
+                // 'unsafe' inside a module always introduces an unsafe function (modules hold no statements).
+                if (Current.Type == TokenType.Keyword_Func || Current.Type == TokenType.Keyword_Unsafe)
                 {
-                    // CORREÇÃO: Adicione à lista unificada 'Members'
                     module.Members.Add(ParseFunction(module.Name));
                 }
                 else if (Current.Type == TokenType.Keyword_Extern)
                 {
-                    // Já estava correto, adicionando a Members
                     module.Members.Add(ParseExternBlock());
                 }
                 else
@@ -157,42 +156,35 @@ namespace Sage.Core
 
             while (Current.Type != TokenType.CloseBrace && Current.Type != TokenType.EndOfFile)
             {
+                // Opaque C type: 'type FILE;' — introduces a named C type without a Sage-side layout.
+                // 'type' is a contextual keyword recognized only inside extern blocks.
+                if (Current.Type == TokenType.Identifier && Current.Value == "type")
+                {
+                    _pos++; // consume 'type'
+                    string typeName = Consume(TokenType.Identifier, "Expected an opaque type name after 'type'.").Value;
+                    Consume(TokenType.Semicolon, "Opaque type declarations end with ';'.");
+                    declarations.Add(CreateNode(new ExternTypeNode(typeName), startToken));
+                    continue;
+                }
+
                 if (Match(TokenType.Keyword_Func))
                 {
-                    // Parse de função externa dentro do bloco
-                    // Reutilizamos a lógica de função, mas forçamos isExtern = true
-                    // E o nome será registrado no SemanticAnalyzer como alias::funcName
+                    // The extern function is registered by the SemanticAnalyzer as alias::funcName.
                     string funcName = Consume(TokenType.Identifier).Value;
-                    Consume(TokenType.OpenParen);
-
-                    var parameters = new List<ParameterNode>();
-                    if (Current.Type != TokenType.CloseParen)
-                    {
-                        do
-                        {
-                            string pName = Consume(TokenType.Identifier).Value;
-                            Consume(TokenType.Colon);
-                            string pType = ConsumeType();
-                            parameters.Add(new ParameterNode(pName, pType));
-                        } while (Match(TokenType.Comma));
-                    }
-                    Consume(TokenType.CloseParen);
-
+                    var parameters = ParseParameterList();
                     Consume(TokenType.Colon);
                     string retType = ConsumeType();
-                    Consume(TokenType.Semicolon); // Externs não tem corpo
+                    Consume(TokenType.Semicolon); // Externs have no body.
 
-                    // Criamos a declaração. Note que ModuleOwner aqui será o ALIAS do extern para resolução interna
                     var funcNode = new FunctionDeclarationNode(funcName, retType, parameters, null!, alias)
                     {
                         IsExtern = true
                     };
                     declarations.Add(CreateNode(funcNode, startToken));
                 }
-                // TODO: Adicionar suporte a 'struct' aqui no futuro
                 else
                 {
-                    throw new CompilerException(Current, "S006", "Only function declarations are allowed inside extern blocks for now.");
+                    throw new CompilerException(Current, "S006", "Only 'func' and 'type' declarations are allowed inside extern blocks.");
                 }
             }
 
@@ -216,6 +208,13 @@ namespace Sage.Core
             // 2. Function definition
             if (Current.Type == TokenType.Keyword_Func) return ParseFunction("");
 
+            // 2b. Unsafe: either an 'unsafe { }' block or an 'unsafe func' definition.
+            if (Current.Type == TokenType.Keyword_Unsafe)
+            {
+                var next = _pos + 1 < _tokens.Count ? _tokens[_pos + 1] : _tokens[^1];
+                return next.Type == TokenType.Keyword_Func ? ParseFunction("") : ParseUnsafeBlock();
+            }
+
             // 3. Control Flow
             if (Current.Type == TokenType.Keyword_If) return ParseIf();
             if (Current.Type == TokenType.Keyword_While) return ParseWhile();
@@ -226,6 +225,14 @@ namespace Sage.Core
                 var expr = ParseExpression();
                 Consume(TokenType.Semicolon);
                 return CreateNode(new ReturnNode(expr), startToken);
+            }
+
+            // Releases a safe heap reference obtained from 'new'.
+            if (Match(TokenType.Keyword_Delete))
+            {
+                var target = ParseExpression();
+                Consume(TokenType.Semicolon);
+                return CreateNode(new DeleteNode(target), startToken);
             }
 
             if (Current.Type == TokenType.Keyword_Struct) return ParseStructDeclaration();
@@ -375,14 +382,18 @@ namespace Sage.Core
             return CreateNode(new VariableDeclarationNode(name, type, initializer, isConstant), startToken);
         }
 
-        /// <summary>Parses function declarations, including external C interop functions.</summary>
-        private FunctionDeclarationNode ParseFunction(string moduleOwner)
+        /// <summary>Parses an 'unsafe { }' block, a scoped region where raw pointer operations are allowed.</summary>
+        private UnsafeBlockNode ParseUnsafeBlock()
         {
             var startToken = Current;
-            bool isExtern = Match(TokenType.Keyword_Extern);
-            Consume(TokenType.Keyword_Func);
+            Consume(TokenType.Keyword_Unsafe);
+            var body = ParseBlock();
+            return CreateNode(new UnsafeBlockNode(body), startToken);
+        }
 
-            string name = Consume(TokenType.Identifier).Value;
+        /// <summary>Parses a parenthesized formal parameter list: (name: type, name: type, ...).</summary>
+        private List<ParameterNode> ParseParameterList()
+        {
             Consume(TokenType.OpenParen);
 
             var parameters = new List<ParameterNode>();
@@ -397,16 +408,31 @@ namespace Sage.Core
                 } while (Match(TokenType.Comma));
             }
             Consume(TokenType.CloseParen);
+            return parameters;
+        }
+
+        /// <summary>Parses function declarations, including 'unsafe' and external C interop functions.</summary>
+        private FunctionDeclarationNode ParseFunction(string moduleOwner)
+        {
+            var startToken = Current;
+            bool isUnsafe = Match(TokenType.Keyword_Unsafe);
+            bool isExtern = Match(TokenType.Keyword_Extern);
+            Consume(TokenType.Keyword_Func);
+
+            string name = Consume(TokenType.Identifier).Value;
+            var parameters = ParseParameterList();
             Consume(TokenType.Colon);
             string retType = ConsumeType();
 
             if (isExtern)
             {
                 Consume(TokenType.Semicolon);
-                return CreateNode(new FunctionDeclarationNode(name, retType, parameters, null!, moduleOwner) { IsExtern = true }, startToken);
+                return CreateNode(new FunctionDeclarationNode(name, retType, parameters, null!, moduleOwner)
+                { IsExtern = true, IsUnsafe = isUnsafe }, startToken);
             }
 
-            return CreateNode(new FunctionDeclarationNode(name, retType, parameters, ParseBlock(), moduleOwner), startToken);
+            return CreateNode(new FunctionDeclarationNode(name, retType, parameters, ParseBlock(), moduleOwner)
+            { IsUnsafe = isUnsafe }, startToken);
         }
 
         /// <summary>Parses a scoped block of code enclosed in braces.</summary>
@@ -587,6 +613,7 @@ namespace Sage.Core
 
             if (Match(TokenType.Keyword_True)) return CreateNode(new LiteralNode(true, "b8"), startToken);
             if (Match(TokenType.Keyword_False)) return CreateNode(new LiteralNode(false, "b8"), startToken);
+            if (Current.Type == TokenType.Keyword_New) return ParseNewExpression();
             if (Current.Type == TokenType.Integer) return CreateNode(new LiteralNode(Consume(TokenType.Integer).Value, "i32"), startToken);
             if (Current.Type == TokenType.Float) return CreateNode(new LiteralNode(Consume(TokenType.Float).Value, "f64"), startToken);
 
@@ -714,6 +741,33 @@ namespace Sage.Core
             }
 
             throw new CompilerException(Current, "S004", $"Unexpected token: {Current.Type}");
+        }
+
+        /// <summary>
+        /// Parses a 'new' expression: new TypeName { field = value, ... }.
+        /// Allocates a value on the heap and yields a memory-safe reference.
+        /// </summary>
+        private NewExpressionNode ParseNewExpression()
+        {
+            var startToken = Current;
+            Consume(TokenType.Keyword_New);
+
+            string typeName = Consume(TokenType.Identifier, "Expected a type name after 'new'.").Value;
+            Consume(TokenType.OpenBrace, "Expected '{' to initialize the value created with 'new'.");
+
+            var fields = new Dictionary<string, AstNode>();
+            if (Current.Type != TokenType.CloseBrace)
+            {
+                do
+                {
+                    string fieldName = Consume(TokenType.Identifier).Value;
+                    Consume(TokenType.Equals, "Expected '=' after field name.");
+                    fields[fieldName] = ParseExpression();
+                } while (Match(TokenType.Comma));
+            }
+
+            Consume(TokenType.CloseBrace, "Expected '}' to close the 'new' initialization.");
+            return CreateNode(new NewExpressionNode(typeName, fields), startToken);
         }
 
         private StructDeclarationNode ParseStructDeclaration()

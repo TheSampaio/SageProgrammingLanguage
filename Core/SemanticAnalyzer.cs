@@ -1,14 +1,24 @@
-﻿using Sage.Ast;
+using Sage.Ast;
 using Sage.Enums;
 using Sage.Interfaces;
 using Sage.Utilities;
 
 namespace Sage.Core
 {
+    /// <summary>
+    /// Validates identifier existence, manages nested scopes, performs type checking, enforces
+    /// constant immutability, and gates raw pointer usage behind <c>unsafe</c> contexts.
+    /// </summary>
     public class SemanticAnalyzer(SymbolTable? sharedTable = null) : IAstVisitor<string>
     {
         private readonly SymbolTable _symbolTable = sharedTable ?? new SymbolTable();
         private readonly Dictionary<string, StructDeclarationNode> _structDeclarations = new();
+
+        /// <summary>Depth of nested unsafe contexts (unsafe blocks, unsafe functions, extern signatures).</summary>
+        private int _unsafeDepth;
+
+        /// <summary>True when analysis is currently inside an unsafe context.</summary>
+        private bool InUnsafe => _unsafeDepth > 0;
 
         public void Analyze(ProgramNode ast) => ast.Accept(this);
 
@@ -19,9 +29,9 @@ namespace Sage.Core
         {
             foreach (var node in moduleAst.Statements.OfType<ModuleNode>())
             {
+                RegisterExternBlocks(node);
                 foreach (var member in node.Members.OfType<FunctionDeclarationNode>())
                 {
-                    // Ensure the AST node knows its owner for later phases
                     member.ModuleOwner = node.Name;
                     RegisterFunction(member, node.Name);
                 }
@@ -30,28 +40,57 @@ namespace Sage.Core
 
         private void RegisterFunction(FunctionDeclarationNode func, string moduleName = "")
         {
-            // 1. Define the bare name (e.g., "print_line") for use inside the module itself
+            // 1. Define the bare name (e.g., "print_line") for use inside the module itself.
             _symbolTable.Define(func.Name, func.ReturnType, isFunction: true, isExtern: func.IsExtern);
 
-            // 2. Define the fully qualified name (e.g., "console::print_line") for external use
+            // 2. Define the fully qualified name (e.g., "console::print_line") for external use.
             if (!string.IsNullOrEmpty(moduleName))
             {
                 _symbolTable.Define($"{moduleName}::{func.Name}", func.ReturnType, isFunction: true, isExtern: func.IsExtern);
             }
         }
 
+        /// <summary>
+        /// Registers every extern binding and opaque type of a module up front, so a module's
+        /// functions can reference its FFI declarations regardless of textual order.
+        /// </summary>
+        private void RegisterExternBlocks(ModuleNode module)
+        {
+            foreach (var ext in module.Members.OfType<ExternBlockNode>())
+                RegisterExternBlock(ext);
+        }
+
+        private void RegisterExternBlock(ExternBlockNode node)
+        {
+            foreach (var decl in node.Declarations)
+            {
+                switch (decl)
+                {
+                    case ExternTypeNode opaque:
+                        TypeSystem.RegisterOpaqueType(opaque.Name);
+                        break;
+                    case FunctionDeclarationNode func:
+                        _symbolTable.Define($"{node.Alias}::{func.Name}", func.ReturnType, isFunction: true, isExtern: true);
+                        break;
+                }
+            }
+        }
+
         public string Visit(ProgramNode node)
         {
+            // Register top-level extern blocks and structs first so declarations can appear in any order.
+            foreach (var ext in node.Statements.OfType<ExternBlockNode>()) RegisterExternBlock(ext);
             foreach (var stmt in node.Statements) stmt.Accept(this);
             return "none";
         }
 
         public string Visit(ModuleNode node)
         {
-            // Internal registration to support recursion within the module
+            // Internal registration to support recursion and forward references within the module.
+            RegisterExternBlocks(node);
             foreach (var member in node.Members.OfType<FunctionDeclarationNode>())
             {
-                member.ModuleOwner = node.Name; // IMPORTANT: Tag the node with its module
+                member.ModuleOwner = node.Name;
                 RegisterFunction(member, node.Name);
             }
 
@@ -61,34 +100,58 @@ namespace Sage.Core
 
         public string Visit(FunctionDeclarationNode node)
         {
-            // If the function wasn't caught by module pre-registration, register it now
             if (!_symbolTable.IsDefinedInCurrentScope(node.Name))
-            {
                 RegisterFunction(node, node.ModuleOwner);
+
+            // An unsafe or extern function establishes an unsafe context for its signature and body.
+            bool unsafeContext = node.IsUnsafe || node.IsExtern;
+            if (unsafeContext) _unsafeDepth++;
+
+            // Raw pointers may only appear in a signature that is unsafe or extern.
+            if (!InUnsafe)
+            {
+                if (TypeSystem.IsRawPointer(node.ReturnType))
+                    throw new CompilerException(node, "S120",
+                        $"Function '{node.Name}' returns raw pointer '{node.ReturnType}'. Declare it 'unsafe func' or use a safe reference.");
+
+                foreach (var param in node.Parameters)
+                {
+                    if (TypeSystem.IsRawPointer(param.Type))
+                        throw new CompilerException(node, "S120",
+                            $"Parameter '{param.Name}' of '{node.Name}' is raw pointer '{param.Type}'. Declare the function 'unsafe func'.");
+                }
             }
 
             _symbolTable.EnterScope();
 
-            // Register parameters
             foreach (var param in node.Parameters)
-            {
                 _symbolTable.Define(param.Name, param.Type);
-            }
 
-            // Analyze body
             if (!node.IsExtern && node.Body != null)
-            {
                 node.Body.Accept(this);
-            }
 
             _symbolTable.ExitScope();
+
+            if (unsafeContext) _unsafeDepth--;
             return node.ReturnType;
+        }
+
+        public string Visit(UnsafeBlockNode node)
+        {
+            _unsafeDepth++;
+            node.Body.Accept(this);
+            _unsafeDepth--;
+            return "none";
         }
 
         public string Visit(VariableDeclarationNode node)
         {
             if (_symbolTable.IsDefinedInCurrentScope(node.Name))
                 throw new CompilerException(node, "S102", $"Variable '{node.Name}' is already defined.");
+
+            if (TypeSystem.IsRawPointer(node.Type) && !InUnsafe)
+                throw new CompilerException(node, "S121",
+                    $"Raw pointer type '{node.Type}' can only be used inside an 'unsafe' block. Use 'new' for safe heap allocation.");
 
             if (node.Initializer != null)
             {
@@ -107,9 +170,12 @@ namespace Sage.Core
                     literal.TypeName = node.Type;
 
                 node.Initializer.VariableType = node.Type;
+
+                // A variable initialized from 'new' becomes a safe heap reference.
+                node.IsReference = node.Initializer.IsReference;
             }
 
-            _symbolTable.Define(node.Name, node.Type);
+            _symbolTable.Define(node.Name, node.Type, isConstant: node.IsConstant, isReference: node.IsReference);
             return node.Type;
         }
 
@@ -151,7 +217,7 @@ namespace Sage.Core
         private static bool IsLogicalOp(TokenType op) =>
             op is TokenType.AmpersandAmpersand or TokenType.PipePipe;
 
-        // Syntactic Sugar: Allows assigning numeric literals to corresponding numeric types automatically
+        // Syntactic Sugar: Allows assigning numeric literals to corresponding numeric types automatically.
         private bool IsAutoPromotableLiteral(string targetType, AstNode initializer)
         {
             if (initializer is not LiteralNode literal) return false;
@@ -175,6 +241,7 @@ namespace Sage.Core
             var symbol = _symbolTable.Resolve(node.Name)
                 ?? throw new CompilerException(node, "S105", $"Identifier '{node.Name}' not declared.");
             node.VariableType = symbol.Type;
+            node.IsReference = symbol.IsReference;
             return symbol.Type;
         }
 
@@ -188,6 +255,13 @@ namespace Sage.Core
 
         public string Visit(AssignmentNode node)
         {
+            if (node.Target is IdentifierNode idTarget)
+            {
+                var targetSymbol = _symbolTable.Resolve(idTarget.Name);
+                if (targetSymbol is { IsConstant: true })
+                    throw new CompilerException(node, "S103", $"Cannot assign to constant '{idTarget.Name}'.");
+            }
+
             string targetType = node.Target.Accept(this);
             string exprType = node.Expression.Accept(this);
 
@@ -199,18 +273,21 @@ namespace Sage.Core
 
             node.Expression.VariableType = targetType;
             node.VariableType = targetType;
+            node.IsReference = node.Target.IsReference;
 
             return targetType;
         }
 
         public string Visit(ExternBlockNode node)
         {
-            // Scoped extern definitions (private to the module/block where they are defined)
-            foreach (var decl in node.Declarations.OfType<FunctionDeclarationNode>())
-            {
-                // Extern functions in modules are usually static/namespaced
-                _symbolTable.Define($"{node.Alias}::{decl.Name}", decl.ReturnType, isFunction: true, isExtern: true);
-            }
+            // Idempotent: also covers top-level extern blocks defined outside any module.
+            RegisterExternBlock(node);
+            return "none";
+        }
+
+        public string Visit(ExternTypeNode node)
+        {
+            TypeSystem.RegisterOpaqueType(node.Name);
             return "none";
         }
 
@@ -238,15 +315,24 @@ namespace Sage.Core
         public string Visit(ReturnNode node) => node.Expression.Accept(this);
         public string Visit(ExpressionStatementNode node) => node.Expression.Accept(this);
         public string Visit(UnaryExpressionNode node) => node.Operand.Accept(this);
-        public string Visit(CastExpressionNode node) => node.TargetType;
+
+        public string Visit(CastExpressionNode node)
+        {
+            node.Expression.Accept(this);
+
+            if (TypeSystem.IsRawPointer(node.TargetType) && !InUnsafe)
+                throw new CompilerException(node, "S122",
+                    $"Casting to raw pointer '{node.TargetType}' requires an 'unsafe' block.");
+
+            return node.TargetType;
+        }
+
         public string Visit(UseNode node) => "none";
 
         public string Visit(InterpolatedStringNode node)
         {
             foreach (var part in node.Parts)
-            {
                 part.VariableType = part.Accept(this);
-            }
             return "str";
         }
 
@@ -259,11 +345,40 @@ namespace Sage.Core
 
         public string Visit(StructInitializationNode node)
         {
-            // Visit all fields to ensure inner expressions are validated
             foreach (var value in node.Fields.Values) value.Accept(this);
-
-            // Return a special internal type marker
             return "struct_initializer";
+        }
+
+        public string Visit(NewExpressionNode node)
+        {
+            if (!_structDeclarations.TryGetValue(node.TypeName, out var structDecl))
+                throw new CompilerException(node, "S130",
+                    $"'new' requires a known struct type, but '{node.TypeName}' is not a struct.");
+
+            foreach (var (fieldName, valueExpr) in node.Fields)
+            {
+                var field = structDecl.Fields.FirstOrDefault(f => f.Name == fieldName)
+                    ?? throw new CompilerException(node, "S131",
+                        $"Struct '{node.TypeName}' does not contain field '{fieldName}'.");
+
+                valueExpr.Accept(this);
+                if (valueExpr is LiteralNode lit) lit.TypeName = field.Type;
+                valueExpr.VariableType = field.Type;
+            }
+
+            // 'new' yields a memory-safe heap reference whose surface type is the struct itself.
+            node.IsReference = true;
+            node.VariableType = node.TypeName;
+            return node.TypeName;
+        }
+
+        public string Visit(DeleteNode node)
+        {
+            node.Target.Accept(this);
+            if (!node.Target.IsReference)
+                throw new CompilerException(node, "S132",
+                    "'delete' expects a reference created with 'new'. For raw pointers use memory::release inside 'unsafe'.");
+            return "none";
         }
 
         public string Visit(MemberAccessNode node)
@@ -278,6 +393,8 @@ namespace Sage.Core
                 throw new CompilerException(node, "S110", $"Struct '{objType}' does not contain field '{node.PropertyName}'.");
 
             node.VariableType = field.Type;
+            // Accessing a field of a reference yields a plain value; the reference-ness stops here.
+            node.IsReference = false;
             return field.Type;
         }
 
@@ -292,10 +409,14 @@ namespace Sage.Core
             string arrayType = node.Array.Accept(this);
 
             bool isArray = TypeSystem.IsArrayType(arrayType);
-            bool isPointer = arrayType.EndsWith("*");
+            bool isPointer = TypeSystem.IsRawPointer(arrayType);
 
             if (!isArray && !isPointer)
                 throw new CompilerException(node, "S111", $"Cannot index into non-array and non-pointer type '{arrayType}'.");
+
+            if (isPointer && !InUnsafe)
+                throw new CompilerException(node, "S123",
+                    "Indexing a raw pointer dereferences memory and requires an 'unsafe' block.");
 
             string indexType = node.Index.Accept(this);
             if (!TypeSystem.IsNumeric(indexType) || TypeSystem.IsFloatingPoint(indexType))

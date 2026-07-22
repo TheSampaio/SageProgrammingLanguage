@@ -12,6 +12,12 @@ namespace Sage.Utilities
     public static class CompilerLogger
     {
         /// <summary>
+        /// The source file currently being processed, used to produce accurate diagnostics
+        /// (e.g. 'console.sg(12,5): error ...'). Set by the pipeline as it moves between modules.
+        /// </summary>
+        public static string? CurrentFile { get; set; }
+
+        /// <summary>
         /// Logs a major milestone in the compilation process to the console.
         /// </summary>
         public static void LogStep(string message) => Console.WriteLine(message);
@@ -50,7 +56,8 @@ namespace Sage.Utilities
         public static void LogError(Token token, string code, string message)
         {
             Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine($"main.sg({token.Line},{token.Column}): error {code}: {message}");
+            string file = CurrentFile ?? "main.sg";
+            Console.WriteLine($"{file}({token.Line},{token.Column}): error {code}: {message}");
             Console.ResetColor();
         }
 

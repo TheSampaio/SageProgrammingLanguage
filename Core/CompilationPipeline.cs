@@ -15,6 +15,8 @@ namespace Sage.Core
         /// <param name="args">The command-line arguments containing paths and configuration flags.</param>
         public static void Run(string[] args)
         {
+            TypeSystem.Reset();
+
             var config = ConfigurationResolver.Resolve(args);
             var env = EnvironmentFactory.Create(config);
 
@@ -80,6 +82,8 @@ namespace Sage.Core
 
                 if (config.IsDebugMode) Console.WriteLine($"\n--- [MODULE] Processing: {moduleName} ---");
 
+                CompilerLogger.CurrentFile = Path.GetFileName(path);
+
                 if (!File.Exists(path))
                 {
                     CompilerLogger.LogError($"Source file not found: {path}");
@@ -142,6 +146,8 @@ namespace Sage.Core
         {
             foreach (var (name, ast) in modules)
             {
+                CompilerLogger.CurrentFile = $"{name}.sg";
+
                 if (config.IsDebugMode)
                 {
                     Console.WriteLine($"\n--- [MODULE] Finishing: {name} ---");

@@ -1,5 +1,6 @@
 use console;
 use memory;
+use file;
 
 struct Person
 {
@@ -15,11 +16,10 @@ func main(): none
     console::print_line("=== SAGE STRESS TEST START ===");
 
     // -------------------------------------------------
-    // 1. FOR + WHILE + ARITMÉTICA
+    // 1. FOR + WHILE + ARITHMETIC
     // -------------------------------------------------
 
     const max: i32 = 10;
-
     var sum: i32 = 0;
 
     for (var i: i32 = 0; i < max; i++)
@@ -50,11 +50,10 @@ func main(): none
     console::print_line("===");
 
     // -------------------------------------------------
-    // 2. ARRAY FIXO + INDEXAÇÃO
+    // 2. FIXED ARRAY + INDEXING
     // -------------------------------------------------
 
     var numbers: i32[5] = { 10, 20, 30, 40, 50 };
-
     var idx: i32 = 0;
 
     while (idx < 5)
@@ -66,60 +65,14 @@ func main(): none
     console::print_line("===");
 
     // -------------------------------------------------
-    // 3. HEAP + PONTEIRO i32*
-    // -------------------------------------------------
-
-    const count: u64 = 100;
-
-    var raw: none* = memory::alloc(count * 4); // 4 bytes por i32
-    var ptr: i32* = raw;
-
-    var i: i32 = 0;
-
-    while (i < 100)
-    {
-        ptr[i] = i * 2;
-        i = i + 1;
-    }
-
-    console::print_line("Heap test values:");
-    console::print_line("{ptr[10]}");
-    console::print_line("{ptr[50]}");
-    console::print_line("{ptr[99]}");
-
-    memory::release(raw);
-
-    console::print_line("===");
-
-    // -------------------------------------------------
-    // 4. STRUCT + ARRAY DE STRUCTS
+    // 3. STRUCT + ARRAY OF STRUCTS (stack, safe)
     // -------------------------------------------------
 
     var people: Person[3];
 
-    people[0] = {
-        name = "Alice",
-        age = 30,
-        height = 1.65,
-        money = 1000.50,
-        female = true
-    };
-
-    people[1] = {
-        name = "Bob",
-        age = 40,
-        height = 1.80,
-        money = 2500.00,
-        female = false
-    };
-
-    people[2] = {
-        name = "Carol",
-        age = 22,
-        height = 1.70,
-        money = 300.75,
-        female = true
-    };
+    people[0] = { name = "Alice", age = 30, height = 1.65, money = 1000.50, female = true  };
+    people[1] = { name = "Bob",   age = 40, height = 1.80, money = 2500.00, female = false };
+    people[2] = { name = "Carol", age = 22, height = 1.70, money = 300.75,  female = true  };
 
     var p: i32 = 0;
 
@@ -135,21 +88,66 @@ func main(): none
     console::print_line("===");
 
     // -------------------------------------------------
-    // 5. HEAP + STRUCT POINTER (Person*)
+    // 4. SAFE HEAP: new / delete (memory-safe reference)
     // -------------------------------------------------
 
-    var person_mem: none* = memory::alloc(3 * 32); // tamanho estimado
-    var person_ptr: Person* = person_mem;
+    var hero: Person = new Person {
+        name = "Zelda",
+        age = 118,
+        height = 1.65,
+        money = 9999.99,
+        female = true
+    };
 
-    person_ptr[0] = people[0];
-    person_ptr[1] = people[1];
-    person_ptr[2] = people[2];
+    console::print_line("new Person -> {hero.name}, age {hero.age}");
+    console::print_line("Height: {hero.height:2f}m");
+    console::print_line("Balance: ${hero.money:2f}");
 
-    console::print_line("Heap struct test:");
-    console::print_line("{person_ptr[1].name}");
-    console::print_line("{person_ptr[1].height:2f}");
+    delete hero;
 
-    memory::release(person_mem);
+    console::print_line("===");
 
+    // -------------------------------------------------
+    // 5. RAW POINTERS (must live inside 'unsafe')
+    // -------------------------------------------------
+
+    unsafe
+    {
+        const count: u64 = 100;
+
+        var raw: none* = memory::alloc(count * 4); // 4 bytes per i32
+        var ptr: i32* = raw;
+
+        var i: i32 = 0;
+
+        while (i < 100)
+        {
+            ptr[i] = i * 2;
+            i = i + 1;
+        }
+
+        console::print_line("Heap test values:");
+        console::print_line("{ptr[10]}");
+        console::print_line("{ptr[50]}");
+        console::print_line("{ptr[99]}");
+
+        memory::release(raw);
+    }
+
+    console::print_line("===");
+
+    // -------------------------------------------------
+    // 6. FFI: opaque FILE + c_* aliases
+    // -------------------------------------------------
+
+    unsafe
+    {
+        var handle: FILE* = file::open("sage_output.txt", "w");
+        file::write_text(handle, "Hello from Sage FFI!\n");
+        file::write_text(handle, "Opaque types and c_* aliases work.\n");
+        file::close(handle);
+    }
+
+    console::print_line("Wrote sage_output.txt via C stdio FFI.");
     console::print_line("=== SAGE STRESS TEST END ===");
 }

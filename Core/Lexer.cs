@@ -1,4 +1,5 @@
-﻿using Sage.Enums;
+﻿using System.Text;
+using Sage.Enums;
 using Sage.Interfaces;
 using Sage.Utilities;
 
@@ -43,6 +44,9 @@ namespace Sage.Core
         { "while", TokenType.Keyword_While },
         { "for", TokenType.Keyword_For },
         { "struct", TokenType.Keyword_Struct },
+        { "unsafe", TokenType.Keyword_Unsafe },
+        { "new", TokenType.Keyword_New },
+        { "delete", TokenType.Keyword_Delete },
         // Types
         { "i8", TokenType.Type_I8 }, { "u8", TokenType.Type_U8 },
         { "i16", TokenType.Type_I16 }, { "u16", TokenType.Type_U16 },
@@ -166,15 +170,44 @@ namespace Sage.Core
         /// <returns>A token containing the string content without the quotes.</returns>
         private Token LexString()
         {
-            int startPos = _pos;
             int startCol = _col;
+            int startLine = _line;
 
             Advance(); // Skip opening "
-            while (_pos < _text.Length && Current != '"') Advance();
-            Advance(); // Skip closing "
 
-            string value = _text[(startPos + 1)..(_pos - 1)];
-            return new Token(TokenType.String, value, _line, startCol);
+            var sb = new StringBuilder();
+            while (_pos < _text.Length && Current != '"')
+            {
+                // Preserve escape sequences verbatim so the C backend interprets them
+                // (Sage string escapes mirror C escapes). This also stops an escaped
+                // quote (\") from terminating the literal prematurely.
+                if (Current == '\\')
+                {
+                    sb.Append(Current);
+                    Advance();
+                    if (_pos < _text.Length)
+                    {
+                        sb.Append(Current);
+                        Advance();
+                    }
+                    continue;
+                }
+
+                sb.Append(Current);
+                Advance();
+            }
+
+            if (_pos >= _text.Length)
+            {
+                CompilerLogger.LogError(new Token(TokenType.String, sb.ToString(), startLine, startCol),
+                    "S013", "Unterminated string literal.");
+            }
+            else
+            {
+                Advance(); // Skip closing "
+            }
+
+            return new Token(TokenType.String, sb.ToString(), startLine, startCol);
         }
 
         /// <summary>

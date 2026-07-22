@@ -1,0 +1,39 @@
+/// Standard Library: File
+/// Thin, explicit bindings over C's <stdio.h> file API.
+///
+/// This module demonstrates the FFI type-mapping features:
+///   * C interop aliases (c_char, c_int, ...) that line up with real C signatures.
+///   * Opaque C types declared with `type FILE;` — Sage references them (e.g. FILE*)
+///     without knowing their layout; the definition comes from the included header.
+///
+/// Because file handles are raw pointers (FILE*), the wrappers are `unsafe func`.
+module file
+{
+    extern libc_stdio("stdio.h")
+    {
+        // Opaque handle: layout lives in <stdio.h>, Sage only passes it around.
+        type FILE;
+
+        func fopen(path: c_char*, mode: c_char*): FILE*;
+        func fputs(text: c_char*, stream: FILE*): c_int;
+        func fclose(stream: FILE*): c_int;
+    }
+
+    /// Opens a file and returns its handle. Returns a null handle on failure.
+    unsafe func open(path: str, mode: str): FILE*
+    {
+        return libc_stdio::fopen(path, mode);
+    }
+
+    /// Appends text to an open file handle.
+    unsafe func write_text(handle: FILE*, text: str): none
+    {
+        libc_stdio::fputs(text, handle);
+    }
+
+    /// Closes an open file handle.
+    unsafe func close(handle: FILE*): none
+    {
+        libc_stdio::fclose(handle);
+    }
+}

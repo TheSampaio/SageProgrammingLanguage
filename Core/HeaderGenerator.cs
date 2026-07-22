@@ -96,18 +96,14 @@ namespace Sage.Core
             // Visit body to discover dependencies within the function scope
             if (node.Body != null) node.Body.Accept(this);
 
-            string cName = node.IsExtern
-                ? node.Name
-                : (node.Name.Equals("main", StringComparison.OrdinalIgnoreCase)
-                    ? "main"
-                    : (string.IsNullOrEmpty(node.ModuleOwner) ? node.Name : $"{node.ModuleOwner}_{node.Name}"));
+            string cName = CNaming.ResolveFunctionName(node);
 
             bool isMain = node.Name.Equals("main", StringComparison.OrdinalIgnoreCase);
             string cReturnType = isMain ? "int" : TypeSystem.ToCType(node.ReturnType);
 
             string paramsStr = (isMain || node.Parameters.Count == 0)
                 ? "void"
-                : string.Join(", ", node.Parameters.Select(p => $"{TypeSystem.ToCType(p.Type)} {p.Name}"));
+                : string.Join(", ", node.Parameters.Select(p => TypeSystem.FormatCParameter(p.Name, p.Type)));
 
             string prefix = node.IsExtern ? "extern " : "";
             return $"{prefix}{cReturnType} {cName}({paramsStr});\n";
@@ -129,6 +125,26 @@ namespace Sage.Core
         {
             AddHeader(node.Header);
             foreach (var decl in node.Declarations) decl.Accept(this);
+            return "";
+        }
+
+        // Opaque C types are provided by their extern header; nothing is emitted for them.
+        public string Visit(ExternTypeNode node) => "";
+
+        public string Visit(UnsafeBlockNode node) { node.Body.Accept(this); return ""; }
+
+        // 'new' and 'delete' lower to malloc/free, which require stdlib.h.
+        public string Visit(NewExpressionNode node)
+        {
+            AddHeader("stdlib.h");
+            foreach (var value in node.Fields.Values) value.Accept(this);
+            return "";
+        }
+
+        public string Visit(DeleteNode node)
+        {
+            AddHeader("stdlib.h");
+            node.Target.Accept(this);
             return "";
         }
 

@@ -179,6 +179,31 @@ namespace Sage.Utilities
         /// <summary>Visits a 'use' directive for module imports.</summary>
         public object Visit(UseNode node) => new { Type = "Use", node.Module };
 
+        /// <summary>Visits an unsafe block.</summary>
+        public object Visit(UnsafeBlockNode node) => new
+        {
+            Type = "UnsafeBlock",
+            Body = node.Body.Accept(this)
+        };
+
+        /// <summary>Visits a 'new' heap allocation expression.</summary>
+        public object Visit(NewExpressionNode node) => new
+        {
+            Type = "New",
+            node.TypeName,
+            Fields = node.Fields.ToDictionary(k => k.Key, v => v.Value.Accept(this))
+        };
+
+        /// <summary>Visits a 'delete' statement.</summary>
+        public object Visit(DeleteNode node) => new
+        {
+            Type = "Delete",
+            Target = node.Target.Accept(this)
+        };
+
+        /// <summary>Visits an opaque extern type declaration.</summary>
+        public object Visit(ExternTypeNode node) => new { Type = "ExternType", node.Name };
+
         /// <summary>Visits a string literal containing interpolation.</summary>
         public object Visit(InterpolatedStringNode node) => new { Type = "InterpolatedString" };
 

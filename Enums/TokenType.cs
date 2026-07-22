@@ -22,6 +22,9 @@
         Keyword_While,
         Keyword_For,
         Keyword_Struct,
+        Keyword_Unsafe,
+        Keyword_New,
+        Keyword_Delete,
 
         // --- Signed Integers ---
         Type_I8,

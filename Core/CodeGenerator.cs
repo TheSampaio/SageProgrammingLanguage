@@ -13,6 +13,9 @@ namespace Sage.Core
     {
         private int _indent = 0;
 
+        /// <summary>Monotonic counter used to mint unique C temporary identifiers.</summary>
+        private int _tempCounter = 0;
+
         /// <summary>
         /// Gets the current indentation string based on the nesting level.
         /// </summary>
@@ -49,7 +52,7 @@ namespace Sage.Core
 
             bool isMain = node.Name.Equals("main", StringComparison.OrdinalIgnoreCase);
             string cReturnType = isMain ? "int" : TypeSystem.ToCType(node.ReturnType);
-            string cName = ResolveFunctionName(node);
+            string cName = CNaming.ResolveFunctionName(node);
 
             var sb = new StringBuilder();
             sb.Append($"{Indent}{cReturnType} {cName}(");
@@ -60,15 +63,7 @@ namespace Sage.Core
             }
             else
             {
-                var paramsList = node.Parameters.Select(p =>
-                {
-                    if (TypeSystem.IsArrayType(p.Type))
-                    {
-                        string bType = TypeSystem.ToCType(TypeSystem.GetArrayBaseType(p.Type));
-                        return $"{bType} {p.Name}[{TypeSystem.GetArraySize(p.Type)}]";
-                    }
-                    return $"{TypeSystem.ToCType(p.Type)} {p.Name}";
-                });
+                var paramsList = node.Parameters.Select(p => TypeSystem.FormatCParameter(p.Name, p.Type));
                 sb.Append(string.Join(", ", paramsList));
             }
             sb.AppendLine(")");
@@ -89,15 +84,6 @@ namespace Sage.Core
             sb.AppendLine($"{Indent}}}");
 
             return sb.ToString();
-        }
-
-        /// <summary>
-        /// Resolves the final C name for a function, applying module prefixes or handling main.
-        /// </summary>
-        private static string ResolveFunctionName(FunctionDeclarationNode node)
-        {
-            if (node.Name.Equals("main", StringComparison.OrdinalIgnoreCase)) return "main";
-            return string.IsNullOrEmpty(node.ModuleOwner) ? node.Name : $"{node.ModuleOwner}_{node.Name}";
         }
 
         /// <summary>
@@ -122,6 +108,13 @@ namespace Sage.Core
         {
             string prefix = node.IsConstant ? "const " : "";
             string init = node.Initializer != null ? $" = {node.Initializer.Accept(this)}" : "";
+
+            // Safe heap references are represented as pointers in C.
+            if (node.IsReference)
+            {
+                string refType = $"{TypeSystem.ToCType(node.Type)}*";
+                return $"{Indent}{prefix}{refType} {node.Name}{init};\n";
+            }
 
             if (TypeSystem.IsArrayType(node.Type))
             {
@@ -201,6 +194,30 @@ namespace Sage.Core
         public string Visit(StructDeclarationNode node) => "";
 
         public string Visit(ExternBlockNode node) => "";
+
+        public string Visit(ExternTypeNode node) => "";
+
+        /// <summary>An unsafe block carries no runtime cost; it emits a plain scoped C block.</summary>
+        public string Visit(UnsafeBlockNode node) => node.Body.Accept(this);
+
+        /// <summary>
+        /// Transpiles a safe heap allocation. Uses a GNU statement-expression to allocate,
+        /// initialize, and yield a pointer to the new value.
+        /// </summary>
+        public string Visit(NewExpressionNode node)
+        {
+            string cType = TypeSystem.ToCType(node.TypeName);
+            string tmp = $"_new{_tempCounter++}";
+
+            string initList = node.Fields.Count > 0
+                ? "{ " + string.Join(", ", node.Fields.Select(kvp => $".{kvp.Key} = {kvp.Value.Accept(this)}")) + " }"
+                : "{0}";
+
+            return $"({{ {cType}* {tmp} = malloc(sizeof({cType})); *{tmp} = ({cType}){initList}; {tmp}; }})";
+        }
+
+        /// <summary>Releases a safe heap reference produced by <c>new</c>.</summary>
+        public string Visit(DeleteNode node) => $"{Indent}free({node.Target.Accept(this)});\n";
 
         public string Visit(BinaryExpressionNode node)
         {
@@ -326,8 +343,11 @@ namespace Sage.Core
                 }
             }
 
+            // Each interpolation gets a uniquely named buffer so several interpolated strings can
+            // coexist within a single expression without aliasing one another.
+            string buf = $"_buf{_tempCounter++}";
             string argsC = arguments.Count > 0 ? ", " + string.Join(", ", arguments) : "";
-            return $"({{ static char _buf[512]; snprintf(_buf, sizeof(_buf), \"{formatString}\"{argsC}); _buf; }})";
+            return $"({{ static char {buf}[512]; snprintf({buf}, sizeof({buf}), \"{formatString}\"{argsC}); {buf}; }})";
         }
 
         public string Visit(StructInitializationNode node)
@@ -346,7 +366,12 @@ namespace Sage.Core
             return sb.ToString();
         }
 
-        public string Visit(MemberAccessNode node) => $"{node.Object.Accept(this)}.{node.PropertyName}";
+        public string Visit(MemberAccessNode node)
+        {
+            // Safe heap references are pointers under the hood, so their members use '->'.
+            string separator = node.Object.IsReference ? "->" : ".";
+            return $"{node.Object.Accept(this)}{separator}{node.PropertyName}";
+        }
 
         public string Visit(ArrayInitializationNode node)
         {
