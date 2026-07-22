@@ -56,7 +56,35 @@ namespace Sage.Core
 
             if (config.BuildNative)
             {
-                LinkNativeBinary(generatedCFiles, config, env);
+                var libraries = CollectLinkLibraries(parsedModules);
+                LinkNativeBinary(generatedCFiles, libraries, config, env);
+            }
+        }
+
+        /// <summary>
+        /// Gathers the set of native libraries requested by extern blocks across all modules,
+        /// so they can be forwarded to the linker (e.g. <c>-lws2_32</c>).
+        /// </summary>
+        private static HashSet<string> CollectLinkLibraries(Dictionary<string, ProgramNode> modules)
+        {
+            var libs = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var ast in modules.Values)
+            {
+                foreach (var ext in EnumerateExternBlocks(ast))
+                {
+                    if (!string.IsNullOrWhiteSpace(ext.Library)) libs.Add(ext.Library!);
+                }
+            }
+            return libs;
+        }
+
+        private static IEnumerable<ExternBlockNode> EnumerateExternBlocks(ProgramNode ast)
+        {
+            foreach (var stmt in ast.Statements)
+            {
+                if (stmt is ExternBlockNode top) yield return top;
+                else if (stmt is ModuleNode module)
+                    foreach (var member in module.Members.OfType<ExternBlockNode>()) yield return member;
             }
         }
 
@@ -144,6 +172,9 @@ namespace Sage.Core
             CompilationEnvironment env,
             SemanticAnalyzer analyzer)
         {
+            // Emit the shared runtime prelude once for the whole build.
+            File.WriteAllText(Path.Combine(env.ObjDir, HeaderGenerator.PreludeFileName), HeaderGenerator.GeneratePrelude());
+
             foreach (var (name, ast) in modules)
             {
                 CompilerLogger.CurrentFile = $"{name}.sg";
@@ -176,7 +207,7 @@ namespace Sage.Core
         /// <summary>
         /// Invokes the native toolchain to link generated C files into an executable binary.
         /// </summary>
-        private static void LinkNativeBinary(List<string> cFiles, CompilerConfig config, CompilationEnvironment env)
+        private static void LinkNativeBinary(List<string> cFiles, HashSet<string> libraries, CompilerConfig config, CompilationEnvironment env)
         {
             if (config.IsDebugMode) CompilerLogger.LogStep("\nLinking binaries...");
 
@@ -186,7 +217,10 @@ namespace Sage.Core
 
             string exePath = Path.Combine(env.BinDir, $"{exeName}.exe");
             string sources = string.Join(" ", cFiles.Select(f => $"\"{Path.GetFullPath(f)}\""));
-            string args = $"{sources} -o \"{exePath}\" -std=c11 -I\"{env.ObjDir}\"";
+            string libFlags = libraries.Count > 0
+                ? " " + string.Join(" ", libraries.OrderBy(l => l, StringComparer.Ordinal).Select(l => $"-l{l}"))
+                : "";
+            string args = $"{sources} -o \"{exePath}\" -std=c11 -I\"{env.ObjDir}\"{libFlags}";
 
             if (config.IsDebugMode) CompilerLogger.LogInfo("Invoking native toolchain: gcc");
 

@@ -124,6 +124,7 @@ namespace Sage.Utilities
             Type = "ExternBlock",
             node.Alias,
             node.Header,
+            node.Library,
             Declarations = node.Declarations.Select(d => d.Accept(this))
         };
 

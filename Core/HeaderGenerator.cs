@@ -27,16 +27,39 @@ namespace Sage.Core
             var sb = new StringBuilder();
             sb.AppendLine("/* --- Sage Header File --- */");
             sb.AppendLine("#pragma once");
-            sb.AppendLine("#include <stdint.h>");
-            sb.AppendLine("#include <stdbool.h>");
 
-            foreach (var header in _requiredHeaders)
+            // The shared runtime prelude carries the Sage type aliases and base C headers,
+            // so each module header includes it once instead of re-emitting typedefs.
+            sb.AppendLine($"#include \"{PreludeFileName}\"");
+
+            // Emit required headers in a stable, deterministic order.
+            foreach (var header in _requiredHeaders.OrderBy(h => h, StringComparer.Ordinal))
             {
                 sb.AppendLine($"#include {header}");
             }
 
-            // Standard Sage primitive type aliases for C compatibility
-            sb.AppendLine("\n/* --- Type Definitions --- */");
+            sb.AppendLine();
+            sb.AppendLine("/* --- Declarations --- */");
+            sb.Append(declarations);
+
+            return sb.ToString();
+        }
+
+        /// <summary>File name of the shared Sage runtime prelude header.</summary>
+        public const string PreludeFileName = "sage.h";
+
+        /// <summary>
+        /// Produces the shared runtime prelude that every generated module header includes.
+        /// It defines the Sage primitive type aliases exactly once and pulls in the base C headers.
+        /// </summary>
+        public static string GeneratePrelude()
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("/* --- Sage Runtime Prelude (generated) --- */");
+            sb.AppendLine("#pragma once");
+            sb.AppendLine("#include <stdint.h>");
+            sb.AppendLine("#include <stdbool.h>");
+            sb.AppendLine();
             sb.AppendLine("#ifndef SAGE_TYPES_DEFINED");
             sb.AppendLine("#define SAGE_TYPES_DEFINED");
             sb.AppendLine("typedef int8_t   i8;  typedef uint8_t  u8;");
@@ -46,11 +69,7 @@ namespace Sage.Core
             sb.AppendLine("typedef float    f32; typedef double   f64;");
             sb.AppendLine("typedef bool     b8;  typedef char* str;");
             sb.AppendLine("typedef void     none;");
-            sb.AppendLine("#endif\n");
-
-            sb.AppendLine("/* --- Declarations --- */");
-            sb.Append(declarations);
-
+            sb.AppendLine("#endif");
             return sb.ToString();
         }
 
