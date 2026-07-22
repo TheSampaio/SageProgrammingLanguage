@@ -1,20 +1,22 @@
 /// Standard Library: Console
-/// Provides high-level abstractions for terminal I/O,
-/// screen manipulation, and system commands.
+/// High-level abstractions for terminal I/O, screen manipulation, and system commands.
+///
+/// The extern bindings use C interop aliases (c_char, c_int) so they line up with the
+/// real <stdio.h> / <stdlib.h> signatures. The public API exposes ergonomic Sage types.
 module console
 {
     // --- Native C Bindings (Private to this module) ---
 
     extern libc_stdio("stdio.h")
     {
-        func printf(format: str, arg: str): i32;
-        func scanf(format: str, buffer: str): i32;
-        func getchar(): i32;
+        func printf(format: c_char*, text: c_char*): c_int;
+        func scanf(format: c_char*, buffer: c_char*): c_int;
+        func getchar(): c_int;
     }
 
     extern libc_stdlib("stdlib.h")
     {
-        func system(command: str): i32;
+        func system(command: c_char*): c_int;
     }
 
     // --- High-Level API ---
@@ -24,14 +26,6 @@ module console
     func clear(): none
     {
         libc_stdio::printf("\x1B[2J\x1B[H", "");
-    }
-
-    /// Sets the cursor position on the terminal grid.
-    /// NOTE: This is a placeholder until variadic support exists.
-    func position(x: i32, y: i32): none
-    {
-        // Proper variadic binding required to fully support this
-        libc_stdio::printf("\x1B[%d;%dH", "");
     }
 
     /// Writes the provided text to the standard output.
@@ -46,12 +40,10 @@ module console
         libc_stdio::printf("%s\n", text);
     }
 
-    /// Sets the physical dimensions of the console window.
-    /// Current implementation is Windows-specific.
-    func size(cols: i32, lines: i32): none
+    /// Runs a shell command through the system's command processor.
+    func run(command: str): i32
     {
-        // NOTE: Hardcoded values � needs formatting support
-        libc_stdlib::system("mode con: cols=80 lines=25");
+        return libc_stdlib::system(command);
     }
 
     /// Captures a single character input from the user.
@@ -61,7 +53,7 @@ module console
         return libc_stdio::getchar();
     }
 
-    /// Reads a string from standard input into the provided buffer.
+    /// Reads a whitespace-delimited token from standard input into the provided buffer.
     func read_line(buffer: str): none
     {
         libc_stdio::scanf("%s", buffer);
