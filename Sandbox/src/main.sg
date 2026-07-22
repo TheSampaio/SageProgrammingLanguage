@@ -1,153 +1,53 @@
+/// Sage Savings Calculator
+/// A small, useful program that projects compound-interest growth of a savings
+/// account year by year. Showcases safe heap references (new/delete), structs,
+/// floating-point math, loops, and formatted string interpolation.
 use console;
-use memory;
-use file;
 
-struct Person
+struct Account
 {
     name: str;
-    age: i32;
-    height: f32;
-    money: f64;
-    female: b8;
+    principal: f64;
+    rate: f64;     // annual interest rate, e.g. 0.07 = 7%
+    years: i32;
 }
 
 func main(): none
 {
-    console::print_line("=== SAGE STRESS TEST START ===");
+    console::print_line("===== Sage Savings Calculator =====");
 
-    // -------------------------------------------------
-    // 1. FOR + WHILE + ARITHMETIC
-    // -------------------------------------------------
-
-    const max: i32 = 10;
-    var sum: i32 = 0;
-
-    for (var i: i32 = 0; i < max; i++)
-    {
-        if (i % 2 == 0)
-        {
-            console::print_line("Even: {i}");
-        }
-        else
-        {
-            console::print_line("Odd: {i}");
-        }
-
-        sum = sum + i;
-    }
-
-    console::print_line("Partial sum: {sum}");
-    console::print_line("===");
-
-    var counter: i32 = 0;
-
-    while (counter < 5)
-    {
-        console::print_line("While iteration: {counter}");
-        counter = counter + 1;
-    }
-
-    console::print_line("===");
-
-    // -------------------------------------------------
-    // 2. FIXED ARRAY + INDEXING
-    // -------------------------------------------------
-
-    var numbers: i32[5] = { 10, 20, 30, 40, 50 };
-    var idx: i32 = 0;
-
-    while (idx < 5)
-    {
-        console::print_line("numbers[{idx}] = {numbers[idx]}");
-        idx = idx + 1;
-    }
-
-    console::print_line("===");
-
-    // -------------------------------------------------
-    // 3. STRUCT + ARRAY OF STRUCTS (stack, safe)
-    // -------------------------------------------------
-
-    var people: Person[3];
-
-    people[0] = { name = "Alice", age = 30, height = 1.65, money = 1000.50, female = true  };
-    people[1] = { name = "Bob",   age = 40, height = 1.80, money = 2500.00, female = false };
-    people[2] = { name = "Carol", age = 22, height = 1.70, money = 300.75,  female = true  };
-
-    var p: i32 = 0;
-
-    while (p < 3)
-    {
-        console::print_line("Person: {people[p].name}");
-        console::print_line("Age: {people[p].age}");
-        console::print_line("Balance: ${people[p].money:2f}");
-        console::print_line("---");
-        p = p + 1;
-    }
-
-    console::print_line("===");
-
-    // -------------------------------------------------
-    // 4. SAFE HEAP: new / delete (memory-safe reference)
-    // -------------------------------------------------
-
-    var hero: Person = new Person {
-        name = "Zelda",
-        age = 118,
-        height = 1.65,
-        money = 9999.99,
-        female = true
+    // Heap-allocated, memory-safe account reference.
+    var acc: Account = new Account {
+        name = "Retirement Fund",
+        principal = 1000.00,
+        rate = 0.07,
+        years = 10
     };
 
-    console::print_line("new Person -> {hero.name}, age {hero.age}");
-    console::print_line("Height: {hero.height:2f}m");
-    console::print_line("Balance: ${hero.money:2f}");
+    console::print_line("Account:    {acc.name}");
+    console::print_line("Principal:  ${acc.principal:2f}");
+    console::print_line("Rate:       {acc.rate:2f} per year");
+    console::print_line("Horizon:    {acc.years} years");
+    console::print_line("-----------------------------------");
 
-    delete hero;
+    var balance: f64 = acc.principal;
+    var interest_total: f64 = 0.0;
 
-    console::print_line("===");
-
-    // -------------------------------------------------
-    // 5. RAW POINTERS (must live inside 'unsafe')
-    // -------------------------------------------------
-
-    unsafe
+    for (var year: i32 = 1; year <= acc.years; year++)
     {
-        const count: u64 = 100;
+        var interest: f64 = balance * acc.rate;
+        balance = balance + interest;
+        interest_total = interest_total + interest;
 
-        var raw: none* = memory::alloc(count * 4); // 4 bytes per i32
-        var ptr: i32* = raw;
-
-        var i: i32 = 0;
-
-        while (i < 100)
-        {
-            ptr[i] = i * 2;
-            i = i + 1;
-        }
-
-        console::print_line("Heap test values:");
-        console::print_line("{ptr[10]}");
-        console::print_line("{ptr[50]}");
-        console::print_line("{ptr[99]}");
-
-        memory::release(raw);
+        console::print_line("Year {year}: ${balance:2f}  (+${interest:2f})");
     }
 
-    console::print_line("===");
+    var growth: f64 = ((balance - acc.principal) / acc.principal) * 100.0;
 
-    // -------------------------------------------------
-    // 6. FFI: opaque FILE + c_* aliases
-    // -------------------------------------------------
+    console::print_line("-----------------------------------");
+    console::print_line("Final balance:  ${balance:2f}");
+    console::print_line("Total interest: ${interest_total:2f}");
+    console::print_line("Total growth:   {growth:2f}%");
 
-    unsafe
-    {
-        var handle: FILE* = file::open("sage_output.txt", "w");
-        file::write_text(handle, "Hello from Sage FFI!\n");
-        file::write_text(handle, "Opaque types and c_* aliases work.\n");
-        file::close(handle);
-    }
-
-    console::print_line("Wrote sage_output.txt via C stdio FFI.");
-    console::print_line("=== SAGE STRESS TEST END ===");
+    delete acc;
 }
