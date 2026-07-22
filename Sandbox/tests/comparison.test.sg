@@ -1,0 +1,14 @@
+/// Unit tests: comparison and equality operators.
+use test;
+
+func main(): none
+{
+    test::assert_true("lt", 3 < 5);
+    test::assert_true("le_equal", 5 <= 5);
+    test::assert_true("gt", 9 > 2);
+    test::assert_true("ge_equal", 4 >= 4);
+    test::assert_true("eq", 7 == 7);
+    test::assert_true("ne", 7 != 8);
+    test::assert_false("lt_false", 5 < 3);
+    test::assert_false("eq_false", 1 == 2);
+}

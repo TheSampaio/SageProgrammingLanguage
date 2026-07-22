@@ -1,21 +1,21 @@
 /// Standard Library: Memory
 /// Low-level, explicit heap primitives backed by the C standard library.
 ///
-/// These wrappers traffic in raw pointers (none*), so they are declared `unsafe func`
+/// The extern bindings use C interop aliases (c_size_t, c_void) so they match the real
+/// <stdlib.h> signatures. These wrappers traffic in raw pointers, so they are `unsafe func`
 /// and must be called from within an `unsafe` block. For everyday allocation prefer the
 /// memory-safe `new` / `delete` keywords instead.
 module memory
 {
     // --- Native C Bindings (Private to this module) ---
 
-    /// Bindings to the C standard library memory management functions.
     extern libc_stdlib("stdlib.h")
     {
         /// Allocates a block of memory of the given size (in bytes).
-        func malloc(size: u64): none*;
+        func malloc(size: c_size_t): c_void*;
 
         /// Frees a previously allocated block of memory.
-        func free(ptr: none*): none;
+        func free(ptr: c_void*): none;
     }
 
     // --- High-Level API ---

@@ -1,0 +1,17 @@
+/// Unit tests: explicit casts (as).
+use test;
+
+func main(): none
+{
+    var f: f64 = 3.9;
+    var i: i32 = f as i32;
+    test::assert_eq_i32("f64_to_i32", i, 3);
+
+    var big: i32 = 300;
+    var small: u8 = big as u8;
+    test::assert_eq_i32("i32_to_u8_wrap", small as i32, 44);
+
+    var whole: i32 = 7;
+    var half: f64 = whole as f64 / 2.0;
+    test::assert_eq_f64("i32_to_f64", half, 3.5);
+}

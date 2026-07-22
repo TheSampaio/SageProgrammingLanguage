@@ -1,0 +1,16 @@
+/// Unit tests: unary operators (++, -, !).
+use test;
+
+func main(): none
+{
+    var i: i32 = 5;
+    i++;
+    test::assert_eq_i32("post_increment", i, 6);
+
+    var n: i32 = 10;
+    var neg: i32 = -n;
+    test::assert_eq_i32("negation", neg, -10);
+
+    test::assert_true("logical_not", !false);
+    test::assert_false("double_not", !!false);
+}

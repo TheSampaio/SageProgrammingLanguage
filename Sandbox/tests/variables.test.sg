@@ -1,0 +1,20 @@
+/// Unit tests: variables, constants and scope shadowing.
+use test;
+
+func main(): none
+{
+    var a: i32 = 10;
+    a = 20;
+    test::assert_eq_i32("var_reassign", a, 20);
+
+    const b: i32 = 7;
+    test::assert_eq_i32("const_value", b, 7);
+
+    var s: i32 = 1;
+    if (true)
+    {
+        var s: i32 = 99;
+        test::assert_eq_i32("shadow_inner", s, 99);
+    }
+    test::assert_eq_i32("shadow_outer", s, 1);
+}

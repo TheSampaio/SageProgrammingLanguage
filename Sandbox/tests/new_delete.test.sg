@@ -1,0 +1,23 @@
+/// Unit tests: safe heap allocation with new / delete.
+use test;
+
+struct Account
+{
+    id: i32;
+    balance: f64;
+    owner: str;
+}
+
+func main(): none
+{
+    var acc: Account = new Account { id = 1, balance = 100.50, owner = "Alice" };
+    test::assert_eq_i32("ref_id", acc.id, 1);
+    test::assert_eq_f64("ref_balance", acc.balance, 100.50);
+    test::assert_eq_str("ref_owner", acc.owner, "Alice");
+
+    acc.balance = 250.75;
+    test::assert_eq_f64("ref_mutate", acc.balance, 250.75);
+
+    delete acc;
+    test::assert_true("new_delete_ok", true);
+}

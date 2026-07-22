@@ -1,0 +1,15 @@
+/// Unit tests: arithmetic operators and precedence.
+use test;
+
+func main(): none
+{
+    test::assert_eq_i32("add", 2 + 3, 5);
+    test::assert_eq_i32("sub", 10 - 4, 6);
+    test::assert_eq_i32("mul", 6 * 7, 42);
+    test::assert_eq_i32("div", 20 / 4, 5);
+    test::assert_eq_i32("mod", 17 % 5, 2);
+    test::assert_eq_i32("precedence", 2 + 3 * 4, 14);
+    test::assert_eq_i32("parens", (2 + 3) * 4, 20);
+    test::assert_eq_f64("float_add", 1.5 + 2.25, 3.75);
+    test::assert_eq_f64("float_mul", 2.0 * 1.5, 3.0);
+}

@@ -145,9 +145,14 @@ namespace Sage.Core
             // 1. Alias (namespace local)
             string alias = Consume(TokenType.Identifier).Value;
 
-            // 2. Header File ("stdio.h")
+            // 2. Header File ("stdio.h"), plus an optional link library ("ws2_32").
             Consume(TokenType.OpenParen);
             string header = Consume(TokenType.String).Value;
+            string? library = null;
+            if (Match(TokenType.Comma))
+            {
+                library = Consume(TokenType.String, "Expected a link-library name string after ','.").Value;
+            }
             Consume(TokenType.CloseParen);
 
             Consume(TokenType.OpenBrace);
@@ -189,7 +194,7 @@ namespace Sage.Core
             }
 
             Consume(TokenType.CloseBrace);
-            return CreateNode(new ExternBlockNode(alias, header, declarations), startToken);
+            return CreateNode(new ExternBlockNode(alias, header, declarations, library), startToken);
         }
 
         /// <summary>Parses a single statement or declaration.</summary>
@@ -205,8 +210,9 @@ namespace Sage.Core
                 return CreateNode(new UseNode(name), startToken);
             }
 
-            // 2. Function definition
+            // 2. Function definition / top-level FFI block
             if (Current.Type == TokenType.Keyword_Func) return ParseFunction("");
+            if (Current.Type == TokenType.Keyword_Extern) return ParseExternBlock();
 
             // 2b. Unsafe: either an 'unsafe { }' block or an 'unsafe func' definition.
             if (Current.Type == TokenType.Keyword_Unsafe)
