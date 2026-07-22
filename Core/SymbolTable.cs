@@ -36,11 +36,19 @@
         /// <param name="type">The Sage data type associated with the symbol.</param>
         /// <param name="isFunction">True if the symbol represents a callable function.</param>
         /// <param name="isExtern">True if the symbol is defined externally (C interop).</param>
-        public void Define(string name, string type, bool isFunction = false, bool isExtern = false)
+        /// <param name="isConstant">True if the symbol is an immutable constant.</param>
+        /// <param name="isReference">True if the symbol holds a safe heap reference (from <c>new</c>).</param>
+        public void Define(
+            string name,
+            string type,
+            bool isFunction = false,
+            bool isExtern = false,
+            bool isConstant = false,
+            bool isReference = false)
         {
             if (_scopes.Count > 0)
             {
-                _scopes.Peek()[name] = new SymbolMetadata(type, isFunction, isExtern);
+                _scopes.Peek()[name] = new SymbolMetadata(type, isFunction, isExtern, isConstant, isReference);
             }
         }
 

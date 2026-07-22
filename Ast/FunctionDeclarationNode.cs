@@ -50,6 +50,13 @@ namespace Sage.Ast
         public bool IsExtern { get; set; } = false;
 
         /// <summary>
+        /// Gets a value indicating whether the function is marked <c>unsafe</c>.
+        /// The body runs in an unsafe context (raw pointers allowed) and callers must invoke it
+        /// from within an unsafe context.
+        /// </summary>
+        public bool IsUnsafe { get; set; } = false;
+
+        /// <summary>
         /// Dispatches the visitor to the appropriate visit method for this function declaration.
         /// </summary>
         /// <typeparam name="T">The return type of the visitor's operation.</typeparam>

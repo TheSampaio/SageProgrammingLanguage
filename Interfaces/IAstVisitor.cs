@@ -24,6 +24,9 @@ namespace Sage.Interfaces
         /// <summary>Visits a block of code scoped within braces {}.</summary>
         T Visit(BlockNode node);
 
+        /// <summary>Visits an <c>unsafe { }</c> block that permits raw pointer operations.</summary>
+        T Visit(UnsafeBlockNode node);
+
         // --- Statement Nodes ---
 
         /// <summary>Visits a variable or constant declaration.</summary>
@@ -43,6 +46,12 @@ namespace Sage.Interfaces
 
         /// <summary>Visits a 'use' directive used for importing modules.</summary>
         T Visit(UseNode node);
+
+        /// <summary>Visits a <c>delete</c> statement that releases a safe heap reference.</summary>
+        T Visit(DeleteNode node);
+
+        /// <summary>Visits an opaque C type declaration (<c>type Name;</c>) inside an extern block.</summary>
+        T Visit(ExternTypeNode node);
 
         // --- Control Flow Nodes ---
 
@@ -91,6 +100,9 @@ namespace Sage.Interfaces
 
         /// <summary>Visits a struct initialization expression.</summary>
         T Visit(StructInitializationNode node);
+
+        /// <summary>Visits a <c>new</c> expression that allocates a safe heap reference.</summary>
+        T Visit(NewExpressionNode node);
 
         /// <summary>Visits an array literal or initialization expression.</summary>
         T Visit(ArrayInitializationNode node);

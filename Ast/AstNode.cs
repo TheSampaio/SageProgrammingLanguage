@@ -32,6 +32,13 @@ namespace Sage.Ast
         public string? FormatSpecifier { get; set; }
 
         /// <summary>
+        /// Gets or sets a value indicating whether this node evaluates to a safe heap reference
+        /// (produced by <c>new</c>). References are represented as pointers in the C backend but
+        /// are memory-safe at the Sage level (no pointer arithmetic). Populated during Semantic Analysis.
+        /// </summary>
+        public bool IsReference { get; set; }
+
+        /// <summary>
         /// Dispatches the node to the appropriate visit method on the provided visitor.
         /// </summary>
         /// <typeparam name="T">The return type of the visitor's operation.</typeparam>

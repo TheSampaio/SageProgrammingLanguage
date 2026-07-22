@@ -12,9 +12,11 @@ The project strictly follows **SOLID principles** and **Clean Code** architectur
 ## Core Features
 
 * **Native Compilation:** Handles the entire build process from source to optimized binary (`.exe`).
-* **Foreign Function Interface (FFI):** Support for `extern` declarations, allowing direct interoperability with C standard libraries and external files.
+* **Memory Safety by Default:** Raw pointers (`T*`) are forbidden in ordinary code and only usable inside `unsafe { }` blocks (and FFI). Constants (`const`) are strictly enforced.
+* **Safe Heap Allocation (`new` / `delete`):** Allocate on the heap and get a memory-safe reference — no pointer arithmetic, released explicitly with `delete`.
+* **Ergonomic FFI:** `extern` blocks with C interop aliases (`c_int`, `c_size_t`, `c_char`, …) and opaque C types (`type FILE;`) that map cleanly onto real C signatures.
 * **Tree-Shaking Code Gen:** Smart header management that only includes necessary C headers (`stdio.h`, `stdint.h`, etc.) based on actual code usage.
-* **Modern Type System:** Explicit types (`i32`, `f64`, `str`, `b8`) with support for **Constants** (`const`) and **Explicit Casting** (`as`).
+* **Modern Type System:** Explicit fixed-width types (`i32`, `f64`, `str`, `b8`) with support for **Constants** (`const`) and **Explicit Casting** (`as`).
 * **Modularity:** First-class support for `module` blocks and namespaced calls (`math::sum`) to manage large codebases.
 * **Developer Tooling:** Standardized **JSON** debug outputs for Tokens (`.tok.json`) and Abstract Syntax Trees (`.ast.json`).
 
@@ -244,6 +246,73 @@ func main(): none
 }
 ```
 
+## Memory Safety, `new` and FFI
+
+Sage is **memory-safe by default**. Raw pointers (`T*`, including `none*`) cannot appear in
+ordinary code — declaring, casting to, or dereferencing one is a compile error. They are only
+allowed inside an `unsafe { }` block or in an `unsafe func`. FFI declarations (`extern`) are
+implicitly unsafe, since they cross into C.
+
+### Safe heap allocation: `new` / `delete`
+
+```rust
+struct Person { name: str; age: i32; }
+
+func main(): none
+{
+    // 'new' allocates on the heap and yields a memory-safe reference (no pointer arithmetic).
+    var hero: Person = new Person { name = "Zelda", age = 118 };
+    console::print_line("{hero.name} is {hero.age}");
+    delete hero; // release it explicitly
+}
+```
+
+### Raw pointers require `unsafe`
+
+```rust
+unsafe
+{
+    var raw: none* = memory::alloc(400);
+    var ptr: i32* = raw;
+    ptr[0] = 42;
+    memory::release(raw);
+}
+```
+
+### Ergonomic FFI: interop aliases + opaque types
+
+C interop aliases (`c_int`, `c_uint`, `c_char`, `c_size_t`, `c_void`, …) map onto the *native*
+C types so bindings line up with real headers. Opaque C types are declared with `type Name;` and
+referenced through pointers without needing their layout:
+
+```rust
+module file
+{
+    extern libc_stdio("stdio.h")
+    {
+        type FILE; // opaque handle provided by <stdio.h>
+        func fopen(path: c_char*, mode: c_char*): FILE*;
+        func fputs(text: c_char*, stream: FILE*): c_int;
+        func fclose(stream: FILE*): c_int;
+    }
+
+    unsafe func open(path: str, mode: str): FILE* { return libc_stdio::fopen(path, mode); }
+}
+```
+
+### Sage → C type mapping (quick reference)
+
+| Sage            | C                | Notes                                  |
+|-----------------|------------------|----------------------------------------|
+| `i8..i64`/`u8..u64` | `int8_t..uint64_t` | Fixed-width primitives              |
+| `f32` / `f64`   | `float` / `double` |                                        |
+| `b8`            | `bool`           |                                        |
+| `str`           | `char*`          | Safe string type (not a raw pointer)   |
+| `none`          | `void`           |                                        |
+| `none*`         | `void*`          | Raw pointer — `unsafe` only            |
+| `c_int`, `c_uint`, `c_char`, `c_size_t`, `c_void`, … | `int`, `unsigned int`, `char`, `size_t`, `void`, … | FFI interop aliases (native width) |
+| `type Name;`    | `Name`           | Opaque C type (from an extern header)  |
+
 ## Project Status
 
 The project is currently in **v0.6.0 (Alpha)**.
@@ -259,6 +328,9 @@ The project is currently in **v0.6.0 (Alpha)**.
 * [x] **Native Compilation** (GCC Integration)
 * [x] **Structs and Custom Types**
 * [x] **Arrays and Pointers**
+* [x] **Memory Safety** (`unsafe` blocks gate raw pointers; `const` enforced)
+* [x] **Safe Heap Allocation** (`new` / `delete` references)
+* [x] **Ergonomic FFI** (`c_*` interop aliases + opaque `type` declarations)
 * [x] **Modular Standard Library** (Libc decoupled from Compiler Core)
 * [x] **Visitor-based Transpilation** (Full separation of Header/Logic)
 

@@ -1,6 +1,9 @@
 /// Standard Library: Memory
-/// Provides minimal, explicit heap allocation and deallocation
-/// primitives backed by the native C standard library.
+/// Low-level, explicit heap primitives backed by the C standard library.
+///
+/// These wrappers traffic in raw pointers (none*), so they are declared `unsafe func`
+/// and must be called from within an `unsafe` block. For everyday allocation prefer the
+/// memory-safe `new` / `delete` keywords instead.
 module memory
 {
     // --- Native C Bindings (Private to this module) ---
@@ -9,26 +12,23 @@ module memory
     extern libc_stdlib("stdlib.h")
     {
         /// Allocates a block of memory of the given size (in bytes).
-        /// Returns a pointer to the beginning of the allocated block.
         func malloc(size: u64): none*;
 
         /// Frees a previously allocated block of memory.
-        /// The pointer must originate from a compatible allocation call.
         func free(ptr: none*): none;
     }
 
     // --- High-Level API ---
 
-    /// Allocates a block of heap memory of the specified size (in bytes).
-    /// This is a thin, explicit wrapper over the native allocator.
-    func alloc(size: u64): none*
+    /// Allocates a raw block of heap memory of the specified size (in bytes).
+    unsafe func alloc(size: u64): none*
     {
         return libc_stdlib::malloc(size);
     }
 
-    /// Releases a previously allocated block of heap memory.
+    /// Releases a previously allocated raw block of heap memory.
     /// Passing an invalid or already freed pointer results in undefined behavior.
-    func release(ptr: none*): none
+    unsafe func release(ptr: none*): none
     {
         libc_stdlib::free(ptr);
     }
