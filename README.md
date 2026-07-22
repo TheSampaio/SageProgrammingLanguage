@@ -315,7 +315,7 @@ module file
 
 ## Project Status
 
-The project is currently in **v0.6.0 (Alpha)**.
+The project is currently in **v0.7.0 (Alpha)**.
 
 * [x] **CLI & Project System** (`new`, `build`, `run`, `--version`)
 * [x] **Variable Declarations** (`var`) & **Constants** (`const`)

@@ -35,7 +35,7 @@ namespace Sage
             if (args.Contains("--version") || args.Contains("-v"))
             {
                 Console.ForegroundColor = ConsoleColor.Cyan;
-                Console.WriteLine("Sage Compiler v0.6.0 (Alpha)");
+                Console.WriteLine($"Sage Compiler v{SageInfo.FullVersion}");
                 Console.ResetColor();
                 return true;
             }
