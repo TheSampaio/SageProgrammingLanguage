@@ -1,0 +1,22 @@
+/// Unit tests: Foreign Function Interface (extern) with C interop aliases.
+use test;
+
+// Top-level FFI bindings straight to libc.
+extern clib_string("string.h")
+{
+    func strlen(s: c_char*): c_size_t;
+}
+
+extern clib_stdlib("stdlib.h")
+{
+    func abs(value: c_int): c_int;
+}
+
+func main(): none
+{
+    var len: i32 = clib_string::strlen("hello") as i32;
+    test::assert_eq_i32("ffi_strlen", len, 5);
+
+    var a: i32 = clib_stdlib::abs(-7) as i32;
+    test::assert_eq_i32("ffi_abs", a, 7);
+}

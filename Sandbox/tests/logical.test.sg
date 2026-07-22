@@ -1,0 +1,13 @@
+/// Unit tests: logical operators (&&, ||, !).
+use test;
+
+func main(): none
+{
+    test::assert_true("and_true", true && true);
+    test::assert_false("and_false", true && false);
+    test::assert_true("or_true", false || true);
+    test::assert_false("or_false", false || false);
+    test::assert_true("not_false", !false);
+    test::assert_false("not_true", !true);
+    test::assert_true("combined", (3 < 5) && (10 > 2));
+}

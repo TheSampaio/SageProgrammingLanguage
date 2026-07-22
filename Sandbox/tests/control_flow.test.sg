@@ -1,0 +1,22 @@
+/// Unit tests: if/else/else-if, while and for.
+use test;
+
+func main(): none
+{
+    var x: i32 = 0;
+    if (x == 0) { x = 1; } else { x = 2; }
+    test::assert_eq_i32("if_then", x, 1);
+
+    var y: i32 = 5;
+    if (y > 10) { y = 100; } else if (y > 3) { y = 50; } else { y = 0; }
+    test::assert_eq_i32("else_if", y, 50);
+
+    var sum: i32 = 0;
+    for (var i: i32 = 1; i <= 5; i++) { sum = sum + i; }
+    test::assert_eq_i32("for_sum", sum, 15);
+
+    var count: i32 = 0;
+    var n: i32 = 0;
+    while (n < 4) { count = count + 1; n = n + 1; }
+    test::assert_eq_i32("while_count", count, 4);
+}

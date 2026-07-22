@@ -210,8 +210,9 @@ namespace Sage.Core
                 return CreateNode(new UseNode(name), startToken);
             }
 
-            // 2. Function definition
+            // 2. Function definition / top-level FFI block
             if (Current.Type == TokenType.Keyword_Func) return ParseFunction("");
+            if (Current.Type == TokenType.Keyword_Extern) return ParseExternBlock();
 
             // 2b. Unsafe: either an 'unsafe { }' block or an 'unsafe func' definition.
             if (Current.Type == TokenType.Keyword_Unsafe)

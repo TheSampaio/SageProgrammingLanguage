@@ -1,0 +1,23 @@
+/// Unit tests: raw pointers inside unsafe + the memory module.
+use test;
+use memory;
+
+func main(): none
+{
+    unsafe
+    {
+        var raw: none* = memory::alloc(40); // 10 * i32
+        var ptr: i32* = raw;
+
+        for (var i: i32 = 0; i < 10; i++)
+        {
+            ptr[i] = i * i;
+        }
+
+        test::assert_eq_i32("ptr_index_0", ptr[0], 0);
+        test::assert_eq_i32("ptr_index_3", ptr[3], 9);
+        test::assert_eq_i32("ptr_index_9", ptr[9], 81);
+
+        memory::release(raw);
+    }
+}

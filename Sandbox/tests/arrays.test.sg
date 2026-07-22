@@ -1,0 +1,19 @@
+/// Unit tests: fixed arrays and indexing.
+use test;
+
+func main(): none
+{
+    var nums: i32[5] = { 10, 20, 30, 40, 50 };
+    test::assert_eq_i32("index_first", nums[0], 10);
+    test::assert_eq_i32("index_last", nums[4], 50);
+
+    nums[2] = 99;
+    test::assert_eq_i32("index_assign", nums[2], 99);
+
+    var sum: i32 = 0;
+    for (var i: i32 = 0; i < 5; i++)
+    {
+        sum = sum + nums[i];
+    }
+    test::assert_eq_i32("array_sum", sum, 219);
+}

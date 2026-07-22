@@ -1,0 +1,15 @@
+/// Unit tests: string interpolation and format specifiers.
+use test;
+
+func main(): none
+{
+    var n: i32 = 42;
+    var name: str = "Sage";
+
+    test::assert_eq_str("interp_int", "n={n}", "n=42");
+    test::assert_eq_str("interp_str", "hi {name}", "hi Sage");
+    test::assert_eq_str("interp_mixed", "{name} is {n}", "Sage is 42");
+
+    var pi: f64 = 3.14159;
+    test::assert_eq_str("interp_format", "{pi:2f}", "3.14");
+}

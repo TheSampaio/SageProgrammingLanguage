@@ -1,0 +1,26 @@
+/// Unit tests: structs, member access, and arrays of structs.
+use test;
+
+struct Point
+{
+    x: i32;
+    y: i32;
+    label: str;
+}
+
+func main(): none
+{
+    var p: Point = { x = 3, y = 4, label = "origin" };
+    test::assert_eq_i32("field_x", p.x, 3);
+    test::assert_eq_i32("field_y", p.y, 4);
+    test::assert_eq_str("field_label", p.label, "origin");
+
+    p.x = 10;
+    test::assert_eq_i32("field_assign", p.x, 10);
+
+    var arr: Point[2];
+    arr[0] = { x = 1, y = 1, label = "a" };
+    arr[1] = { x = 2, y = 2, label = "b" };
+    test::assert_eq_i32("struct_array_field", arr[1].x, 2);
+    test::assert_eq_str("struct_array_str", arr[0].label, "a");
+}

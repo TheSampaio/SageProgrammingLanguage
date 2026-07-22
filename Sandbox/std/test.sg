@@ -1,0 +1,101 @@
+/// Standard Library: Test
+/// A minimal unit-testing framework for Sage.
+///
+/// Each assertion prints a machine-readable line:
+///   [PASS] <name>
+///   [FAIL] <name> (details)
+///
+/// Tooling (e.g. the VS Code Test Explorer) discovers `.sg` files under a `tests/`
+/// folder, runs them, and parses these lines into individual test results.
+use console;
+
+module test
+{
+    extern libc_string("string.h")
+    {
+        func strcmp(a: c_char*, b: c_char*): c_int;
+    }
+
+    /// Reports a boolean result under the given test name.
+    func report(name: str, passed: b8): none
+    {
+        if (passed)
+        {
+            console::print_line("[PASS] {name}");
+        }
+        else
+        {
+            console::print_line("[FAIL] {name}");
+        }
+    }
+
+    /// Asserts that a condition is true.
+    func assert_true(name: str, condition: b8): none
+    {
+        test::report(name, condition);
+    }
+
+    /// Asserts that a condition is false.
+    func assert_false(name: str, condition: b8): none
+    {
+        test::report(name, !condition);
+    }
+
+    /// Asserts equality between two 32-bit integers.
+    func assert_eq_i32(name: str, actual: i32, expected: i32): none
+    {
+        if (actual == expected)
+        {
+            console::print_line("[PASS] {name}");
+        }
+        else
+        {
+            console::print_line("[FAIL] {name} (expected {expected}, got {actual})");
+        }
+    }
+
+    /// Asserts equality between two 64-bit integers.
+    func assert_eq_i64(name: str, actual: i64, expected: i64): none
+    {
+        if (actual == expected)
+        {
+            console::print_line("[PASS] {name}");
+        }
+        else
+        {
+            console::print_line("[FAIL] {name} (expected {expected}, got {actual})");
+        }
+    }
+
+    /// Asserts approximate equality between two doubles (epsilon = 0.0001).
+    func assert_eq_f64(name: str, actual: f64, expected: f64): none
+    {
+        var diff: f64 = actual - expected;
+        if (diff < 0.0)
+        {
+            diff = 0.0 - diff;
+        }
+
+        if (diff < 0.0001)
+        {
+            console::print_line("[PASS] {name}");
+        }
+        else
+        {
+            console::print_line("[FAIL] {name} (expected {expected:6f}, got {actual:6f})");
+        }
+    }
+
+    /// Asserts equality between two strings.
+    func assert_eq_str(name: str, actual: str, expected: str): none
+    {
+        if (libc_string::strcmp(actual, expected) == 0)
+        {
+            console::print_line("[PASS] {name}");
+        }
+        else
+        {
+            console::print_line("[FAIL] {name} (expected '{expected}', got '{actual}')");
+        }
+    }
+}

@@ -8,10 +8,10 @@ namespace Sage.Utilities
         {
             string sourceDir = Path.GetDirectoryName(config.InputPath)!;
 
-            // 1. Detect Project Root (If inside 'src', go up one level)
-            string root = Path.GetFileName(sourceDir).Equals("src", StringComparison.OrdinalIgnoreCase)
-                ? Directory.GetParent(sourceDir)!.FullName
-                : sourceDir;
+            // 1. Detect Project Root: the nearest ancestor that contains a 'std' or 'src' folder.
+            // This lets sources live under src/, tests/, or any project subfolder and still resolve
+            // the standard library correctly. Falls back to the source directory itself.
+            string root = FindProjectRoot(sourceDir) ?? sourceDir;
 
             string obj = Path.Combine(root, "obj");
             string bin = Path.Combine(root, "bin");
@@ -40,6 +40,21 @@ namespace Sage.Utilities
             Directory.CreateDirectory(bin);
 
             return new CompilationEnvironment(root, sourceDir, obj, bin, std);
+        }
+
+        private static string? FindProjectRoot(string startDir)
+        {
+            DirectoryInfo? current = new DirectoryInfo(startDir);
+            while (current != null)
+            {
+                if (Directory.Exists(Path.Combine(current.FullName, "std")) ||
+                    Directory.Exists(Path.Combine(current.FullName, "src")))
+                {
+                    return current.FullName;
+                }
+                current = current.Parent;
+            }
+            return null;
         }
 
         private static string? FindStdUpwards(string startPath)
