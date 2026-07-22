@@ -11,6 +11,18 @@ namespace Sage.Core
             ["i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "f32", "f64"];
 
         /// <summary>
+        /// C interop aliases that behave as numeric scalars. They participate in numeric literal
+        /// assignment (so byte-level FFI code like <c>buf[i] = 0</c> type-checks), though cross-type
+        /// arithmetic promotion is intentionally limited to the fixed-width Sage hierarchy.
+        /// </summary>
+        private static readonly HashSet<string> CNumericTypes =
+        [
+            "c_char", "c_schar", "c_uchar", "c_short", "c_ushort", "c_int", "c_uint",
+            "c_long", "c_ulong", "c_longlong", "c_ulonglong", "c_size_t", "c_ssize_t",
+            "c_intptr", "c_uintptr", "c_float", "c_double"
+        ];
+
+        /// <summary>
         /// C interop aliases used when writing FFI bindings and standard-library modules.
         /// These map onto the *native* C types (whose width is platform-defined) instead of the
         /// fixed-width Sage primitives, so bindings line up with real C headers without guesswork.
@@ -95,11 +107,11 @@ namespace Sage.Core
             return type.EndsWith('*');
         }
 
-        /// <summary>Determines if a type is a numeric primitive.</summary>
-        public static bool IsNumeric(string type) => NumericHierarchy.Contains(type);
+        /// <summary>Determines if a type is a numeric scalar (Sage primitive or C interop alias).</summary>
+        public static bool IsNumeric(string type) => NumericHierarchy.Contains(type) || CNumericTypes.Contains(type);
 
-        /// <summary>Determines if a type is a floating-point primitive.</summary>
-        public static bool IsFloatingPoint(string type) => type is "f32" or "f64";
+        /// <summary>Determines if a type is a floating-point scalar.</summary>
+        public static bool IsFloatingPoint(string type) => type is "f32" or "f64" or "c_float" or "c_double";
 
         /// <summary>
         /// Determines the resulting type of a binary operation between two numeric types

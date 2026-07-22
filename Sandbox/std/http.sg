@@ -1,0 +1,52 @@
+/// Standard Library: HTTP Client
+/// Consume HTTP(S) APIs by delegating to the system `curl` binary (available on
+/// Windows 10+ and most Unix systems), so no extra libraries need to be linked.
+///
+/// The high-level helpers (fetch/post/download) are fully memory-safe. The
+/// capturing helper `get_into` traffics in raw buffers, so it is `unsafe func`.
+use console;
+
+module http
+{
+    extern libc_stdio("stdio.h")
+    {
+        type FILE;
+
+        func popen(command: c_char*, mode: c_char*): FILE*;
+        func pclose(stream: FILE*): c_int;
+        func fread(buffer: c_void*, size: c_size_t, count: c_size_t, stream: FILE*): c_size_t;
+    }
+
+    /// Performs a GET request and prints the response body to standard output.
+    func fetch(url: str): none
+    {
+        console::run("curl -s \"{url}\"");
+    }
+
+    /// Performs a POST request with a raw body and prints the response.
+    func post(url: str, data: str): none
+    {
+        console::run("curl -s -X POST -d \"{data}\" \"{url}\"");
+    }
+
+    /// Downloads a URL into a local file path.
+    func download(url: str, path: str): none
+    {
+        console::run("curl -s -o \"{path}\" \"{url}\"");
+    }
+
+    /// Performs a GET request and captures up to `max` bytes of the body into
+    /// `buffer` (which must hold at least `max` + 1 bytes). Returns the byte count.
+    unsafe func get_into(url: str, buffer: str, max: u64): u64
+    {
+        var handle: FILE* = libc_stdio::popen("curl -s \"{url}\"", "r");
+        var read: u64 = libc_stdio::fread(buffer, 1, max, handle) as u64;
+        libc_stdio::pclose(handle);
+
+        // Null-terminate the captured body so it is a valid C string.
+        var bytes: c_char* = buffer as c_char*;
+        bytes[read] = 0;
+
+        return read;
+    }
+}

@@ -1,0 +1,82 @@
+/// Standard Library: HTTP Server (Windows / Winsock)
+/// A minimal, single-threaded, blocking HTTP/1.1 server built on Winsock. It replies to
+/// every request with a fixed body — enough to expose an endpoint or a health check.
+///
+/// The extern block links against ws2_32 via the second argument of `extern`. All socket
+/// work is raw FFI, so the entry point is an `unsafe func`. SOCKET handles are `c_uintptr`
+/// (they are pointer-width on 64-bit Windows).
+use console;
+
+/// Mirror of C's `struct sockaddr_in` (16 bytes: family, port, addr, 8 bytes padding).
+/// A `new` reference to this struct gives us a pointer to hand to bind().
+struct SockAddr
+{
+    family: i16;
+    port: u16;
+    addr: u32;
+    pad: u64;
+}
+
+module server
+{
+    extern winsock("winsock2.h", "ws2_32")
+    {
+        func WSAStartup(version: c_ushort, data: c_void*): c_int;
+        func WSACleanup(): c_int;
+        func socket(family: c_int, kind: c_int, protocol: c_int): c_uintptr;
+        func bind(sock: c_uintptr, addr: c_void*, len: c_int): c_int;
+        func listen(sock: c_uintptr, backlog: c_int): c_int;
+        func accept(sock: c_uintptr, addr: c_void*, len: c_void*): c_uintptr;
+        func recv(sock: c_uintptr, buffer: c_void*, len: c_int, flags: c_int): c_int;
+        func send(sock: c_uintptr, buffer: c_void*, len: c_int, flags: c_int): c_int;
+        func closesocket(sock: c_uintptr): c_int;
+        func htons(value: c_ushort): c_ushort;
+    }
+
+    extern libc_string("string.h")
+    {
+        func strlen(s: c_char*): c_size_t;
+    }
+
+    /// Starts a blocking HTTP server on the given port. Every request receives `body`
+    /// as an HTTP 200 text/plain response. This call does not return.
+    unsafe func serve(port: u16, body: str): none
+    {
+        // AF_INET = 2, SOCK_STREAM = 1
+        var wsa: c_char[512];
+        winsock::WSAStartup(514, wsa as none*); // MAKEWORD(2, 2)
+
+        var sock: c_uintptr = winsock::socket(2, 1, 0);
+
+        var addr: SockAddr = new SockAddr {
+            family = 2,
+            port = winsock::htons(port),
+            addr = 0,
+            pad = 0
+        };
+
+        winsock::bind(sock, addr as none*, 16);
+        winsock::listen(sock, 8);
+
+        console::print_line("Sage HTTP server listening on http://localhost:{port}");
+
+        var running: b8 = true;
+        while (running)
+        {
+            var client: c_uintptr = winsock::accept(sock, 0 as none*, 0 as none*);
+
+            var request: c_char[2048];
+            winsock::recv(client, request as none*, 2048, 0);
+
+            var body_len: c_int = libc_string::strlen(body) as c_int;
+            var response: str = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\nContent-Length: {body_len}\r\n\r\n{body}";
+            var response_len: c_int = libc_string::strlen(response) as c_int;
+
+            winsock::send(client, response as none*, response_len, 0);
+            winsock::closesocket(client);
+        }
+
+        winsock::closesocket(sock);
+        winsock::WSACleanup();
+    }
+}
