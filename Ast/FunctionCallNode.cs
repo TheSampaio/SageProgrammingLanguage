@@ -22,6 +22,9 @@ namespace Sage.Ast
 
         public bool IsExternCall { get; set; } = false;
 
+        /// <summary>Exact callable origin selected by semantic analysis.</summary>
+        public string? ResolvedName { get; set; }
+
         /// <summary>
         /// Dispatches the visitor to the appropriate visit method for this function call.
         /// </summary>

@@ -13,6 +13,8 @@ namespace Sage.Core
     {
         private readonly SymbolTable _symbolTable = sharedTable ?? new SymbolTable();
         private readonly Dictionary<string, StructDeclarationNode> _structDeclarations = new();
+        private readonly Dictionary<string, FunctionDeclarationNode> _functionDeclarations = new(StringComparer.Ordinal);
+        private string _currentModule = "";
 
         /// <summary>Depth of nested unsafe contexts (unsafe blocks, unsafe functions, extern signatures).</summary>
         private int _unsafeDepth;
@@ -29,6 +31,7 @@ namespace Sage.Core
         /// </summary>
         public void RegisterModuleSymbols(ProgramNode moduleAst)
         {
+            foreach (var function in moduleAst.Statements.OfType<FunctionDeclarationNode>()) RegisterFunction(function);
             foreach (var node in moduleAst.Statements.OfType<ModuleNode>())
             {
                 RegisterExternBlocks(node);
@@ -42,14 +45,17 @@ namespace Sage.Core
 
         private void RegisterFunction(FunctionDeclarationNode func, string moduleName = "")
         {
-            // 1. Define the bare name (e.g., "print_line") for use inside the module itself.
-            _symbolTable.Define(func.Name, func.ReturnType, isFunction: true, isExtern: func.IsExtern);
-
-            // 2. Define the fully qualified name (e.g., "console::print_line") for external use.
-            if (!string.IsNullOrEmpty(moduleName))
+            string name = string.IsNullOrEmpty(moduleName) ? func.Name : $"{moduleName}::{func.Name}";
+            if (_functionDeclarations.TryGetValue(name, out var existing))
             {
-                _symbolTable.Define($"{moduleName}::{func.Name}", func.ReturnType, isFunction: true, isExtern: func.IsExtern);
+                if (!ReferenceEquals(existing, func))
+                    throw new CompilerException(func, "S150", $"Callable '{name}' is already declared.");
+                return;
             }
+            if (_symbolTable.Resolve(name) != null)
+                throw new CompilerException(func, "S150", $"Callable '{name}' conflicts with an existing declaration.");
+            _functionDeclarations.Add(name, func);
+            _symbolTable.Define(name, func.ReturnType, isFunction: true, isExtern: func.IsExtern);
         }
 
         /// <summary>
@@ -72,6 +78,9 @@ namespace Sage.Core
                         TypeSystem.RegisterOpaqueType(opaque.Name);
                         break;
                     case FunctionDeclarationNode func:
+                        if (_functionDeclarations.ContainsKey($"{node.Alias}::{func.Name}"))
+                            throw new CompilerException(func, "S150",
+                                $"Native alias '{node.Alias}::{func.Name}' conflicts with a Sage callable.");
                         _symbolTable.Define($"{node.Alias}::{func.Name}", func.ReturnType, isFunction: true, isExtern: true);
                         break;
                 }
@@ -96,14 +105,16 @@ namespace Sage.Core
                 RegisterFunction(member, node.Name);
             }
 
-            foreach (var member in node.Members) member.Accept(this);
+            string previousModule = _currentModule;
+            _currentModule = node.Name;
+            try { foreach (var member in node.Members) member.Accept(this); }
+            finally { _currentModule = previousModule; }
             return "none";
         }
 
         public string Visit(FunctionDeclarationNode node)
         {
-            if (!_symbolTable.IsDefinedInCurrentScope(node.Name))
-                RegisterFunction(node, node.ModuleOwner);
+            RegisterFunction(node, node.ModuleOwner);
 
             // An unsafe or extern function establishes an unsafe context for its signature and body.
             bool unsafeContext = node.IsUnsafe || node.IsExtern;
@@ -211,9 +222,21 @@ namespace Sage.Core
 
         public string Visit(FunctionCallNode node)
         {
-            var symbol = _symbolTable.Resolve(node.Name)
+            string name = node.Name;
+            var symbol = _symbolTable.ResolveLocal(name);
+            if (symbol == null)
+            {
+                if (!name.Contains("::") && !string.IsNullOrEmpty(_currentModule) &&
+                    _symbolTable.Resolve($"{_currentModule}::{name}") != null)
+                    name = $"{_currentModule}::{name}";
+                symbol = _symbolTable.Resolve(name);
+            }
+            symbol = symbol
                 ?? throw new CompilerException(node, "S105", $"Function '{node.Name}' not found.");
+            if (!symbol.IsFunction)
+                throw new CompilerException(node, "S151", $"Symbol '{node.Name}' is not callable.");
 
+            node.ResolvedName = name;
             node.IsExternCall = symbol.IsExtern;
 
             foreach (var arg in node.Arguments)

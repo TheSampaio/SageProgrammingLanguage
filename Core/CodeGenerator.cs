@@ -102,7 +102,7 @@ namespace Sage.Core
         /// </summary>
         public string Visit(FunctionCallNode node)
         {
-            string cName = node.Name;
+            string cName = node.ResolvedName ?? node.Name;
             if (cName.Contains("::"))
             {
                 // Handle external namespace calls or internal module scoping
@@ -436,7 +436,8 @@ namespace Sage.Core
                     foreach (var parameter in function.Parameters) _usedNames.Add(parameter.Name);
                     break;
                 case FunctionCallNode call:
-                    _usedNames.Add(call.IsExternCall ? call.Name.Split("::")[^1] : call.Name.Replace("::", "_"));
+                    string resolved = call.ResolvedName ?? call.Name;
+                    _usedNames.Add(call.IsExternCall ? resolved.Split("::")[^1] : resolved.Replace("::", "_"));
                     break;
                 case StructDeclarationNode structure: _usedNames.Add(structure.Name); break;
                 case ExternTypeNode opaque: _usedNames.Add(opaque.Name); break;

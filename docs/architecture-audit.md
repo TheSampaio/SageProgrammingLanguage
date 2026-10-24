@@ -43,10 +43,10 @@ operations, not a general memory-safety proof.
 - `extern` declarations specify C header, native symbol, and optional link
   library. They do not encode pointer length, nullability, ownership transfer,
   or callback lifetime. No C++ declaration parser or adapter generator exists.
-- `RegisterFunction` inserts unqualified and qualified names into a shared
-  symbol table. `SymbolTable.Define` overwrites an existing entry; duplicate
-  names from modules can therefore silently replace metadata. Module discovery
-  keys files by basename and skips a later file with the same basename.
+- At baseline, `RegisterFunction` inserted unqualified and qualified names into a
+  shared table, allowing silent replacement. v0.8.4 fixes Sage callable scoping
+  and preserves resolved origins; see [module resolution](modules.md). Native
+  alias consistency and module discovery's basename keys still need review.
 - `Sandbox/std/http.sg` launches `curl` through interpolated shell commands in
   its high-level helpers. Treat URL and payload inputs as untrusted until those
   wrappers stop constructing shell commands.

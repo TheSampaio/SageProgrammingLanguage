@@ -67,6 +67,8 @@ The current compiler restricts some raw pointer operations through an **unsafe c
 
 ### Scope Management (`SymbolTable`)
 
+Callable origin and module-scoping rules are documented in [module resolution](docs/modules.md).
+
 The `SymbolTable` uses a `Stack<Dictionary<string, Symbol>>` to represent **Lexical Scoping**.
 
 * **Entering a block** (`{`): Pushes a new dictionary onto the stack.

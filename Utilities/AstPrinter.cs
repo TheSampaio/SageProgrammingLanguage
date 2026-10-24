@@ -159,6 +159,7 @@ namespace Sage.Utilities
         {
             Type = "FunctionCall",
             FunctionName = node.Name,
+            node.ResolvedName,
             Arguments = node.Arguments.Select(a => a.Accept(this))
         };
 

@@ -67,6 +67,14 @@
             return null;
         }
 
+        /// <summary>Resolves lexical bindings while excluding the global declaration scope.</summary>
+        public SymbolMetadata? ResolveLocal(string name)
+        {
+            foreach (var scope in _scopes.Take(_scopes.Count - 1))
+                if (scope.TryGetValue(name, out var symbol)) return symbol;
+            return null;
+        }
+
         /// <summary>
         /// Checks if a symbol is already declared specifically within the current (topmost) scope.
         /// Useful for preventing duplicate declarations within the same block.
