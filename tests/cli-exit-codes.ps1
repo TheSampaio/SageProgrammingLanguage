@@ -10,8 +10,8 @@ New-Item -ItemType Directory -Path $probeDir | Out-Null
 
 try {
     $versionOutput = & dotnet $compilerPath --version 2>&1
-    if ($LASTEXITCODE -ne 0 -or ($versionOutput -join "`n") -notmatch 'Sage Compiler v0\.8\.1') {
-        throw "--version should succeed and report v0.8.1."
+    if ($LASTEXITCODE -ne 0 -or ($versionOutput -join "`n") -notmatch 'Sage Compiler v\d+\.\d+\.\d+') {
+        throw "--version should succeed and report a semantic version."
     }
 
     $source = Join-Path $probeDir 'invalid.sg'

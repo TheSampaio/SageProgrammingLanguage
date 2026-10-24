@@ -58,11 +58,11 @@ Sage utilizes a **Static Typing** system with a focus on ABI safety and predicta
 
 ### Memory Safety Model
 
-The current compiler restricts some raw pointer operations through an **unsafe context depth** in `SemanticAnalyzer`. It does not yet provide general ownership, borrowing, or lifetime safety; see [the architecture audit](docs/architecture-audit.md) and [memory model proposal](docs/memory-model-proposal.md).
+The current compiler restricts some raw pointer operations through an **unsafe context depth** in `SemanticAnalyzer`. It also tracks local heap-reference transfers and deletion across branches through `OwnershipState`. See [implemented memory semantics](docs/memory.md) for exact guarantees and [the target model](docs/memory-model-proposal.md) for subsequent work.
 
 * **Raw pointers** (`T*`, including `none*`) may only be *declared*, *cast to*, or *dereferenced/indexed* inside an `unsafe { }` block or an `unsafe func`. `str` is a distinct surface type, but its generated `char*` lifetime is not checked.
 * **`extern` is implicitly unsafe**: FFI signatures may traffic in raw pointers without extra annotation.
-* **`new` / `delete`**: `new T { ... }` allocates on the heap and yields a reference with surface type `T`, represented as `T*` in C (member access lowers to `->`). References carry no pointer arithmetic and are released with `delete` (→ `free`). The `AstNode.IsReference` and `SymbolMetadata.IsReference` flags do not track aliases, moves, or destruction.
+* **`new` / `delete`**: `new T { ... }` allocates on the heap and yields a reference with surface type `T`, represented as `T*` in C (member access lowers to `->`). `SymbolMetadata.Ownership` records availability, transfer, and deletion by binding identity. The analyzer snapshots and merges these states across conditional branches; the backend clears moved and deleted pointers.
 * **`const` is enforced**: reassigning a constant is a compile error (`SymbolMetadata.IsConstant`).
 
 ### Scope Management (`SymbolTable`)

@@ -13,7 +13,7 @@ The project strictly follows **SOLID principles** and **Clean Code** architectur
 
 * **Native Compilation:** Handles the entire build process from source to optimized binary (`.exe`).
 * **Pointer Boundary:** Raw pointers (`T*`) are restricted to `unsafe` contexts and FFI. This is not yet an ownership or lifetime guarantee.
-* **Manual Heap Allocation (`new` / `delete`):** Struct references currently require explicit deletion. Ownership, borrow checking, and automatic cleanup are proposed but not implemented.
+* **Local Ownership Tracking:** Heap-reference initialization transfers ownership. The compiler rejects use after move, use after deletion, and conflicting branch states. Borrowing and automatic cleanup remain future work; see [memory semantics](docs/memory.md).
 * **Ergonomic FFI:** `extern` blocks with C interop aliases (`c_int`, `c_size_t`, `c_char`, …) and opaque C types (`type FILE;`) that map cleanly onto real C signatures.
 * **Tree-Shaking Code Gen:** Smart header management that only includes necessary C headers (`stdio.h`, `stdint.h`, etc.) based on actual code usage.
 * **Modern Type System:** Explicit fixed-width types (`i32`, `f64`, `str`, `b8`) with support for **Constants** (`const`) and **Explicit Casting** (`as`).
@@ -251,8 +251,9 @@ func main(): none
 Sage currently restricts raw pointers (`T*`, including `none*`) in
 ordinary code — declaring, casting to, or dereferencing one is a compile error. They are only
 allowed inside an `unsafe { }` block or in an `unsafe func`. FFI declarations (`extern`) are
-implicitly unsafe, since they cross into C. This restriction does not prevent
-aliasing, use-after-delete, or leaks from `new`; see the [audit](docs/architecture-audit.md).
+implicitly unsafe, since they cross into C. Local heap references now have
+[move and deletion checks](docs/memory.md), while native aliases and resource
+lifetimes across API boundaries still require further work.
 
 ### Manual heap allocation: `new` / `delete`
 
@@ -346,7 +347,7 @@ file directly with `sage <file>.test.sg` and read the `[PASS]`/`[FAIL]` output.
 
 ## Project Status
 
-The project is currently in **v0.8.1 (Alpha)**.
+The project is currently in **v0.8.2 (Alpha)**.
 
 * [x] **CLI & Project System** (`new`, `build`, `run`, `--version`)
 * [x] **Variable Declarations** (`var`) & **Constants** (`const`)

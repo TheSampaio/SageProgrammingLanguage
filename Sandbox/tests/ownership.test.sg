@@ -1,0 +1,23 @@
+/// Regression tests for local ownership transfers and ordinary struct copies.
+use test;
+
+struct Counter
+{
+    value: i32;
+}
+
+func main(): none
+{
+    var original: Counter = new Counter { value = 7 };
+    var current: Counter = original;
+    test::assert_eq_i32("moved_value", current.value, 7);
+    current.value = 8;
+    test::assert_eq_i32("moved_mutation", current.value, 8);
+    delete current;
+
+    var first: Counter = { value = 2 };
+    var second: Counter = first;
+    second.value = 3;
+    test::assert_eq_i32("copy_original", first.value, 2);
+    test::assert_eq_i32("copy_independent", second.value, 3);
+}

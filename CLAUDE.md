@@ -73,7 +73,8 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
 - `new T { ... }` allocates on the heap and yields a **reference** (surface type `T`,
   represented as `T*` in C with `->` access; no pointer arithmetic). Freed with `delete` (→ `free`).
   Reference-ness is carried by `AstNode.IsReference` and `SymbolMetadata.IsReference`.
-  The compiler does not yet enforce unique ownership or automatic cleanup.
+  Local reference initialization now transfers ownership. Use after transfer or deletion
+  is rejected; see `docs/memory.md`. Automatic cleanup and borrow contracts are pending.
 - `const` is enforced (`SymbolMetadata.IsConstant`).
 
 ## FFI / stdlib conventions
@@ -103,6 +104,8 @@ Format: `file(line,col): error CODE: message`. The real source file is tracked v
 `CompilerLogger.CurrentFile` (set per module by the pipeline) — never hardcode a filename.
 
 ## VS Code extension (companion repo)
+
+The planned compiler-derived semantic navigation tool is named **Graphify**.
 
 - Plain JavaScript, **no build step** (`extension.js`). Contributes grammar, icons, a
   "Sage: Run Current File" command, and a **Test Explorer** that runs `*.test.sg` files and parses

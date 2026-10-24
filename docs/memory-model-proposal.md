@@ -1,6 +1,8 @@
 # Proposed ownership model (design, not implemented)
 
 This document records the target contract for the next compiler increments.
+The [implemented subset](memory.md) currently covers local reference transfers
+and invalidation after deletion.
 Examples using `&` and `&mut` are proposed syntax and **do not compile today**.
 Existing `new`, `delete`, and `unsafe` programs remain valid until a separately
 tested migration deliberately changes that behavior.

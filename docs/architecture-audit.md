@@ -14,7 +14,10 @@ not separately compile reusable object files or maintain an incremental cache.
 `Program` handles `--version`, `-v`, and `new`; the pipeline handles `run`, `build`,
 and an explicit source path. Compiler errors now return a nonzero process status.
 
-## Confirmed memory limitations
+## Baseline memory limitations (before v0.8.2)
+
+The subsequent [local ownership increment](memory.md) adds transfer and deletion
+tracking. The findings below describe the baseline that motivated it.
 
 - `SemanticAnalyzer` gates raw pointer declarations, casts, and indexing behind
   `unsafe` contexts, but it does not track ownership, borrows, moves, or lifetimes.
@@ -65,6 +68,7 @@ operations, not a general memory-safety proof.
    wrappers. Add bounded C++ adapter generation only after these contracts exist.
 5. Strengthen module resolution, add extension methods, semantic indexing,
    structured diagnostics, then incremental compilation with cache validation.
+   The semantic navigation tool is named **Graphify**.
 
 Each implementation step needs executable positive and negative cases and the
 Sandbox regression suite. The VS Code extension should consume stable CLI or

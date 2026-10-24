@@ -16,6 +16,7 @@ namespace Sage.Core
 
         /// <summary>Depth of nested unsafe contexts (unsafe blocks, unsafe functions, extern signatures).</summary>
         private int _unsafeDepth;
+        private int _loopDepth;
 
         /// <summary>True when analysis is currently inside an unsafe context.</summary>
         private bool InUnsafe => _unsafeDepth > 0;
@@ -175,7 +176,11 @@ namespace Sage.Core
                 node.IsReference = node.Initializer.IsReference;
             }
 
-            _symbolTable.Define(node.Name, node.Type, isConstant: node.IsConstant, isReference: node.IsReference);
+            if (node.Initializer is IdentifierNode source && node.IsReference)
+                ConsumeReference(source, node, OwnershipKind.Moved);
+
+            _symbolTable.Define(node.Name, node.Type, isConstant: node.IsConstant,
+                isReference: node.IsReference, declarationLoopDepth: _loopDepth);
             return node.Type;
         }
 
@@ -204,7 +209,11 @@ namespace Sage.Core
 
             node.IsExternCall = symbol.IsExtern;
 
-            foreach (var arg in node.Arguments) arg.Accept(this);
+            foreach (var arg in node.Arguments)
+            {
+                arg.Accept(this);
+                RequireValueContract(arg);
+            }
 
             return symbol.Type;
         }
@@ -240,6 +249,24 @@ namespace Sage.Core
         {
             var symbol = _symbolTable.Resolve(node.Name)
                 ?? throw new CompilerException(node, "S105", $"Identifier '{node.Name}' not declared.");
+            if (symbol.IsReference && symbol.Ownership.Kind != OwnershipKind.Available)
+            {
+                var state = symbol.Ownership;
+                string code = state.Kind switch
+                {
+                    OwnershipKind.Moved => "S140",
+                    OwnershipKind.Released => "S141",
+                    _ => "S142"
+                };
+                string reason = state.Kind switch
+                {
+                    OwnershipKind.Moved => "was moved",
+                    OwnershipKind.Released => "was deleted",
+                    _ => "may have been moved or deleted on another path"
+                };
+                throw new CompilerException(node, code,
+                    $"Reference '{node.Name}' {reason} at ({state.Line},{state.Column}) and cannot be used here.");
+            }
             node.VariableType = symbol.Type;
             node.IsReference = symbol.IsReference;
             return symbol.Type;
@@ -263,7 +290,11 @@ namespace Sage.Core
             }
 
             string targetType = node.Target.Accept(this);
+            if (node.Target.IsReference)
+                throw new CompilerException(node, "S143",
+                    "Reassigning an owning reference is not supported yet. Create a new binding to transfer ownership.");
             string exprType = node.Expression.Accept(this);
+            RequireValueContract(node.Expression);
 
             if (exprType != "struct_initializer" && exprType != "array_initializer")
             {
@@ -291,16 +322,52 @@ namespace Sage.Core
             return "none";
         }
 
-        public string Visit(IfNode node) { CheckCondition(node.Condition); node.ThenBranch.Accept(this); node.ElseBranch?.Accept(this); return "none"; }
-        public string Visit(WhileNode node) { CheckCondition(node.Condition); node.Body.Accept(this); return "none"; }
+        public string Visit(IfNode node)
+        {
+            CheckCondition(node.Condition);
+            var before = _symbolTable.CaptureOwnership();
+            node.ThenBranch.Accept(this);
+            var thenState = _symbolTable.CaptureOwnership();
+            SymbolTable.RestoreOwnership(before);
+            node.ElseBranch?.Accept(this);
+            var elseState = _symbolTable.CaptureOwnership();
+
+            bool thenContinues = CanCompleteNormally(node.ThenBranch);
+            bool elseContinues = node.ElseBranch == null || CanCompleteNormally(node.ElseBranch);
+            foreach (var symbol in before.Keys)
+            {
+                var left = thenState[symbol];
+                var right = elseState[symbol];
+                symbol.Ownership = !thenContinues ? right : !elseContinues ? left
+                    : left.Kind == right.Kind ? left
+                    : new OwnershipState(OwnershipKind.MaybeUnavailable,
+                        left.Kind != OwnershipKind.Available ? left.Line : right.Line,
+                        left.Kind != OwnershipKind.Available ? left.Column : right.Column);
+            }
+            return "none";
+        }
+
+        public string Visit(WhileNode node)
+        {
+            CheckCondition(node.Condition);
+            _loopDepth++;
+            try { node.Body.Accept(this); }
+            finally { _loopDepth--; }
+            return "none";
+        }
 
         public string Visit(ForNode node)
         {
             _symbolTable.EnterScope();
             node.Initializer?.Accept(this);
             if (node.Condition != null) CheckCondition(node.Condition);
-            node.Increment?.Accept(this);
-            node.Body.Accept(this);
+            _loopDepth++;
+            try
+            {
+                node.Body.Accept(this);
+                node.Increment?.Accept(this);
+            }
+            finally { _loopDepth--; }
             _symbolTable.ExitScope();
             return "none";
         }
@@ -312,13 +379,19 @@ namespace Sage.Core
         }
 
         public string Visit(LiteralNode node) => node.TypeName;
-        public string Visit(ReturnNode node) => node.Expression.Accept(this);
+        public string Visit(ReturnNode node)
+        {
+            string type = node.Expression.Accept(this);
+            RequireValueContract(node.Expression);
+            return type;
+        }
         public string Visit(ExpressionStatementNode node) => node.Expression.Accept(this);
         public string Visit(UnaryExpressionNode node) => node.Operand.Accept(this);
 
         public string Visit(CastExpressionNode node)
         {
             node.Expression.Accept(this);
+            if (!TypeSystem.IsRawPointer(node.TargetType)) RequireValueContract(node.Expression);
 
             if (TypeSystem.IsRawPointer(node.TargetType) && !InUnsafe)
                 throw new CompilerException(node, "S122",
@@ -345,7 +418,11 @@ namespace Sage.Core
 
         public string Visit(StructInitializationNode node)
         {
-            foreach (var value in node.Fields.Values) value.Accept(this);
+            foreach (var value in node.Fields.Values)
+            {
+                value.Accept(this);
+                RequireValueContract(value);
+            }
             return "struct_initializer";
         }
 
@@ -362,6 +439,7 @@ namespace Sage.Core
                         $"Struct '{node.TypeName}' does not contain field '{fieldName}'.");
 
                 valueExpr.Accept(this);
+                RequireValueContract(valueExpr);
                 if (valueExpr is LiteralNode lit) lit.TypeName = field.Type;
                 valueExpr.VariableType = field.Type;
             }
@@ -378,6 +456,8 @@ namespace Sage.Core
             if (!node.Target.IsReference)
                 throw new CompilerException(node, "S132",
                     "'delete' expects a reference created with 'new'. For raw pointers use memory::release inside 'unsafe'.");
+            if (node.Target is IdentifierNode target)
+                ConsumeReference(target, node, OwnershipKind.Released);
             return "none";
         }
 
@@ -400,9 +480,39 @@ namespace Sage.Core
 
         public string Visit(ArrayInitializationNode node)
         {
-            foreach (var el in node.Elements) el.Accept(this);
+            foreach (var el in node.Elements)
+            {
+                el.Accept(this);
+                RequireValueContract(el);
+            }
             return "array_initializer";
         }
+
+        private void ConsumeReference(IdentifierNode source, AstNode operation, OwnershipKind kind)
+        {
+            var symbol = _symbolTable.Resolve(source.Name)!;
+            if (_loopDepth > symbol.DeclarationLoopDepth)
+                throw new CompilerException(operation, "S145",
+                    $"Reference '{source.Name}' is declared outside this loop and cannot be moved or deleted on a potentially repeated path.");
+            symbol.Ownership = new OwnershipState(kind, operation.Line, operation.Column);
+        }
+
+        private static void RequireValueContract(AstNode expression)
+        {
+            if (expression.IsReference)
+                throw new CompilerException(expression, "S144",
+                    "This operation has no owning or borrowing reference contract yet. Pass a field value or keep the reference in a local binding.");
+        }
+
+        private static bool CanCompleteNormally(AstNode node) => node switch
+        {
+            ReturnNode => false,
+            BlockNode block => block.Statements.All(CanCompleteNormally),
+            UnsafeBlockNode block => CanCompleteNormally(block.Body),
+            IfNode conditional when conditional.ElseBranch != null =>
+                CanCompleteNormally(conditional.ThenBranch) || CanCompleteNormally(conditional.ElseBranch),
+            _ => true
+        };
 
         public string Visit(ArrayAccessNode node)
         {

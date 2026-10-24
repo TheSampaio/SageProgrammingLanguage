@@ -14,7 +14,8 @@ namespace Sage.Core
         bool isFunction,
         bool isExtern,
         bool isConstant = false,
-        bool isReference = false)
+        bool isReference = false,
+        int declarationLoopDepth = 0)
     {
         /// <summary>Gets the Sage data type associated with this symbol.</summary>
         public string Type { get; } = type;
@@ -30,5 +31,11 @@ namespace Sage.Core
 
         /// <summary>Gets a value indicating whether this symbol holds a safe heap reference (from <c>new</c>).</summary>
         public bool IsReference { get; } = isReference;
+
+        /// <summary>Current path-sensitive availability of an owning reference.</summary>
+        public OwnershipState Ownership { get; set; } = OwnershipState.Available;
+
+        /// <summary>Loop nesting at declaration, used to reject repeated consumption.</summary>
+        public int DeclarationLoopDepth { get; } = declarationLoopDepth;
     }
 }

@@ -44,11 +44,12 @@
             bool isFunction = false,
             bool isExtern = false,
             bool isConstant = false,
-            bool isReference = false)
+            bool isReference = false,
+            int declarationLoopDepth = 0)
         {
             if (_scopes.Count > 0)
             {
-                _scopes.Peek()[name] = new SymbolMetadata(type, isFunction, isExtern, isConstant, isReference);
+                _scopes.Peek()[name] = new SymbolMetadata(type, isFunction, isExtern, isConstant, isReference, declarationLoopDepth);
             }
         }
 
@@ -73,5 +74,16 @@
         /// <param name="name">The identifier name to check.</param>
         /// <returns><c>true</c> if the symbol exists in the current scope; otherwise, <c>false</c>.</returns>
         public bool IsDefinedInCurrentScope(string name) => _scopes.Count > 0 && _scopes.Peek().ContainsKey(name);
+
+        /// <summary>Snapshots binding identities so shadowed names retain separate state.</summary>
+        public Dictionary<SymbolMetadata, OwnershipState> CaptureOwnership() =>
+            _scopes.SelectMany(scope => scope.Values).Where(symbol => symbol.IsReference)
+                .ToDictionary(symbol => symbol, symbol => symbol.Ownership);
+
+        /// <summary>Restores states captured before a branch or loop.</summary>
+        public static void RestoreOwnership(IReadOnlyDictionary<SymbolMetadata, OwnershipState> snapshot)
+        {
+            foreach (var (symbol, state) in snapshot) symbol.Ownership = state;
+        }
     }
 }

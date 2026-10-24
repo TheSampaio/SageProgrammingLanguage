@@ -113,6 +113,14 @@ namespace Sage.Core
             if (node.IsReference)
             {
                 string refType = $"{TypeSystem.ToCType(node.Type)}*";
+                if (node.Initializer is IdentifierNode source)
+                {
+                    string temporary = $"_move{_tempCounter++}";
+                    string name = source.Accept(this);
+                    return $"{Indent}{refType} {temporary} = {name};\n" +
+                        $"{Indent}{name} = NULL;\n" +
+                        $"{Indent}{prefix}{refType} {node.Name} = {temporary};\n";
+                }
                 return $"{Indent}{prefix}{refType} {node.Name}{init};\n";
             }
 
@@ -217,7 +225,12 @@ namespace Sage.Core
         }
 
         /// <summary>Releases a safe heap reference produced by <c>new</c>.</summary>
-        public string Visit(DeleteNode node) => $"{Indent}free({node.Target.Accept(this)});\n";
+        public string Visit(DeleteNode node)
+        {
+            string target = node.Target.Accept(this);
+            string clear = node.Target is IdentifierNode ? $"{Indent}{target} = NULL;\n" : "";
+            return $"{Indent}free({target});\n{clear}";
+        }
 
         public string Visit(BinaryExpressionNode node)
         {
