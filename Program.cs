@@ -18,8 +18,7 @@ namespace Sage
             try
             {
                 if (HandleMetaCommands(args)) return 0;
-                CompilationPipeline.Run(args);
-                return 0;
+                return CompilationPipeline.Run(args);
             }
             catch (Exception ex)
             {

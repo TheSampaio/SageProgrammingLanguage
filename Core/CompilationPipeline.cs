@@ -13,7 +13,7 @@ namespace Sage.Core
         /// Executes the full compilation lifecycle based on provided command-line arguments.
         /// </summary>
         /// <param name="args">The command-line arguments containing paths and configuration flags.</param>
-        public static void Run(string[] args)
+        public static int Run(string[] args)
         {
             TypeSystem.Reset();
 
@@ -40,8 +40,9 @@ namespace Sage.Core
             if (config.BuildNative)
             {
                 var libraries = CollectLinkLibraries(parsedModules);
-                LinkNativeBinary(generatedCFiles, libraries, config, env);
+                return LinkNativeBinary(generatedCFiles, libraries, config, env);
             }
+            return 0;
         }
 
         /// <summary>
@@ -189,7 +190,7 @@ namespace Sage.Core
         /// <summary>
         /// Invokes the native toolchain to link generated C files into an executable binary.
         /// </summary>
-        private static void LinkNativeBinary(List<string> cFiles, HashSet<string> libraries, CompilerConfig config, CompilationEnvironment env)
+        private static int LinkNativeBinary(List<string> cFiles, HashSet<string> libraries, CompilerConfig config, CompilationEnvironment env)
         {
             if (config.IsDebugMode) CompilerLogger.LogStep("\nLinking binaries...");
 
@@ -210,18 +211,19 @@ namespace Sage.Core
 
             if (config.RunOnSuccess)
             {
-                RunApplication(exePath);
+                return RunApplication(exePath);
             }
             else
             {
                 CompilerLogger.LogSuccess($"Build complete: {exePath}");
+                return 0;
             }
         }
 
         /// <summary>
         /// Starts the compiled application and monitors its exit status.
         /// </summary>
-        private static void RunApplication(string exePath)
+        private static int RunApplication(string exePath)
         {
 #if DEBUG
             CompilerLogger.LogStep("Running Application...");
@@ -229,8 +231,7 @@ namespace Sage.Core
 #endif
             if (!File.Exists(exePath))
             {
-                CompilerLogger.LogError($"Executable not found at: {exePath}");
-                return;
+                throw new FileNotFoundException($"Executable not found at: {exePath}");
             }
 
             using var process = Process.Start(new ProcessStartInfo
@@ -238,13 +239,14 @@ namespace Sage.Core
                 FileName = exePath,
                 UseShellExecute = false,
                 WorkingDirectory = Path.GetDirectoryName(exePath)
-            });
+            }) ?? throw new InvalidOperationException($"Could not start application: {exePath}");
 
-            process?.WaitForExit();
+            process.WaitForExit();
 #if DEBUG
             Console.WriteLine("--------------------------------------------------");
-            CompilerLogger.LogInfo($"App exited with code: {process?.ExitCode ?? -1}");
+            CompilerLogger.LogInfo($"App exited with code: {process.ExitCode}");
 #endif
+            return process.ExitCode;
         }
     }
 }

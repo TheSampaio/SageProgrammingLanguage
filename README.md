@@ -331,6 +331,9 @@ The bundled standard library (`Sandbox/std/`) doubles as the reference for idiom
 
 ## Testing
 
+Execution commands propagate the native application's exit status; see
+[CLI exit status](docs/cli-exit-status.md) for build-only and failure behavior.
+
 Tests are ordinary Sage programs (`Sandbox/tests/*.test.sg`) that use the `test` module:
 
 ```rust
@@ -348,7 +351,7 @@ file directly with `sage <file>.test.sg` and read the `[PASS]`/`[FAIL]` output.
 
 ## Project Status
 
-The project is currently in **v0.9.2 (Alpha)**.
+The project is currently in **v0.9.3 (Alpha)**.
 
 * [x] **CLI & Project System** (`new`, `build`, `run`, `--version`)
 * [x] **Variable Declarations** (`var`) & **Constants** (`const`)
