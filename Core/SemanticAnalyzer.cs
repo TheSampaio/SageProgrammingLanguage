@@ -54,6 +54,8 @@ namespace Sage.Core
             foreach (var parameter in func.Parameters) ValidateArrayLength(parameter.Type, func);
             if (TypeSystem.IsBorrowType(func.ReturnType))
                 throw new CompilerException(func, "S173", "Borrowed return values require lifetime contracts that are not implemented yet.");
+            if (TypeSystem.IsArrayType(func.ReturnType))
+                throw new CompilerException(func, "S188", "Fixed-array returns require a value ABI that is not implemented yet.");
             string name = string.IsNullOrEmpty(moduleName) ? func.Name : $"{moduleName}::{func.Name}";
             if (_functionDeclarations.TryGetValue(name, out var existing))
             {
@@ -146,6 +148,8 @@ namespace Sage.Core
                 if (!IsBorrowableValue(TypeSystem.GetBorrowedType(parameter.Type)))
                     throw new CompilerException(node, "S176",
                         $"Borrowed parameter '{parameter.Name}' requires a scalar or a struct composed of borrowable values; '{parameter.Type}' is not supported yet.");
+            foreach (var parameter in node.Parameters.Where(parameter => TypeSystem.IsArrayType(parameter.Type) && !TypeSystem.IsBorrowType(parameter.Type)))
+                RequireCopyableArray(parameter.Type, node);
 
             // An unsafe or extern function establishes an unsafe context for its signature and body.
             bool unsafeContext = node.IsUnsafe || node.IsExtern;
@@ -214,6 +218,12 @@ namespace Sage.Core
             if (node.Initializer != null)
             {
                 AnalyzeValue(node.Initializer, node.Type, "S101", $"Initializer of '{node.Name}'");
+                if (TypeSystem.IsArrayType(node.Type) && node.Initializer is not ArrayInitializationNode)
+                {
+                    if (_functionDepth == 0)
+                        throw new CompilerException(node, "S188", "Array copy initialization requires a function scope.");
+                    RequireCopyableArray(node.Type, node);
+                }
 
                 // A variable initialized from 'new' becomes a safe heap reference.
                 node.IsReference = node.Initializer.IsReference;
@@ -410,6 +420,8 @@ namespace Sage.Core
             {
                 var field = structure.Fields.FirstOrDefault(field => field.Name == name)
                     ?? throw new CompilerException(value, "S131", $"Struct '{type}' does not contain field '{name}'.");
+                if (TypeSystem.IsArrayType(field.Type) && value is not ArrayInitializationNode)
+                    throw new CompilerException(value, "S188", "Initialize an array field with a literal, then copy into it by assignment.");
                 AnalyzeValue(value, field.Type, "S181", $"Field '{type}.{name}'");
                 RequireValueContract(value);
             }
@@ -465,6 +477,12 @@ namespace Sage.Core
             }
 
             string targetType = node.Target.Accept(this);
+            if (TypeSystem.IsArrayType(targetType))
+            {
+                if (_functionDepth == 0) throw new CompilerException(node, "S188", "Array copy assignment requires a function scope.");
+                RequireStableArrayPlace(node.Target);
+                RequireCopyableArray(targetType, node);
+            }
             if (node.Target.IsReference)
                 throw new CompilerException(node, "S143",
                     "Reassigning an owning reference is not supported yet. Create a new binding to transfer ownership.");
@@ -676,15 +694,26 @@ namespace Sage.Core
             _structDeclarations[node.Name] = node;
         }
 
-        private bool IsBorrowableValue(string type, HashSet<string>? path = null)
+        private bool IsBorrowableValue(string type) => !TypeSystem.IsArrayType(type) && TypeCapabilities.IsCopyable(type, _structDeclarations);
+
+        private void RequireCopyableArray(string type, AstNode operation)
         {
-            if (TypeSystem.IsNumeric(type) || type is "b8" or "c_bool") return true;
-            if (!_structDeclarations.TryGetValue(type, out var structure)) return false;
-            path ??= new HashSet<string>(StringComparer.Ordinal);
-            if (!path.Add(type)) return false;
-            bool supported = structure.Fields.All(field => IsBorrowableValue(field.Type, path));
-            path.Remove(type);
-            return supported;
+            if (!TypeCapabilities.IsCopyable(type, _structDeclarations))
+                throw new CompilerException(operation, "S188", $"Array value copying requires scalar or recursively copyable struct elements; '{type}' has no supported copy contract.");
+        }
+
+        private static bool IsStableArrayPlace(AstNode expression) => expression switch
+        {
+            IdentifierNode => true,
+            MemberAccessNode member => IsStableArrayPlace(member.Object),
+            ArrayAccessNode array => IsStableArrayPlace(array.Array),
+            _ => false
+        };
+
+        private static void RequireStableArrayPlace(AstNode expression)
+        {
+            if (!IsStableArrayPlace(expression))
+                throw new CompilerException(expression, "S189", "Bind the containing value to a local before indexing or mutating its array field.");
         }
 
         private void EnsureMutablePlace(AstNode target, AstNode operation)
@@ -766,6 +795,8 @@ namespace Sage.Core
 
             if (!isArray && !isPointer)
                 throw new CompilerException(node, "S111", $"Cannot index into non-array and non-pointer type '{arrayType}'.");
+
+            if (isArray) RequireStableArrayPlace(node.Array);
 
             if (isPointer && !InUnsafe)
                 throw new CompilerException(node, "S123",

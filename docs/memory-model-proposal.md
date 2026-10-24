@@ -5,6 +5,9 @@ The [implemented subset](memory.md) covers local reference transfers, cleanup,
 and invalidation after deletion. [Borrowed parameters](borrowing.md) implement
 `&T` and `&mut T` for the duration of a call; lexical local bindings are also
 implemented. Field-stored and returned borrows remain proposed work.
+[Value-copy capabilities and fixed-array copies](value-copy.md) are implemented
+for a bounded subset; owned buffers, files, and native resource contracts below
+remain proposed work.
 Existing `new`, `delete`, and `unsafe` programs remain valid until a separately
 tested migration deliberately changes that behavior.
 

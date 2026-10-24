@@ -29,10 +29,15 @@ positive and representable as `i32`; invalid lengths are `S187`. Constant foldin
 of arithmetic, named constants, and casts is not implemented here; their indices
 receive the runtime check instead.
 
+Since v0.10.0, indexing array fields on returned temporary structs is rejected
+with `S189`; bind the containing struct to a local first. See [value-copy
+lifetimes](value-copy.md) for copying whole temporary fields safely.
+
 Arrays remain checked inside `unsafe` blocks. Raw pointer indexing remains an
 unchecked native operation requiring `unsafe`. A native pointer's real allocation
-size, nullability, native ABI declarations, array argument aliasing, and ownership
-are separate contracts. In particular, checked array parameters trust the declared
+size, nullability, native ABI declarations, and ownership are separate contracts.
+[Sage array value parameters](value-copy.md) now copy on entry; native ABI arguments
+retain trusted aliasing behavior. Checked array parameters trust the declared
 length: this does not validate memory supplied through an unsafe/native boundary.
 
 Validate semantic and native failures with `tests/array-bounds.ps1`; the Sandbox

@@ -124,7 +124,10 @@ namespace Sage.Core
 
             string paramsStr = (isMain || node.Parameters.Count == 0)
                 ? "void"
-                : string.Join(", ", node.Parameters.Select(p => TypeSystem.FormatCParameter(p.Name, p.Type)));
+                : string.Join(", ", node.Parameters.Select(p => node.IsExtern ? TypeSystem.FormatCParameter(p.Name, p.Type)
+                    : TypeSystem.FormatSageParameter(p.Name, p.Type)));
+
+            if (!node.IsExtern && node.Parameters.Any(parameter => TypeSystem.IsArrayType(parameter.Type))) AddHeader("string.h");
 
             string prefix = node.IsExtern ? "extern " : "";
             return $"{prefix}{cReturnType} {cName}({paramsStr});\n";
@@ -192,8 +195,16 @@ namespace Sage.Core
 
         // --- AST Traversal Implementation ---
         public string Visit(BlockNode node) { foreach (var s in node.Statements) s.Accept(this); return ""; }
-        public string Visit(VariableDeclarationNode node) { node.Initializer?.Accept(this); return ""; }
-        public string Visit(AssignmentNode node) { node.Target.Accept(this); node.Expression.Accept(this); return ""; }
+        public string Visit(VariableDeclarationNode node)
+        {
+            if (TypeSystem.IsArrayType(node.Type) && node.Initializer != null && node.Initializer is not ArrayInitializationNode) AddHeader("string.h");
+            node.Initializer?.Accept(this); return "";
+        }
+        public string Visit(AssignmentNode node)
+        {
+            if (node.VariableType != null && TypeSystem.IsArrayType(node.VariableType)) AddHeader("string.h");
+            node.Target.Accept(this); node.Expression.Accept(this); return "";
+        }
         public string Visit(ReturnNode node) { node.Expression.Accept(this); return ""; }
         public string Visit(ExpressionStatementNode node) { node.Expression.Accept(this); return ""; }
         public string Visit(IfNode node) { node.Condition.Accept(this); node.ThenBranch.Accept(this); node.ElseBranch?.Accept(this); return ""; }

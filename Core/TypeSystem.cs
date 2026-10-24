@@ -163,6 +163,10 @@ namespace Sage.Core
             return $"{ToCType(type)} {name}";
         }
 
+        /// <summary>Sage array parameters read an incoming array into independent local storage.</summary>
+        public static string FormatSageParameter(string name, string type) =>
+            IsArrayType(type) && !IsBorrowType(type) ? $"const {FormatCParameter(name, type)}" : FormatCParameter(name, type);
+
         public static bool IsBorrowType(string type) => type.StartsWith('&');
         public static BorrowKind GetBorrowKind(string type) => !IsBorrowType(type) ? BorrowKind.None
             : type.StartsWith("&mut ", StringComparison.Ordinal) ? BorrowKind.Mutable : BorrowKind.Shared;

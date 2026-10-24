@@ -72,6 +72,7 @@ Argument, return, and native-alias checks are documented in [function contracts]
 The initial borrowed-parameter model and its lifetime boundary are documented in [borrowing](docs/borrowing.md).
 Recursive checks of struct and fixed-array literals are documented in [aggregate contracts](docs/aggregate-contracts.md).
 Fixed-array access checks and runtime failure behavior are documented in [array bounds](docs/array-bounds.md).
+Inferred copy capabilities and fixed-array value passing are documented in [value copies](docs/value-copy.md).
 
 The `SymbolTable` uses a `Stack<Dictionary<string, Symbol>>` to represent **Lexical Scoping**.
 

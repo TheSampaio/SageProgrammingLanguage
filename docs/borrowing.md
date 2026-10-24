@@ -77,8 +77,11 @@ Call borrows end at the call boundary. Local scopes and the prohibition on
 rebinding, field storage, and borrowed returns prevent a borrow from outliving its source.
 
 Supported value types are numeric scalars, booleans, and structs recursively
-composed of these types. This property is inferred from field composition.
-Strings, arrays, raw pointers, opaque resources, and recursive value layouts
+composed of these types. Since v0.10.0, those structs may also contain fixed
+arrays of copyable values; [value-copy semantics](value-copy.md) prevent Sage
+array parameters from mutating a shared source through pointer decay.
+This property is inferred from field composition.
+Strings, direct array borrows, raw pointers, opaque resources, and recursive value layouts
 require further contracts and are rejected. In particular, a struct with a
 `str` field is outside this initial supported subset.
 

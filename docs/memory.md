@@ -75,6 +75,10 @@ Native aliases created through `unsafe`
 remain the programmer's responsibility. The parser already requires non-array
 variables to have initializers (`S012`); arrays retain zero initialization.
 
+[Copyable value composition and fixed-array value copies](value-copy.md) are
+implemented separately in v0.10.0. They do not infer ownership for legacy strings
+or native resource representations.
+
 The [target model](memory-model-proposal.md) describes subsequent work. Validate
 the current subset with `tests/memory-ownership.ps1 -CompilerDll <Sage.dll>` and
 the Sandbox `ownership.test.sg` program.

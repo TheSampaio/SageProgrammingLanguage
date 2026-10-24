@@ -66,6 +66,8 @@ namespace Sage.Core
             string cName = CNaming.ResolveFunctionName(node);
 
             var sb = new StringBuilder();
+            var arrayParameters = node.Parameters.Where(parameter => TypeSystem.IsArrayType(parameter.Type) && !TypeSystem.IsBorrowType(parameter.Type))
+                .ToDictionary(parameter => parameter.Name, _ => MintName("_incoming"));
             sb.Append($"{Indent}{cReturnType} {cName}(");
 
             if (node.Parameters.Count == 0)
@@ -74,13 +76,19 @@ namespace Sage.Core
             }
             else
             {
-                var paramsList = node.Parameters.Select(p => TypeSystem.FormatCParameter(p.Name, p.Type));
+                var paramsList = node.Parameters.Select(p => TypeSystem.FormatSageParameter(arrayParameters.GetValueOrDefault(p.Name, p.Name), p.Type));
                 sb.Append(string.Join(", ", paramsList));
             }
             sb.AppendLine(")");
 
             sb.AppendLine($"{Indent}{{");
             _indent++;
+
+            foreach (var parameter in node.Parameters.Where(parameter => arrayParameters.ContainsKey(parameter.Name)))
+            {
+                sb.AppendLine($"{Indent}{TypeSystem.FormatCParameter(parameter.Name, parameter.Type)};");
+                sb.AppendLine($"{Indent}memmove({parameter.Name}, {arrayParameters[parameter.Name]}, sizeof({parameter.Name}));");
+            }
 
             if (node.Body != null)
             {
@@ -107,7 +115,9 @@ namespace Sage.Core
                 // Handle external namespace calls or internal module scoping
                 cName = node.IsExternCall ? cName.Split("::")[1] : cName.Replace("::", "_");
             }
-            var cArgs = node.Arguments.Select(a => a.Accept(this));
+            var cArgs = node.Arguments.Select(a => a is ArrayInitializationNode && a.VariableType != null && TypeSystem.IsArrayType(a.VariableType)
+                ? $"({TypeSystem.ToCType(TypeSystem.GetArrayBaseType(a.VariableType))}[{TypeSystem.GetArraySize(a.VariableType)}]){a.Accept(this)}"
+                : a.Accept(this));
             return $"{cName}({string.Join(", ", cArgs)})";
         }
 
@@ -117,7 +127,8 @@ namespace Sage.Core
         public string Visit(VariableDeclarationNode node)
         {
             string prefix = node.IsConstant ? "const " : "";
-            string init = node.Initializer != null ? $" = {node.Initializer.Accept(this)}" : "";
+            string? initialValue = node.Initializer?.Accept(this);
+            string init = initialValue != null ? $" = {initialValue}" : "";
 
             if (TypeSystem.IsBorrowType(node.Type))
             {
@@ -154,6 +165,14 @@ namespace Sage.Core
             {
                 string baseType = TypeSystem.ToCType(TypeSystem.GetArrayBaseType(node.Type));
                 string size = TypeSystem.GetArraySize(node.Type).ToString();
+                if (node.Initializer != null && node.Initializer is not ArrayInitializationNode)
+                {
+                    string storage = MintName("_copy_storage");
+                    // Consume temporary array fields inside the memmove full expression, before their C lifetime ends.
+                    return $"{Indent}{baseType} {storage}[{size}];\n" +
+                        $"{Indent}memmove({storage}, {initialValue}, sizeof({storage}));\n" +
+                        $"{Indent}{prefix}{baseType}* const {node.Name} = {storage};\n";
+                }
                 if (string.IsNullOrEmpty(init)) init = " = {0}";
                 return $"{Indent}{prefix}{baseType} {node.Name}[{size}]{init};\n";
             }
@@ -215,7 +234,17 @@ namespace Sage.Core
         /// Generates a raw assignment expression. 
         /// Note: The semicolon and indentation are handled by ExpressionStatementNode.
         /// </summary>
-        public string Visit(AssignmentNode node) => $"{node.Target.Accept(this)} = {node.Expression.Accept(this)}";
+        public string Visit(AssignmentNode node)
+        {
+            if (node.VariableType == null || !TypeSystem.IsArrayType(node.VariableType))
+                return $"{node.Target.Accept(this)} = {node.Expression.Accept(this)}";
+            string target = MintName("_copy_target");
+            string value = node.Expression.Accept(this);
+            if (node.Expression is ArrayInitializationNode)
+                value = $"({TypeSystem.ToCType(TypeSystem.GetArrayBaseType(node.VariableType))}[{TypeSystem.GetArraySize(node.VariableType)}]){value}";
+            return $"({{ __auto_type {target} = {node.Target.Accept(this)}; " +
+                $"memmove({target}, {value}, sizeof(*{target}) * {TypeSystem.GetArraySize(node.VariableType)}); {target}; }})";
+        }
 
         public string Visit(IdentifierNode node) => node.IsBorrowedValue
             ? $"(*{node.Name})" : node.Name.Replace("::", "_");

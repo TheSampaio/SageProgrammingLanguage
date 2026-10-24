@@ -1,0 +1,80 @@
+use test;
+
+struct CopyItem { value: i32; }
+struct CopyRow { values: i32[2]; }
+var copy_calls: i32 = 0;
+
+func copy_change(values: i32[2]): i32
+{
+    values[0]++;
+    return values[0];
+}
+
+func copy_shadow(values: i32[2]): i32
+{
+    var values: i32[2] = values;
+    values[0]++;
+    return values[0];
+}
+
+func copy_read_shared(value: &CopyRow): i32
+{
+    return copy_change(value.values);
+}
+
+func copy_update(value: &mut CopyRow): none { value.values[0]++; }
+func copy_make(): CopyRow { return { values = { 20, 21 } }; }
+func copy_next(): i32
+{
+    var result: i32 = copy_calls;
+    copy_calls++;
+    return result;
+}
+
+func main(): none
+{
+    var first: i32[2] = { 1, 2 };
+    var second: i32[2] = first;
+    second[0] = 9;
+    test::assert_eq_i32("array_binding_copy_source", first[0], 1);
+    test::assert_eq_i32("array_binding_copy_destination", second[0], 9);
+    const frozen: i32[2] = first;
+    first[0] = 3;
+    test::assert_eq_i32("const_array_copy_is_independent", frozen[0], 1);
+    second = frozen;
+    second = second;
+    test::assert_eq_i32("array_assignment_and_self_copy", second[0], 1);
+    second = { 4 };
+    test::assert_eq_i32("array_literal_assignment", second[0], 4);
+    test::assert_eq_i32("array_literal_assignment_zero_fill", second[1], 0);
+    test::assert_eq_i32("array_parameter_copy_result", copy_change(first), 4);
+    test::assert_eq_i32("array_parameter_preserves_source", first[0], 3);
+    test::assert_eq_i32("const_array_argument", copy_change(frozen), 2);
+    test::assert_eq_i32("array_literal_argument", copy_change({ 6, 7 }), 7);
+    test::assert_eq_i32("array_parameter_shadow", copy_shadow(first), 4);
+
+    var items: CopyItem[2] = { { value = 5 } };
+    var item_copies: CopyItem[2] = items;
+    item_copies[0].value++;
+    test::assert_eq_i32("struct_array_copy_preserves_source", items[0].value, 5);
+    var row: CopyRow = { values = { 10, 11 } };
+    test::assert_eq_i32("array_field_copy_through_shared_borrow", copy_read_shared(&row), 11);
+    test::assert_eq_i32("shared_borrow_preserves_array_field", row.values[0], 10);
+    copy_update(&mut row);
+    test::assert_eq_i32("mutable_borrow_updates_array_field", row.values[0], 11);
+
+    var rows: CopyRow[2] = { { values = { 1, 2 } }, { values = { 7, 8 } } };
+    rows[copy_next()].values = rows[copy_next()].values;
+    test::assert_eq_i32("array_assignment_places_evaluated_once", copy_calls, 2);
+    test::assert_eq_i32("array_field_assignment", rows[0].values[0], 7);
+    if (true)
+    {
+        var first: i32[2] = first;
+        first[0] = 12;
+    }
+    test::assert_eq_i32("array_shadow_preserves_outer", first[0], 3);
+    var temporary_copy: i32[2] = copy_make().values;
+    test::assert_eq_i32("temporary_array_field_copied_before_expiry", temporary_copy[0], 20);
+    second = copy_make().values;
+    test::assert_eq_i32("temporary_array_field_assignment", second[1], 21);
+}

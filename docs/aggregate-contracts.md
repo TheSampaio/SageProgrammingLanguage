@@ -34,9 +34,9 @@ contract. Positional struct initialization is unsupported.
 | S183 | Duplicate field declaration or initializer |
 
 Existing `S144` checks still reject storing owning heap references in fields or
-arrays. This increment does not add nested resource ownership, array copying or
-array-return contracts, numeric range checks, or owned strings. [Checked indexing](array-bounds.md)
-was added separately in v0.9.4.
+arrays. This increment does not add nested resource ownership, array-return
+contracts, numeric range checks, or owned strings. [Checked indexing](array-bounds.md)
+was added in v0.9.4 and [array value copies](value-copy.md) in v0.10.0.
 It also does not infer native ABI contracts from aggregate literals.
 
 Validation: `tests/aggregate-contracts.ps1` includes positive and negative cases;
