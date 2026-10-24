@@ -251,6 +251,7 @@ namespace Sage.Utilities
         public object Visit(ArrayAccessNode node) => new
         {
             Type = "ArrayAccess",
+            CheckedLength = node.CheckedLength,
             Array = node.Array.Accept(this),
             Index = node.Index.Accept(this)
         };

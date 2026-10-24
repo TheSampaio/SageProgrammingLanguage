@@ -430,7 +430,18 @@ namespace Sage.Core
             return $"{{ {string.Join(", ", elements)} }}";
         }
 
-        public string Visit(ArrayAccessNode node) => $"{node.Array.Accept(this)}[{node.Index.Accept(this)}]";
+        public string Visit(ArrayAccessNode node)
+        {
+            if (node.CheckedLength is not int length)
+                return $"{node.Array.Accept(this)}[{node.Index.Accept(this)}]";
+            string array = MintName("_array");
+            string index = MintName("_index");
+            // Yield an element pointer, then dereference outside the statement expression to preserve an lvalue.
+            return $"(*({{ __auto_type {array} = {node.Array.Accept(this)}; __auto_type {index} = {node.Index.Accept(this)}; " +
+                $"if ({index} < 0 || (uintmax_t){index} >= {length}) {{ " +
+                $"fputs(\"Sage runtime error S186: Array index is outside [0,{length}) at ({node.Line},{node.Column}).\\n\", stderr); " +
+                $"exit(EXIT_FAILURE); }} &{array}[{index}]; }}))";
+        }
 
         private string MintName(string prefix)
         {

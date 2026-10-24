@@ -9,6 +9,10 @@ namespace Sage.Ast
     {
         public AstNode Array { get; } = array;
         public AstNode Index { get; } = index;
+
+        /// <summary>Validated fixed-array length; null for unchecked native pointer indexing.</summary>
+        public int? CheckedLength { get; set; }
+
         public override T Accept<T>(IAstVisitor<T> visitor) => visitor.Visit(this);
     }
 }

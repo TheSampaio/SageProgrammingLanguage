@@ -35,7 +35,8 @@ contract. Positional struct initialization is unsupported.
 
 Existing `S144` checks still reject storing owning heap references in fields or
 arrays. This increment does not add nested resource ownership, array copying or
-array-return contracts, checked indexing, numeric range checks, or owned strings.
+array-return contracts, numeric range checks, or owned strings. [Checked indexing](array-bounds.md)
+was added separately in v0.9.4.
 It also does not infer native ABI contracts from aggregate literals.
 
 Validation: `tests/aggregate-contracts.ps1` includes positive and negative cases;

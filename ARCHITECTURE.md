@@ -71,6 +71,7 @@ Callable origin and module-scoping rules are documented in [module resolution](d
 Argument, return, and native-alias checks are documented in [function contracts](docs/function-contracts.md).
 The initial borrowed-parameter model and its lifetime boundary are documented in [borrowing](docs/borrowing.md).
 Recursive checks of struct and fixed-array literals are documented in [aggregate contracts](docs/aggregate-contracts.md).
+Fixed-array access checks and runtime failure behavior are documented in [array bounds](docs/array-bounds.md).
 
 The `SymbolTable` uses a `Stack<Dictionary<string, Symbol>>` to represent **Lexical Scoping**.
 

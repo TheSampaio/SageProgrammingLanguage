@@ -203,7 +203,13 @@ namespace Sage.Core
         public string Visit(UnaryExpressionNode node) { node.Operand.Accept(this); return ""; }
         public string Visit(CastExpressionNode node) { node.Expression.Accept(this); return ""; }
         public string Visit(MemberAccessNode node) { node.Object.Accept(this); return ""; }
-        public string Visit(ArrayAccessNode node) { node.Array.Accept(this); node.Index.Accept(this); return ""; }
+        public string Visit(ArrayAccessNode node)
+        {
+            if (node.CheckedLength != null) { AddHeader("stdio.h"); AddHeader("stdlib.h"); }
+            node.Array.Accept(this);
+            node.Index.Accept(this);
+            return "";
+        }
         public string Visit(StructInitializationNode node) { foreach (var f in node.Fields.Values) f.Accept(this); return ""; }
         public string Visit(ArrayInitializationNode node) { foreach (var e in node.Elements) e.Accept(this); return ""; }
 

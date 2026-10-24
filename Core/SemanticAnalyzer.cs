@@ -2,6 +2,8 @@ using Sage.Ast;
 using Sage.Enums;
 using Sage.Interfaces;
 using Sage.Utilities;
+using System.Numerics;
+using System.Globalization;
 
 namespace Sage.Core
 {
@@ -48,6 +50,8 @@ namespace Sage.Core
 
         private void RegisterFunction(FunctionDeclarationNode func, string moduleName = "")
         {
+            ValidateArrayLength(func.ReturnType, func);
+            foreach (var parameter in func.Parameters) ValidateArrayLength(parameter.Type, func);
             if (TypeSystem.IsBorrowType(func.ReturnType))
                 throw new CompilerException(func, "S173", "Borrowed return values require lifetime contracts that are not implemented yet.");
             string name = string.IsNullOrEmpty(moduleName) ? func.Name : $"{moduleName}::{func.Name}";
@@ -84,6 +88,8 @@ namespace Sage.Core
                         TypeSystem.RegisterOpaqueType(opaque.Name);
                         break;
                     case FunctionDeclarationNode func:
+                        ValidateArrayLength(func.ReturnType, func);
+                        foreach (var parameter in func.Parameters) ValidateArrayLength(parameter.Type, func);
                         if (TypeSystem.IsBorrowType(func.ReturnType) || func.Parameters.Any(parameter => TypeSystem.IsBorrowType(parameter.Type)))
                             throw new CompilerException(func, "S173", "Native ABI declarations cannot use Sage borrowing contracts.");
                         if (_functionDeclarations.ContainsKey($"{node.Alias}::{func.Name}"))
@@ -196,6 +202,7 @@ namespace Sage.Core
 
         public string Visit(VariableDeclarationNode node)
         {
+            ValidateArrayLength(node.Type, node);
             if (_symbolTable.IsDefinedInCurrentScope(node.Name))
                 throw new CompilerException(node, "S102", $"Variable '{node.Name}' is already defined.");
             if (TypeSystem.IsBorrowType(node.Type)) return AnalyzeBorrowedBinding(node);
@@ -660,6 +667,7 @@ namespace Sage.Core
 
         private void RegisterStructDefinition(StructDeclarationNode node)
         {
+            foreach (var field in node.Fields) ValidateArrayLength(field.Type, node);
             var duplicate = node.Fields.GroupBy(field => field.Name).FirstOrDefault(group => group.Count() > 1);
             if (duplicate != null)
                 throw new CompilerException(node, "S183", $"Field '{node.Name}.{duplicate.Key}' is declared more than once.");
@@ -767,11 +775,36 @@ namespace Sage.Core
             if (!TypeSystem.IsNumeric(indexType) || TypeSystem.IsFloatingPoint(indexType))
                 throw new CompilerException(node, "S112", $"Array index must be an integer, got '{indexType}'.");
 
+            node.CheckedLength = isArray ? TypeSystem.GetArraySize(arrayType) : null;
+            if (node.CheckedLength is int length && TryGetIntegerLiteral(node.Index, out var index) &&
+                (index < 0 || index >= length))
+                throw new CompilerException(node.Index, "S185", $"Array index {index} is outside [0,{length}).");
+
             node.VariableType = isArray
                 ? TypeSystem.GetArrayBaseType(arrayType)
                 : arrayType[..^1];
 
             return node.VariableType;
+        }
+
+        private static void ValidateArrayLength(string type, AstNode declaration)
+        {
+            if (TypeSystem.IsArrayType(type) && TypeSystem.GetArraySize(type) <= 0)
+                throw new CompilerException(declaration, "S187", $"Fixed-array type '{type}' requires a positive length representable as i32.");
+        }
+
+        private static bool TryGetIntegerLiteral(AstNode expression, out BigInteger value)
+        {
+            if (expression is LiteralNode { TypeName: "i32" } literal)
+                return BigInteger.TryParse(literal.Value.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+            if (expression is UnaryExpressionNode { Operator: TokenType.Minus } unary &&
+                TryGetIntegerLiteral(unary.Operand, out value))
+            {
+                value = -value;
+                return true;
+            }
+            value = default;
+            return false;
         }
     }
 }
