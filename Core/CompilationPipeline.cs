@@ -34,25 +34,8 @@ namespace Sage.Core
 
             queue.Enqueue(config.InputPath);
 
-            try
-            {
-                ParseAndDiscover(queue, parsedModules, config, env, analyzer);
-            }
-            catch (CompilerException ex)
-            {
-                CompilerLogger.LogFatal(ex);
-                return;
-            }
-
-            try
-            {
-                GenerateCode(parsedModules, generatedCFiles, config, env, analyzer);
-            }
-            catch (CompilerException ex)
-            {
-                CompilerLogger.LogFatal(ex);
-                return;
-            }
+            ParseAndDiscover(queue, parsedModules, config, env, analyzer);
+            GenerateCode(parsedModules, generatedCFiles, config, env, analyzer);
 
             if (config.BuildNative)
             {
@@ -114,8 +97,7 @@ namespace Sage.Core
 
                 if (!File.Exists(path))
                 {
-                    CompilerLogger.LogError($"Source file not found: {path}");
-                    continue;
+                    throw new FileNotFoundException($"Source file not found: {path}");
                 }
 
                 var tokens = new Lexer(File.ReadAllText(path)).Tokenize();

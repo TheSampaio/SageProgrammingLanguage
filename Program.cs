@@ -11,18 +11,20 @@ namespace Sage
         /// <summary>
         /// Primary execution loop for the compiler tool.
         /// </summary>
-        private static void Main(string[] args)
+        private static int Main(string[] args)
         {
             ConsoleHelper.EnableAnsiSupport();
 
             try
             {
-                if (HandleMetaCommands(args)) return;
+                if (HandleMetaCommands(args)) return 0;
                 CompilationPipeline.Run(args);
+                return 0;
             }
             catch (Exception ex)
             {
                 CompilerLogger.LogFatal(ex);
+                return 1;
             }
         }
 

@@ -345,7 +345,7 @@ file directly with `sage <file>.test.sg` and read the `[PASS]`/`[FAIL]` output.
 
 ## Project Status
 
-The project is currently in **v0.8.0 (Alpha)**.
+The project is currently in **v0.8.1 (Alpha)**.
 
 * [x] **CLI & Project System** (`new`, `build`, `run`, `--version`)
 * [x] **Variable Declarations** (`var`) & **Constants** (`const`)
