@@ -75,7 +75,7 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
   Reference-ness is carried by `AstNode.IsReference` and `SymbolMetadata.IsReference`.
   Local reference initialization now transfers ownership. Use after transfer or deletion
   is rejected; see `docs/memory.md`. Local owners have automatic GCC scope cleanup;
-  `&T` and `&mut T` parameters support call-duration borrows for scalar/struct values;
+  `&T` and `&mut T` support call-duration parameters and lexical local borrows for scalar/struct values;
   see `docs/borrowing.md` for the exact supported subset and restrictions.
 - `const` is enforced (`SymbolMetadata.IsConstant`).
 

@@ -47,11 +47,12 @@
             bool isReference = false,
             int declarationLoopDepth = 0,
             CallableSignature? signature = null,
-            BorrowKind borrowing = BorrowKind.None)
+            BorrowKind borrowing = BorrowKind.None,
+            BorrowLoan? loan = null)
         {
             if (_scopes.Count > 0)
             {
-                _scopes.Peek()[name] = new SymbolMetadata(type, isFunction, isExtern, isConstant, isReference, declarationLoopDepth, signature, borrowing);
+                _scopes.Peek()[name] = new SymbolMetadata(type, isFunction, isExtern, isConstant, isReference, declarationLoopDepth, signature, borrowing, loan);
             }
         }
 
@@ -76,6 +77,10 @@
                 if (scope.TryGetValue(name, out var symbol)) return symbol;
             return null;
         }
+
+        /// <summary>Only bindings in live lexical scopes contribute outstanding loans.</summary>
+        public IEnumerable<SymbolMetadata> ActiveBorrowBindings() =>
+            _scopes.SelectMany(scope => scope.Values).Where(symbol => symbol.Loan != null);
 
         /// <summary>
         /// Checks if a symbol is already declared specifically within the current (topmost) scope.

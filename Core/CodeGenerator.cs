@@ -84,8 +84,7 @@ namespace Sage.Core
 
             if (node.Body != null)
             {
-                foreach (var stmt in node.Body.Statements)
-                    sb.Append(stmt.Accept(this));
+                sb.Append(node.Body.Accept(this));
             }
 
             if (isMain)
@@ -119,6 +118,15 @@ namespace Sage.Core
         {
             string prefix = node.IsConstant ? "const " : "";
             string init = node.Initializer != null ? $" = {node.Initializer.Accept(this)}" : "";
+
+            if (TypeSystem.IsBorrowType(node.Type))
+            {
+                string pointerType = TypeSystem.ToCType(node.Type);
+                string temporary = MintName("_borrow");
+                string bindingConst = node.IsConstant ? "const " : "";
+                return $"{Indent}{pointerType} {temporary}{init};\n" +
+                    $"{Indent}{pointerType} {bindingConst}{node.Name} = {temporary};\n";
+            }
 
             // Safe heap references are represented as pointers in C.
             if (node.IsReference)

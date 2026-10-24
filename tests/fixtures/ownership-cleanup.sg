@@ -46,6 +46,19 @@ func main(): none
     }
     trace::ownership_check(trace::ownership_outstanding() == 0, "borrowed_owner_scope_cleanup");
 
+    if (true)
+    {
+        var value: Item = new Item { value = 1 };
+        if (true)
+        {
+            var view: &mut Item = &mut value;
+            view.value = 2;
+            trace::ownership_check(trace::ownership_outstanding() == 1, "local_loan_does_not_adopt_owner");
+        }
+        value.value = 3;
+    }
+    trace::ownership_check(trace::ownership_outstanding() == 0, "local_loan_owner_cleanup");
+
     trace::ownership_reset_order();
     if (true)
     {

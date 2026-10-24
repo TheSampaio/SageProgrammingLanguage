@@ -24,7 +24,7 @@ $cases = @(
     @{ Name = 'distinct_mutable'; Code = 'func pair(a: &mut Item, b: &mut Item): none { a.value = 1; b.value = 2; } func main(): none { var x: Item = { value = 0 }; var y: Item = { value = 0 }; pair(&mut x, &mut y); }' },
     @{ Name = 'borrowed_delete'; Code = 'func bad(value: &Item): none { delete value; } func main(): none {}'; Error = 'S174' },
     @{ Name = 'borrowed_return_type'; Code = 'func bad(): &i32 { var x: i32 = 1; return &x; } func main(): none {}'; Error = 'S173' },
-    @{ Name = 'borrowed_local_binding'; Code = 'func main(): none { var x: i32 = 1; var y: &i32 = &x; }'; Error = 'S173' },
+    @{ Name = 'borrowed_local_binding'; Code = 'func main(): none { var x: i32 = 1; var y: &i32 = &x; }' },
     @{ Name = 'borrowed_field'; Code = 'struct Bad { value: &i32; } func main(): none {}'; Error = 'S173' },
     @{ Name = 'temporary'; Code = 'func main(): none { var x: i32 = read(&new Item {}); }'; Error = 'S175' },
     @{ Name = 'field_place'; Code = 'func scalar(value: &i32): i32 { return value; } func main(): none { var x: Item = { value = 1 }; var n: i32 = scalar(&x.value); }'; Error = 'S175' },

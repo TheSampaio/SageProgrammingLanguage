@@ -17,7 +17,8 @@ namespace Sage.Core
         bool isReference = false,
         int declarationLoopDepth = 0,
         CallableSignature? signature = null,
-        BorrowKind borrowing = BorrowKind.None)
+        BorrowKind borrowing = BorrowKind.None,
+        BorrowLoan? loan = null)
     {
         /// <summary>Gets the Sage data type associated with this symbol.</summary>
         public string Type { get; } = type;
@@ -43,5 +44,6 @@ namespace Sage.Core
         /// <summary>Declared parameter and return contract, present for callable symbols.</summary>
         public CallableSignature? Signature { get; } = signature;
         public BorrowKind Borrowing { get; } = borrowing;
+        public BorrowLoan? Loan { get; } = loan;
     }
 }

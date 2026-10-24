@@ -21,7 +21,7 @@ namespace Sage.Core
         private int _unsafeDepth;
         private int _loopDepth;
         private int _functionDepth;
-        private int _borrowArgumentDepth;
+        private int _borrowExpressionDepth;
 
         /// <summary>True when analysis is currently inside an unsafe context.</summary>
         private bool InUnsafe => _unsafeDepth > 0;
@@ -196,10 +196,9 @@ namespace Sage.Core
 
         public string Visit(VariableDeclarationNode node)
         {
-            if (TypeSystem.IsBorrowType(node.Type))
-                throw new CompilerException(node, "S173", "Borrowed bindings are currently supported only as function parameters.");
             if (_symbolTable.IsDefinedInCurrentScope(node.Name))
                 throw new CompilerException(node, "S102", $"Variable '{node.Name}' is already defined.");
+            if (TypeSystem.IsBorrowType(node.Type)) return AnalyzeBorrowedBinding(node);
 
             if (TypeSystem.IsRawPointer(node.Type) && !InUnsafe)
                 throw new CompilerException(node, "S121",
@@ -290,13 +289,13 @@ namespace Sage.Core
                 {
                     if (arg is not BorrowExpressionNode borrow)
                         throw new CompilerException(arg, "S170", $"Argument {index + 1} of '{name}' requires an explicit '{parameterType}' borrow.");
-                    _borrowArgumentDepth++;
+                    _borrowExpressionDepth++;
                     string borrowedType;
                     try { borrowedType = borrow.Accept(this); }
-                    finally { _borrowArgumentDepth--; }
+                    finally { _borrowExpressionDepth--; }
                     if (borrowedType != parameterType)
                         throw new CompilerException(borrow, "S170", $"Argument {index + 1} of '{name}' expects '{parameterType}', not '{borrowedType}'.");
-                    var source = _symbolTable.Resolve(((IdentifierNode)borrow.Target).Name)!;
+                    var source = BorrowRoot(_symbolTable.Resolve(((IdentifierNode)borrow.Target).Name)!);
                     var kind = TypeSystem.GetBorrowKind(borrowedType);
                     if (borrowed.TryGetValue(source, out var previous) && (kind == BorrowKind.Mutable || previous.Kind == BorrowKind.Mutable))
                         throw new CompilerException(borrow, "S172",
@@ -320,8 +319,8 @@ namespace Sage.Core
 
         public string Visit(BorrowExpressionNode node)
         {
-            if (_borrowArgumentDepth == 0)
-                throw new CompilerException(node, "S173", "A borrow must be a direct argument to a declared borrowed parameter.");
+            if (_borrowExpressionDepth == 0)
+                throw new CompilerException(node, "S173", "A borrow must initialize a borrowed local or be a direct argument to a borrowed parameter.");
             if (node.Target is not IdentifierNode identifier)
                 throw new CompilerException(node, "S175", "Borrow a named variable; temporary values and field-specific borrows are not supported yet.");
             string type = identifier.Accept(this);
@@ -330,8 +329,25 @@ namespace Sage.Core
                 throw new CompilerException(node, "S176", "Only local variables or parameters with supported value types can be borrowed.");
             if (node.IsMutable && (source.IsConstant || source.Borrowing == BorrowKind.Shared))
                 throw new CompilerException(node, "S171", $"Cannot mutably borrow '{identifier.Name}' through shared or constant access.");
+            if (node.IsMutable) EnsureBorrowAccess(source, node, isWrite: true);
             node.VariableType = (node.IsMutable ? "&mut " : "&") + type;
             return node.VariableType;
+        }
+
+        private string AnalyzeBorrowedBinding(VariableDeclarationNode node)
+        {
+            if (node.Initializer is not BorrowExpressionNode borrow)
+                throw new CompilerException(node, "S170", "A borrowed local requires an explicit borrow initializer.");
+            _borrowExpressionDepth++;
+            string type;
+            try { type = borrow.Accept(this); }
+            finally { _borrowExpressionDepth--; }
+            if (type != node.Type)
+                throw new CompilerException(node, "S170", $"Borrowed binding '{node.Name}' requires '{node.Type}', not '{type}'.");
+            var source = _symbolTable.Resolve(((IdentifierNode)borrow.Target).Name)!;
+            _symbolTable.Define(node.Name, TypeSystem.GetBorrowedType(type), isConstant: node.IsConstant,
+                borrowing: TypeSystem.GetBorrowKind(type), loan: new BorrowLoan(source, borrow.Line, borrow.Column));
+            return type;
         }
 
         // --- Helpers ---
@@ -396,6 +412,7 @@ namespace Sage.Core
             node.VariableType = symbol.Type;
             node.IsReference = symbol.IsReference;
             node.IsBorrowedValue = symbol.Borrowing != BorrowKind.None;
+            EnsureBorrowAccess(symbol, node, isWrite: false);
             return symbol.Type;
         }
 
@@ -644,6 +661,7 @@ namespace Sage.Core
         private void ConsumeReference(IdentifierNode source, AstNode operation, OwnershipKind kind)
         {
             var symbol = _symbolTable.Resolve(source.Name)!;
+            EnsureBorrowAccess(symbol, operation, isWrite: true);
             if (_loopDepth > symbol.DeclarationLoopDepth)
                 throw new CompilerException(operation, "S145",
                     $"Reference '{source.Name}' is declared outside this loop and cannot be moved or deleted on a potentially repeated path.");
@@ -679,6 +697,32 @@ namespace Sage.Core
                 throw new CompilerException(operation, "S171", $"Cannot mutate '{identifier.Name}' through a shared borrow.");
             if (symbol?.IsConstant == true)
                 throw new CompilerException(operation, "S103", $"Cannot mutate constant '{identifier.Name}'.");
+            if (symbol != null) EnsureBorrowAccess(symbol, operation, isWrite: true);
+        }
+
+        private static SymbolMetadata BorrowRoot(SymbolMetadata binding)
+        {
+            while (binding.Loan != null) binding = binding.Loan.Source;
+            return binding;
+        }
+
+        private static bool IsBorrowAncestor(SymbolMetadata candidate, SymbolMetadata binding)
+        {
+            for (SymbolMetadata? current = binding; current != null; current = current.Loan?.Source)
+                if (ReferenceEquals(candidate, current)) return true;
+            return false;
+        }
+
+        private void EnsureBorrowAccess(SymbolMetadata binding, AstNode operation, bool isWrite)
+        {
+            var root = BorrowRoot(binding);
+            foreach (var live in _symbolTable.ActiveBorrowBindings())
+            {
+                if (!ReferenceEquals(BorrowRoot(live), root) || IsBorrowAncestor(live, binding)) continue;
+                if (isWrite || live.Borrowing == BorrowKind.Mutable)
+                    throw new CompilerException(operation, "S178",
+                        $"Access conflicts with a live borrow at ({live.Loan!.Line},{live.Loan.Column}). End its scope before accessing the source this way.");
+            }
         }
 
         private static bool IsPureBorrowCallArgument(AstNode node) => node switch
