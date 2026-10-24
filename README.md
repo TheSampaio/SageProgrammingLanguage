@@ -17,6 +17,7 @@ The project strictly follows **SOLID principles** and **Clean Code** architectur
 * **Ergonomic FFI:** `extern` blocks with C interop aliases (`c_int`, `c_size_t`, `c_char`, …) and opaque C types (`type FILE;`) that map cleanly onto real C signatures.
 * **Tree-Shaking Code Gen:** Smart header management that only includes necessary C headers (`stdio.h`, `stdint.h`, etc.) based on actual code usage.
 * **Modern Type System:** Explicit fixed-width types (`i32`, `f64`, `str`, `b8`) with support for **Constants** (`const`) and **Explicit Casting** (`as`).
+* **Aggregate Contracts:** Struct fields and fixed-array initializer elements are checked recursively before C generation; see [aggregate initialization](docs/aggregate-contracts.md).
 * **Modularity:** First-class support for `module` blocks and namespaced calls (`math::sum`) to manage large codebases.
 * **Developer Tooling:** Standardized **JSON** debug outputs for Tokens (`.tok.json`) and Abstract Syntax Trees (`.ast.json`).
 
@@ -347,7 +348,7 @@ file directly with `sage <file>.test.sg` and read the `[PASS]`/`[FAIL]` output.
 
 ## Project Status
 
-The project is currently in **v0.9.1 (Alpha)**.
+The project is currently in **v0.9.2 (Alpha)**.
 
 * [x] **CLI & Project System** (`new`, `build`, `run`, `--version`)
 * [x] **Variable Declarations** (`var`) & **Constants** (`const`)

@@ -423,6 +423,9 @@ namespace Sage.Core
 
         public string Visit(ArrayInitializationNode node)
         {
+            if (node.Elements.Count == 0)
+                return !string.IsNullOrEmpty(node.VariableType) && !TypeSystem.IsArrayType(node.VariableType)
+                    ? $"({TypeSystem.ToCType(node.VariableType)}){{0}}" : "{0}";
             var elements = node.Elements.Select(e => e.Accept(this));
             return $"{{ {string.Join(", ", elements)} }}";
         }

@@ -50,7 +50,7 @@ module server
 
         var addr: SockAddr = new SockAddr {
             family = 2,
-            port = winsock::htons(port),
+            port = winsock::htons(port) as u16,
             addr = 0,
             pad = 0
         };

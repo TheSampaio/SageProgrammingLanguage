@@ -136,7 +136,7 @@ namespace Sage.Core
             sb.AppendLine($"typedef struct {node.Name} {{");
             foreach (var field in node.Fields)
             {
-                sb.AppendLine($"    {TypeSystem.ToCType(field.Type)} {field.Name};");
+                sb.AppendLine($"    {TypeSystem.FormatCParameter(field.Name, field.Type)};");
             }
             sb.AppendLine($"}} {node.Name};\n");
             return sb.ToString();

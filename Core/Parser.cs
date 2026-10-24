@@ -739,9 +739,11 @@ namespace Sage.Core
                     {
                         do
                         {
-                            string fieldName = Consume(TokenType.Identifier).Value;
+                            var fieldToken = Consume(TokenType.Identifier);
+                            string fieldName = fieldToken.Value;
                             Consume(TokenType.Equals, "Expected '=' after field name.");
-                            fields[fieldName] = ParseExpression();
+                            if (!fields.TryAdd(fieldName, ParseExpression()))
+                                throw new CompilerException(fieldToken, "S183", $"Field '{fieldName}' is initialized more than once.");
 
                         } while (Match(TokenType.Comma));
                     }
@@ -784,9 +786,11 @@ namespace Sage.Core
             {
                 do
                 {
-                    string fieldName = Consume(TokenType.Identifier).Value;
+                    var fieldToken = Consume(TokenType.Identifier);
+                    string fieldName = fieldToken.Value;
                     Consume(TokenType.Equals, "Expected '=' after field name.");
-                    fields[fieldName] = ParseExpression();
+                    if (!fields.TryAdd(fieldName, ParseExpression()))
+                        throw new CompilerException(fieldToken, "S183", $"Field '{fieldName}' is initialized more than once.");
                 } while (Match(TokenType.Comma));
             }
 

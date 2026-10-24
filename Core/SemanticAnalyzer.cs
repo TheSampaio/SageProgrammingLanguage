@@ -206,21 +206,7 @@ namespace Sage.Core
 
             if (node.Initializer != null)
             {
-                string initType = node.Initializer.Accept(this);
-
-                if (initType != "struct_initializer" && initType != "array_initializer")
-                {
-                    if (!TypeSystem.AreTypesCompatible(node.Type, initType) &&
-                        !IsAutoPromotableLiteral(node.Type, node.Initializer))
-                    {
-                        throw new CompilerException(node, "S101", $"Type Mismatch: Cannot assign {initType} to {node.Name} (expected {node.Type}).");
-                    }
-                }
-
-                if (node.Initializer is LiteralNode literal)
-                    literal.TypeName = node.Type;
-
-                node.Initializer.VariableType = node.Type;
+                AnalyzeValue(node.Initializer, node.Type, "S101", $"Initializer of '{node.Name}'");
 
                 // A variable initialized from 'new' becomes a safe heap reference.
                 node.IsReference = node.Initializer.IsReference;
@@ -307,11 +293,9 @@ namespace Sage.Core
                     throw new CompilerException(arg, "S170", $"Argument {index + 1} of '{name}' expects a value, not a borrow.");
                 if (hasBorrowedParameters && !IsPureBorrowCallArgument(arg))
                     throw new CompilerException(arg, "S177", "Evaluate calls and mutations into local values before passing them alongside borrowed arguments.");
-                string type = arg.Accept(this);
+                if (symbol.IsExtern) arg.Accept(this);
+                else AnalyzeValue(arg, parameterType, "S161", $"Argument {index + 1} of '{name}'");
                 RequireValueContract(arg);
-                if (!symbol.IsExtern)
-                    ValidateValueType(arg, signature.ParameterTypes[index], type, "S161",
-                        $"Argument {index + 1} of '{name}'");
             }
 
             return symbol.Type;
@@ -375,14 +359,53 @@ namespace Sage.Core
             return false;
         }
 
-        private void ValidateValueType(AstNode expression, string targetType, string sourceType, string code, string description)
+        /// <summary>Checks an expression with its expected type before lowering aggregate literals.</summary>
+        private string AnalyzeValue(AstNode expression, string targetType, string code, string description)
         {
-            bool structInitializer = sourceType == "struct_initializer" && _structDeclarations.ContainsKey(targetType);
-            if (!structInitializer && !TypeSystem.AreTypesCompatible(targetType, sourceType) &&
-                !IsAutoPromotableLiteral(targetType, expression))
-                throw new CompilerException(expression, code, $"{description} requires '{targetType}', but received '{sourceType}'.");
+            if (expression is StructInitializationNode structure)
+            {
+                ValidateStructFields(structure.Fields, targetType, structure);
+            }
+            else if (expression is ArrayInitializationNode array)
+            {
+                // Empty braces have no syntactic field names; context distinguishes zeroed structs and arrays.
+                if (TypeSystem.IsArrayType(targetType))
+                {
+                    if (array.Elements.Count > TypeSystem.GetArraySize(targetType))
+                        throw new CompilerException(array, "S182", $"Too many elements for '{targetType}'.");
+                    string elementType = TypeSystem.GetArrayBaseType(targetType);
+                    foreach (var element in array.Elements)
+                    {
+                        AnalyzeValue(element, elementType, "S181", "Array element");
+                        RequireValueContract(element);
+                    }
+                }
+                else if (array.Elements.Count != 0 || !_structDeclarations.ContainsKey(targetType))
+                    throw new CompilerException(array, "S180", $"Array initializer cannot initialize '{targetType}'.");
+            }
+            else
+            {
+                string sourceType = expression.Accept(this);
+                if (!TypeSystem.AreTypesCompatible(targetType, sourceType) &&
+                    !IsAutoPromotableLiteral(targetType, expression))
+                    throw new CompilerException(expression, code, $"{description} requires '{targetType}', but received '{sourceType}'.");
+                if (expression is LiteralNode literal) literal.TypeName = targetType;
+            }
             expression.VariableType = targetType;
-            if (expression is LiteralNode literal) literal.TypeName = targetType;
+            return targetType;
+        }
+
+        private void ValidateStructFields(Dictionary<string, AstNode> fields, string type, AstNode initializer)
+        {
+            if (!_structDeclarations.TryGetValue(type, out var structure))
+                throw new CompilerException(initializer, "S180", $"Named-field initializer requires a known struct, not '{type}'.");
+            foreach (var (name, value) in fields)
+            {
+                var field = structure.Fields.FirstOrDefault(field => field.Name == name)
+                    ?? throw new CompilerException(value, "S131", $"Struct '{type}' does not contain field '{name}'.");
+                AnalyzeValue(value, field.Type, "S181", $"Field '{type}.{name}'");
+                RequireValueContract(value);
+            }
         }
 
         // --- Standard Visitor Implementations ---
@@ -438,16 +461,8 @@ namespace Sage.Core
             if (node.Target.IsReference)
                 throw new CompilerException(node, "S143",
                     "Reassigning an owning reference is not supported yet. Create a new binding to transfer ownership.");
-            string exprType = node.Expression.Accept(this);
+            AnalyzeValue(node.Expression, targetType, "S108", "Assignment");
             RequireValueContract(node.Expression);
-
-            if (exprType != "struct_initializer" && exprType != "array_initializer")
-            {
-                if (!TypeSystem.AreTypesCompatible(targetType, exprType) && !IsAutoPromotableLiteral(targetType, node.Expression))
-                    throw new CompilerException(node, "S108", $"Cannot assign {exprType} to {targetType}.");
-            }
-
-            node.Expression.VariableType = targetType;
             node.VariableType = targetType;
             node.IsReference = node.Target.IsReference;
 
@@ -526,11 +541,10 @@ namespace Sage.Core
         public string Visit(LiteralNode node) => node.TypeName;
         public string Visit(ReturnNode node)
         {
-            string type = node.Expression.Accept(this);
-            RequireValueContract(node.Expression);
             if (_currentReturnType == null)
                 throw new CompilerException(node, "S162", "A return statement must be inside a function.");
-            ValidateValueType(node.Expression, _currentReturnType, type, "S162", "Return expression");
+            string type = AnalyzeValue(node.Expression, _currentReturnType, "S162", "Return expression");
+            RequireValueContract(node.Expression);
             return type;
         }
         public string Visit(ExpressionStatementNode node)
@@ -582,35 +596,18 @@ namespace Sage.Core
             return "none";
         }
 
-        public string Visit(StructInitializationNode node)
-        {
-            foreach (var value in node.Fields.Values)
-            {
-                value.Accept(this);
-                RequireValueContract(value);
-            }
-            return "struct_initializer";
-        }
+        public string Visit(StructInitializationNode node) => throw new CompilerException(node, "S180",
+            "A struct initializer needs a declared destination type.");
 
         public string Visit(NewExpressionNode node)
         {
             if (_functionDepth == 0)
                 throw new CompilerException(node, "S146", "Heap references must be created inside a function scope.");
-            if (!_structDeclarations.TryGetValue(node.TypeName, out var structDecl))
+            if (!_structDeclarations.ContainsKey(node.TypeName))
                 throw new CompilerException(node, "S130",
                     $"'new' requires a known struct type, but '{node.TypeName}' is not a struct.");
 
-            foreach (var (fieldName, valueExpr) in node.Fields)
-            {
-                var field = structDecl.Fields.FirstOrDefault(f => f.Name == fieldName)
-                    ?? throw new CompilerException(node, "S131",
-                        $"Struct '{node.TypeName}' does not contain field '{fieldName}'.");
-
-                valueExpr.Accept(this);
-                RequireValueContract(valueExpr);
-                if (valueExpr is LiteralNode lit) lit.TypeName = field.Type;
-                valueExpr.VariableType = field.Type;
-            }
+            ValidateStructFields(node.Fields, node.TypeName, node);
 
             // 'new' yields a memory-safe heap reference whose surface type is the struct itself.
             node.IsReference = true;
@@ -648,15 +645,8 @@ namespace Sage.Core
             return field.Type;
         }
 
-        public string Visit(ArrayInitializationNode node)
-        {
-            foreach (var el in node.Elements)
-            {
-                el.Accept(this);
-                RequireValueContract(el);
-            }
-            return "array_initializer";
-        }
+        public string Visit(ArrayInitializationNode node) => throw new CompilerException(node, "S180",
+            "An array initializer needs a declared destination type.");
 
         private void ConsumeReference(IdentifierNode source, AstNode operation, OwnershipKind kind)
         {
@@ -670,6 +660,9 @@ namespace Sage.Core
 
         private void RegisterStructDefinition(StructDeclarationNode node)
         {
+            var duplicate = node.Fields.GroupBy(field => field.Name).FirstOrDefault(group => group.Count() > 1);
+            if (duplicate != null)
+                throw new CompilerException(node, "S183", $"Field '{node.Name}.{duplicate.Key}' is declared more than once.");
             if (_structDeclarations.TryGetValue(node.Name, out var existing) && !ReferenceEquals(existing, node))
                 throw new CompilerException(node, "S150", $"Struct '{node.Name}' is already declared.");
             _structDeclarations[node.Name] = node;

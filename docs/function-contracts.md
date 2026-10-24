@@ -14,6 +14,9 @@ allow transferring owning heap references through value parameters; `S144`
 remains in force for those transfers. Explicit [borrowed parameters](borrowing.md)
 now provide temporary shared or mutable access.
 
+Since v0.9.2, [aggregate contracts](aggregate-contracts.md) recursively check the
+supplied fields and elements against that expected type before C generation.
+
 Calling an `unsafe func` requires an `unsafe` block or another unsafe function.
 Existing direct `extern` calls retain their current trusted ABI behavior during
 migration. Their declared arity is checked, but argument type conversions and
