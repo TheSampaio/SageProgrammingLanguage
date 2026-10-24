@@ -75,6 +75,9 @@ namespace Sage.Interfaces
         /// <summary>Visits an explicit type cast expression.</summary>
         T Visit(CastExpressionNode node);
 
+        /// <summary>Visits an explicit borrow used as a function argument.</summary>
+        T Visit(BorrowExpressionNode node);
+
         /// <summary>Visits a function call expression including arguments.</summary>
         T Visit(FunctionCallNode node);
 

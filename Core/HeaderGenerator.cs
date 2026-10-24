@@ -90,7 +90,9 @@ namespace Sage.Core
         public string Visit(ProgramNode node)
         {
             var sb = new StringBuilder();
-            foreach (var stmt in node.Statements)
+            // Parameter contracts may reference a struct declared later in the source.
+            foreach (var stmt in node.Statements.OfType<StructDeclarationNode>().Cast<AstNode>()
+                .Concat(node.Statements.Where(statement => statement is not StructDeclarationNode)))
             {
                 string res = stmt.Accept(this);
                 if (!string.IsNullOrEmpty(res)) sb.Append(res);
@@ -151,6 +153,7 @@ namespace Sage.Core
         public string Visit(ExternTypeNode node) => "";
 
         public string Visit(UnsafeBlockNode node) { node.Body.Accept(this); return ""; }
+        public string Visit(BorrowExpressionNode node) { node.Target.Accept(this); return ""; }
 
         // 'new' and 'delete' lower to malloc/free, which require stdlib.h.
         public string Visit(NewExpressionNode node)

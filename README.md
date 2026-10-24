@@ -13,7 +13,7 @@ The project strictly follows **SOLID principles** and **Clean Code** architectur
 
 * **Native Compilation:** Handles the entire build process from source to optimized binary (`.exe`).
 * **Pointer Boundary:** Raw pointers (`T*`) are restricted to `unsafe` contexts and FFI. This is not yet an ownership or lifetime guarantee.
-* **Local Ownership Tracking:** Heap-reference initialization transfers ownership, and scope exit releases owned allocations automatically. The compiler rejects use after move, use after deletion, and conflicting branch states. Borrowing remains future work; see [memory semantics](docs/memory.md).
+* **Local Ownership and Borrowing:** Heap-reference initialization transfers ownership, and scope exit releases owned allocations automatically. Explicit borrowed parameters provide shared or mutable access for supported scalar/struct values; see [borrowing semantics](docs/borrowing.md) and [memory semantics](docs/memory.md).
 * **Ergonomic FFI:** `extern` blocks with C interop aliases (`c_int`, `c_size_t`, `c_char`, …) and opaque C types (`type FILE;`) that map cleanly onto real C signatures.
 * **Tree-Shaking Code Gen:** Smart header management that only includes necessary C headers (`stdio.h`, `stdint.h`, etc.) based on actual code usage.
 * **Modern Type System:** Explicit fixed-width types (`i32`, `f64`, `str`, `b8`) with support for **Constants** (`const`) and **Explicit Casting** (`as`).
@@ -347,7 +347,7 @@ file directly with `sage <file>.test.sg` and read the `[PASS]`/`[FAIL]` output.
 
 ## Project Status
 
-The project is currently in **v0.8.5 (Alpha)**.
+The project is currently in **v0.9.0 (Alpha)**.
 
 * [x] **CLI & Project System** (`new`, `build`, `run`, `--version`)
 * [x] **Variable Declarations** (`var`) & **Constants** (`const`)

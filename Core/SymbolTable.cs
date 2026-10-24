@@ -46,11 +46,12 @@
             bool isConstant = false,
             bool isReference = false,
             int declarationLoopDepth = 0,
-            CallableSignature? signature = null)
+            CallableSignature? signature = null,
+            BorrowKind borrowing = BorrowKind.None)
         {
             if (_scopes.Count > 0)
             {
-                _scopes.Peek()[name] = new SymbolMetadata(type, isFunction, isExtern, isConstant, isReference, declarationLoopDepth, signature);
+                _scopes.Peek()[name] = new SymbolMetadata(type, isFunction, isExtern, isConstant, isReference, declarationLoopDepth, signature, borrowing);
             }
         }
 

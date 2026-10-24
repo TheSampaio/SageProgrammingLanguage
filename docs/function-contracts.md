@@ -11,7 +11,8 @@ in the current language, which has no implemented `break` statement.
 Struct values can be passed and returned by value. A struct initializer receives
 the expected type from its parameter or return context. These contracts do not
 allow transferring owning heap references through value parameters; `S144`
-remains in force until explicit reference contracts are implemented.
+remains in force for those transfers. Explicit [borrowed parameters](borrowing.md)
+now provide temporary shared or mutable access.
 
 Calling an `unsafe func` requires an `unsafe` block or another unsafe function.
 Existing direct `extern` calls retain their current trusted ABI behavior during

@@ -260,6 +260,7 @@ namespace Sage.Core
                 '<' => TokenType.Less,
                 '>' => TokenType.Greater,
                 '!' => TokenType.Bang,
+                '&' => TokenType.Ampersand,
                 _ => TokenType.Unknown
             };
 

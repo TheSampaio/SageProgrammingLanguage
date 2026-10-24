@@ -209,7 +209,11 @@ namespace Sage.Core
         /// </summary>
         public string Visit(AssignmentNode node) => $"{node.Target.Accept(this)} = {node.Expression.Accept(this)}";
 
-        public string Visit(IdentifierNode node) => node.Name.Replace("::", "_");
+        public string Visit(IdentifierNode node) => node.IsBorrowedValue
+            ? $"(*{node.Name})" : node.Name.Replace("::", "_");
+
+        public string Visit(BorrowExpressionNode node) => node.Target.IsReference
+            ? node.Target.Accept(this) : $"&({node.Target.Accept(this)})";
 
         public string Visit(ReturnNode node) => $"{Indent}return {node.Expression.Accept(this)};\n";
 
@@ -460,6 +464,7 @@ namespace Sage.Core
                 AssignmentNode assignment => new[] { assignment.Target, assignment.Expression },
                 UnaryExpressionNode unary => new[] { unary.Operand },
                 CastExpressionNode cast => new[] { cast.Expression },
+                BorrowExpressionNode borrow => new[] { borrow.Target },
                 ReturnNode returned => new[] { returned.Expression },
                 ExpressionStatementNode statement => new[] { statement.Expression },
                 DeleteNode deleted => new[] { deleted.Target },

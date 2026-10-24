@@ -8,6 +8,13 @@ extern trace("@TRACKER_HEADER@")
 
 struct Item { value: i32; }
 
+func borrowed_read(value: &Item): i32
+{
+    trace::ownership_check(trace::ownership_outstanding() == 1, "borrow_does_not_adopt_owner");
+    return value.value;
+}
+func borrowed_write(value: &mut Item): none { value.value++; }
+
 func early(flag: b8): i32
 {
     var first: Item = new Item { value = 1 };
@@ -29,6 +36,15 @@ func main(): none
         trace::ownership_check(trace::ownership_outstanding() == 1, "live_inside_scope");
     }
     trace::ownership_check(trace::ownership_outstanding() == 0, "scope_cleanup");
+
+    if (true)
+    {
+        var value: Item = new Item { value = 5 };
+        var observed: i32 = borrowed_read(&value);
+        borrowed_write(&mut value);
+        trace::ownership_check(observed == 5 && value.value == 6, "borrow_preserves_live_owner");
+    }
+    trace::ownership_check(trace::ownership_outstanding() == 0, "borrowed_owner_scope_cleanup");
 
     trace::ownership_reset_order();
     if (true)

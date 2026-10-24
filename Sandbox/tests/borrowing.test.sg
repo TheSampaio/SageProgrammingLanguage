@@ -1,0 +1,42 @@
+use test;
+
+struct BorrowedCounter { value: i32; }
+struct BorrowedPair { first: BorrowedCounter; second: BorrowedCounter; }
+
+func read_counter(counter: &BorrowedCounter): i32 { return counter.value; }
+func increment_counter(counter: &mut BorrowedCounter): none { counter.value++; }
+func increment_scalar(value: &mut i32): none { value++; }
+func read_twice(first: &BorrowedCounter, second: &BorrowedCounter): i32
+{
+    return first.value + second.value;
+}
+func forward_increment(counter: &mut BorrowedCounter): none { increment_counter(&mut counter); }
+func forward_read(counter: &mut BorrowedCounter): i32 { return read_counter(&counter); }
+func increment_pair(pair: &mut BorrowedPair): none { pair.first.value++; }
+func add_counter(counter: &mut BorrowedCounter, delta: i32): none { counter.value = counter.value + delta; }
+
+func main(): none
+{
+    var owner: BorrowedCounter = new BorrowedCounter { value = 4 };
+    test::assert_eq_i32("shared_owner_read", read_counter(&owner), 4);
+    increment_counter(&mut owner);
+    test::assert_eq_i32("mutable_owner_write", owner.value, 5);
+    test::assert_eq_i32("shared_aliases", read_twice(&owner, &owner), 10);
+    forward_increment(&mut owner);
+    test::assert_eq_i32("mutable_reborrow", owner.value, 6);
+    test::assert_eq_i32("shared_reborrow", forward_read(&mut owner), 6);
+    add_counter(&mut owner, owner.value);
+    test::assert_eq_i32("borrow_with_value_capture", owner.value, 12);
+
+    var value: i32 = 2;
+    increment_scalar(&mut value);
+    test::assert_eq_i32("scalar_borrow", value, 3);
+
+    var stack: BorrowedCounter = { value = 7 };
+    increment_counter(&mut stack);
+    test::assert_eq_i32("stack_borrow", stack.value, 8);
+
+    var pair: BorrowedPair = { first = { value = 1 }, second = { value = 2 } };
+    increment_pair(&mut pair);
+    test::assert_eq_i32("nested_value_borrow", pair.first.value, 2);
+}

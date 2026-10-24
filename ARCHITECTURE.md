@@ -69,6 +69,7 @@ The current compiler restricts some raw pointer operations through an **unsafe c
 
 Callable origin and module-scoping rules are documented in [module resolution](docs/modules.md).
 Argument, return, and native-alias checks are documented in [function contracts](docs/function-contracts.md).
+The initial borrowed-parameter model and its lifetime boundary are documented in [borrowing](docs/borrowing.md).
 
 The `SymbolTable` uses a `Stack<Dictionary<string, Symbol>>` to represent **Lexical Scoping**.
 

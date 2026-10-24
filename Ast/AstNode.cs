@@ -38,6 +38,9 @@ namespace Sage.Ast
         /// </summary>
         public bool IsReference { get; set; }
 
+        /// <summary>Whether an identifier denotes a value accessed through a borrowed parameter.</summary>
+        public bool IsBorrowedValue { get; set; }
+
         /// <summary>
         /// Dispatches the node to the appropriate visit method on the provided visitor.
         /// </summary>

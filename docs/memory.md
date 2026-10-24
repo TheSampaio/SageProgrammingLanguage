@@ -68,8 +68,10 @@ allocation and release to check leaks, double release, return values, and order.
 
 ## Remaining boundaries
 
-Borrowing, lifetime analysis, owned strings or buffers, and ownership-aware
-native calls remain future work. Native aliases created through `unsafe`
+[Borrowed function parameters](borrowing.md) now support shared and mutable
+access for a bounded set of value types. Stored/returned reference lifetimes,
+owned strings or buffers, and ownership-aware native calls remain future work.
+Native aliases created through `unsafe`
 remain the programmer's responsibility. The parser already requires non-array
 variables to have initializers (`S012`); arrays retain zero initialization.
 

@@ -21,6 +21,7 @@ namespace Sage.Core
         private int _unsafeDepth;
         private int _loopDepth;
         private int _functionDepth;
+        private int _borrowArgumentDepth;
 
         /// <summary>True when analysis is currently inside an unsafe context.</summary>
         private bool InUnsafe => _unsafeDepth > 0;
@@ -32,6 +33,7 @@ namespace Sage.Core
         /// </summary>
         public void RegisterModuleSymbols(ProgramNode moduleAst)
         {
+            foreach (var structure in moduleAst.Statements.OfType<StructDeclarationNode>()) RegisterStructDefinition(structure);
             foreach (var function in moduleAst.Statements.OfType<FunctionDeclarationNode>()) RegisterFunction(function);
             foreach (var node in moduleAst.Statements.OfType<ModuleNode>())
             {
@@ -46,6 +48,8 @@ namespace Sage.Core
 
         private void RegisterFunction(FunctionDeclarationNode func, string moduleName = "")
         {
+            if (TypeSystem.IsBorrowType(func.ReturnType))
+                throw new CompilerException(func, "S173", "Borrowed return values require lifetime contracts that are not implemented yet.");
             string name = string.IsNullOrEmpty(moduleName) ? func.Name : $"{moduleName}::{func.Name}";
             if (_functionDeclarations.TryGetValue(name, out var existing))
             {
@@ -80,6 +84,8 @@ namespace Sage.Core
                         TypeSystem.RegisterOpaqueType(opaque.Name);
                         break;
                     case FunctionDeclarationNode func:
+                        if (TypeSystem.IsBorrowType(func.ReturnType) || func.Parameters.Any(parameter => TypeSystem.IsBorrowType(parameter.Type)))
+                            throw new CompilerException(func, "S173", "Native ABI declarations cannot use Sage borrowing contracts.");
                         if (_functionDeclarations.ContainsKey($"{node.Alias}::{func.Name}"))
                             throw new CompilerException(func, "S150",
                                 $"Native alias '{node.Alias}::{func.Name}' conflicts with a Sage callable.");
@@ -130,6 +136,10 @@ namespace Sage.Core
             var duplicateParameter = node.Parameters.GroupBy(parameter => parameter.Name).FirstOrDefault(group => group.Count() > 1);
             if (duplicateParameter != null)
                 throw new CompilerException(node, "S154", $"Parameter '{duplicateParameter.Key}' is declared more than once in '{node.Name}'.");
+            foreach (var parameter in node.Parameters.Where(parameter => TypeSystem.IsBorrowType(parameter.Type)))
+                if (!IsBorrowableValue(TypeSystem.GetBorrowedType(parameter.Type)))
+                    throw new CompilerException(node, "S176",
+                        $"Borrowed parameter '{parameter.Name}' requires a scalar or a struct composed of borrowable values; '{parameter.Type}' is not supported yet.");
 
             // An unsafe or extern function establishes an unsafe context for its signature and body.
             bool unsafeContext = node.IsUnsafe || node.IsExtern;
@@ -156,7 +166,7 @@ namespace Sage.Core
             try
             {
                 foreach (var param in node.Parameters)
-                    _symbolTable.Define(param.Name, param.Type);
+                    _symbolTable.Define(param.Name, TypeSystem.GetBorrowedType(param.Type), borrowing: TypeSystem.GetBorrowKind(param.Type));
 
                 if (!node.IsExtern && node.Body != null)
                 {
@@ -186,6 +196,8 @@ namespace Sage.Core
 
         public string Visit(VariableDeclarationNode node)
         {
+            if (TypeSystem.IsBorrowType(node.Type))
+                throw new CompilerException(node, "S173", "Borrowed bindings are currently supported only as function parameters.");
             if (_symbolTable.IsDefinedInCurrentScope(node.Name))
                 throw new CompilerException(node, "S102", $"Variable '{node.Name}' is already defined.");
 
@@ -268,9 +280,34 @@ namespace Sage.Core
                 throw new CompilerException(node, "S160",
                     $"Function '{name}' expects {signature.ParameterTypes.Count} arguments, but received {node.Arguments.Count}.");
 
+            bool hasBorrowedParameters = signature.ParameterTypes.Any(TypeSystem.IsBorrowType);
+            var borrowed = new Dictionary<SymbolMetadata, (BorrowKind Kind, BorrowExpressionNode Expression)>();
             for (int index = 0; index < node.Arguments.Count; index++)
             {
                 var arg = node.Arguments[index];
+                string parameterType = signature.ParameterTypes[index];
+                if (TypeSystem.IsBorrowType(parameterType))
+                {
+                    if (arg is not BorrowExpressionNode borrow)
+                        throw new CompilerException(arg, "S170", $"Argument {index + 1} of '{name}' requires an explicit '{parameterType}' borrow.");
+                    _borrowArgumentDepth++;
+                    string borrowedType;
+                    try { borrowedType = borrow.Accept(this); }
+                    finally { _borrowArgumentDepth--; }
+                    if (borrowedType != parameterType)
+                        throw new CompilerException(borrow, "S170", $"Argument {index + 1} of '{name}' expects '{parameterType}', not '{borrowedType}'.");
+                    var source = _symbolTable.Resolve(((IdentifierNode)borrow.Target).Name)!;
+                    var kind = TypeSystem.GetBorrowKind(borrowedType);
+                    if (borrowed.TryGetValue(source, out var previous) && (kind == BorrowKind.Mutable || previous.Kind == BorrowKind.Mutable))
+                        throw new CompilerException(borrow, "S172",
+                            $"This borrow conflicts with the borrow at ({previous.Expression.Line},{previous.Expression.Column}) in the same call.");
+                    borrowed[source] = (kind, borrow);
+                    continue;
+                }
+                if (arg is BorrowExpressionNode)
+                    throw new CompilerException(arg, "S170", $"Argument {index + 1} of '{name}' expects a value, not a borrow.");
+                if (hasBorrowedParameters && !IsPureBorrowCallArgument(arg))
+                    throw new CompilerException(arg, "S177", "Evaluate calls and mutations into local values before passing them alongside borrowed arguments.");
                 string type = arg.Accept(this);
                 RequireValueContract(arg);
                 if (!symbol.IsExtern)
@@ -279,6 +316,22 @@ namespace Sage.Core
             }
 
             return symbol.Type;
+        }
+
+        public string Visit(BorrowExpressionNode node)
+        {
+            if (_borrowArgumentDepth == 0)
+                throw new CompilerException(node, "S173", "A borrow must be a direct argument to a declared borrowed parameter.");
+            if (node.Target is not IdentifierNode identifier)
+                throw new CompilerException(node, "S175", "Borrow a named variable; temporary values and field-specific borrows are not supported yet.");
+            string type = identifier.Accept(this);
+            var source = _symbolTable.ResolveLocal(identifier.Name);
+            if (source == null || source.IsFunction || !IsBorrowableValue(type))
+                throw new CompilerException(node, "S176", "Only local variables or parameters with supported value types can be borrowed.");
+            if (node.IsMutable && (source.IsConstant || source.Borrowing == BorrowKind.Shared))
+                throw new CompilerException(node, "S171", $"Cannot mutably borrow '{identifier.Name}' through shared or constant access.");
+            node.VariableType = (node.IsMutable ? "&mut " : "&") + type;
+            return node.VariableType;
         }
 
         // --- Helpers ---
@@ -342,6 +395,7 @@ namespace Sage.Core
             }
             node.VariableType = symbol.Type;
             node.IsReference = symbol.IsReference;
+            node.IsBorrowedValue = symbol.Borrowing != BorrowKind.None;
             return symbol.Type;
         }
 
@@ -355,6 +409,7 @@ namespace Sage.Core
 
         public string Visit(AssignmentNode node)
         {
+            EnsureMutablePlace(node.Target, node);
             if (node.Target is IdentifierNode idTarget)
             {
                 var targetSymbol = _symbolTable.Resolve(idTarget.Name);
@@ -471,6 +526,7 @@ namespace Sage.Core
 
         public string Visit(UnaryExpressionNode node)
         {
+            if (node.Operator == TokenType.PlusPlus) EnsureMutablePlace(node.Operand, node);
             string type = node.Operand.Accept(this);
             RequireValueContract(node.Operand);
             return type;
@@ -502,8 +558,10 @@ namespace Sage.Core
 
         public string Visit(StructDeclarationNode node)
         {
+            if (node.Fields.Any(field => TypeSystem.IsBorrowType(field.Type)))
+                throw new CompilerException(node, "S173", "Struct fields cannot store borrowed references yet.");
+            RegisterStructDefinition(node);
             _symbolTable.Define(node.Name, "struct");
-            _structDeclarations[node.Name] = node;
             return "none";
         }
 
@@ -545,6 +603,8 @@ namespace Sage.Core
 
         public string Visit(DeleteNode node)
         {
+            if (node.Target is IdentifierNode borrowed && _symbolTable.Resolve(borrowed.Name) is { Borrowing: BorrowKind.Shared or BorrowKind.Mutable })
+                throw new CompilerException(node, "S174", $"Borrowed value '{borrowed.Name}' cannot be deleted.");
             node.Target.Accept(this);
             if (!node.Target.IsReference)
                 throw new CompilerException(node, "S132",
@@ -589,6 +649,49 @@ namespace Sage.Core
                     $"Reference '{source.Name}' is declared outside this loop and cannot be moved or deleted on a potentially repeated path.");
             symbol.Ownership = new OwnershipState(kind, operation.Line, operation.Column);
         }
+
+        private void RegisterStructDefinition(StructDeclarationNode node)
+        {
+            if (_structDeclarations.TryGetValue(node.Name, out var existing) && !ReferenceEquals(existing, node))
+                throw new CompilerException(node, "S150", $"Struct '{node.Name}' is already declared.");
+            _structDeclarations[node.Name] = node;
+        }
+
+        private bool IsBorrowableValue(string type, HashSet<string>? path = null)
+        {
+            if (TypeSystem.IsNumeric(type) || type is "b8" or "c_bool") return true;
+            if (!_structDeclarations.TryGetValue(type, out var structure)) return false;
+            path ??= new HashSet<string>(StringComparer.Ordinal);
+            if (!path.Add(type)) return false;
+            bool supported = structure.Fields.All(field => IsBorrowableValue(field.Type, path));
+            path.Remove(type);
+            return supported;
+        }
+
+        private void EnsureMutablePlace(AstNode target, AstNode operation)
+        {
+            AstNode root = target;
+            while (root is MemberAccessNode or ArrayAccessNode)
+                root = root is MemberAccessNode member ? member.Object : ((ArrayAccessNode)root).Array;
+            if (root is not IdentifierNode identifier) return;
+            var symbol = _symbolTable.Resolve(identifier.Name);
+            if (symbol?.Borrowing == BorrowKind.Shared)
+                throw new CompilerException(operation, "S171", $"Cannot mutate '{identifier.Name}' through a shared borrow.");
+            if (symbol?.IsConstant == true)
+                throw new CompilerException(operation, "S103", $"Cannot mutate constant '{identifier.Name}'.");
+        }
+
+        private static bool IsPureBorrowCallArgument(AstNode node) => node switch
+        {
+            LiteralNode or IdentifierNode => true,
+            MemberAccessNode member => IsPureBorrowCallArgument(member.Object),
+            ArrayAccessNode array => IsPureBorrowCallArgument(array.Array) && IsPureBorrowCallArgument(array.Index),
+            BinaryExpressionNode binary => IsPureBorrowCallArgument(binary.Left) && IsPureBorrowCallArgument(binary.Right),
+            UnaryExpressionNode unary when unary.Operator != TokenType.PlusPlus => IsPureBorrowCallArgument(unary.Operand),
+            CastExpressionNode cast => IsPureBorrowCallArgument(cast.Expression),
+            StructInitializationNode structure => structure.Fields.Values.All(IsPureBorrowCallArgument),
+            _ => false
+        };
 
         private static void RequireValueContract(AstNode expression)
         {

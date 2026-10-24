@@ -1,9 +1,10 @@
 # Proposed ownership model (design, not implemented)
 
 This document records the target contract for the next compiler increments.
-The [implemented subset](memory.md) currently covers local reference transfers
-and invalidation after deletion.
-Examples using `&` and `&mut` are proposed syntax and **do not compile today**.
+The [implemented subset](memory.md) covers local reference transfers, cleanup,
+and invalidation after deletion. [Borrowed parameters](borrowing.md) implement
+`&T` and `&mut T` for the duration of a call. Stored and returned borrows remain
+proposed work rather than implemented features.
 Existing `new`, `delete`, and `unsafe` programs remain valid until a separately
 tested migration deliberately changes that behavior.
 

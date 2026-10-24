@@ -75,6 +75,8 @@ namespace Sage.Core
         public static string ToCType(string sageType)
         {
             if (string.IsNullOrEmpty(sageType)) return "void";
+            if (IsBorrowType(sageType))
+                return $"{(GetBorrowKind(sageType) == BorrowKind.Shared ? "const " : "")}{ToCType(GetBorrowedType(sageType))}*";
 
             // Recursive pointer handling (e.g. i32*, none**, c_char*).
             if (sageType.EndsWith('*'))
@@ -155,10 +157,21 @@ namespace Sage.Core
         /// </summary>
         public static string FormatCParameter(string name, string type)
         {
+            if (IsBorrowType(type)) return $"{ToCType(type)} {name}";
             if (IsArrayType(type))
                 return $"{ToCType(GetArrayBaseType(type))} {name}[{GetArraySize(type)}]";
             return $"{ToCType(type)} {name}";
         }
+
+        public static bool IsBorrowType(string type) => type.StartsWith('&');
+        public static BorrowKind GetBorrowKind(string type) => !IsBorrowType(type) ? BorrowKind.None
+            : type.StartsWith("&mut ", StringComparison.Ordinal) ? BorrowKind.Mutable : BorrowKind.Shared;
+        public static string GetBorrowedType(string type) => GetBorrowKind(type) switch
+        {
+            BorrowKind.Mutable => type[5..],
+            BorrowKind.Shared => type[1..],
+            _ => type
+        };
 
         /// <summary>True if the type is a fixed-size array such as <c>i32[4]</c>.</summary>
         public static bool IsArrayType(string type) => type.Contains('[') && type.EndsWith(']');

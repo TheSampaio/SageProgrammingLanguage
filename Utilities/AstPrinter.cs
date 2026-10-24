@@ -175,7 +175,15 @@ namespace Sage.Utilities
         public object Visit(IdentifierNode node) => new
         {
             Type = "Identifier",
-            node.Name
+            node.Name,
+            node.IsBorrowedValue
+        };
+
+        public object Visit(BorrowExpressionNode node) => new
+        {
+            Type = "Borrow",
+            node.IsMutable,
+            Target = node.Target.Accept(this)
         };
 
         /// <summary>Visits a 'use' directive for module imports.</summary>

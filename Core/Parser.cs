@@ -463,6 +463,11 @@ namespace Sage.Core
         /// </summary>
         private string ConsumeType()
         {
+            if (Match(TokenType.Ampersand))
+            {
+                bool mutable = MatchContextualMut();
+                return (mutable ? "&mut " : "&") + ConsumeType();
+            }
             if (!IsType(Current) && Current.Type != TokenType.Identifier)
                 throw new CompilerException(Current, "S003", $"Expected a type but found {Current.Type} ('{Current.Value}')");
 
@@ -579,6 +584,12 @@ namespace Sage.Core
 
         private AstNode ParseUnary()
         {
+            if (Current.Type == TokenType.Ampersand)
+            {
+                var token = Consume(TokenType.Ampersand);
+                bool mutable = MatchContextualMut();
+                return CreateNode(new BorrowExpressionNode(ParseUnary(), mutable), token);
+            }
             if (Current.Type == TokenType.Bang || Current.Type == TokenType.Minus)
             {
                 var opToken = Current;
@@ -586,6 +597,13 @@ namespace Sage.Core
                 return CreateNode(new UnaryExpressionNode(op, ParseUnary()), opToken);
             }
             return ParsePostfix();
+        }
+
+        private bool MatchContextualMut()
+        {
+            if (Current.Type != TokenType.Identifier || Current.Value != "mut") return false;
+            _pos++;
+            return true;
         }
 
         private AstNode ParsePostfix()
