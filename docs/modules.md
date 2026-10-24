@@ -19,9 +19,9 @@ Duplicate Sage callable declarations, including a collision between a native
 alias and a Sage module callable, produce `S150`. Re-registering the same AST
 declaration during compiler passes is idempotent.
 
-This increment does not establish ownership-aware function signatures. Native
-aliases are still shared across the compilation session, and independently
-declared native signatures with the same alias need a later consistency check.
+The [function-contract increment](function-contracts.md) validates Sage signatures
+and the consistency of repeated native aliases. Ownership-aware signatures are
+still pending. Native aliases remain shared across the compilation session.
 The compilation session can also see transitively discovered modules; validation
 of direct-import visibility remains future work.
 

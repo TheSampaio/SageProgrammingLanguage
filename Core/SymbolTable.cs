@@ -45,11 +45,12 @@
             bool isExtern = false,
             bool isConstant = false,
             bool isReference = false,
-            int declarationLoopDepth = 0)
+            int declarationLoopDepth = 0,
+            CallableSignature? signature = null)
         {
             if (_scopes.Count > 0)
             {
-                _scopes.Peek()[name] = new SymbolMetadata(type, isFunction, isExtern, isConstant, isReference, declarationLoopDepth);
+                _scopes.Peek()[name] = new SymbolMetadata(type, isFunction, isExtern, isConstant, isReference, declarationLoopDepth, signature);
             }
         }
 

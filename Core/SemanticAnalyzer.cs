@@ -15,6 +15,7 @@ namespace Sage.Core
         private readonly Dictionary<string, StructDeclarationNode> _structDeclarations = new();
         private readonly Dictionary<string, FunctionDeclarationNode> _functionDeclarations = new(StringComparer.Ordinal);
         private string _currentModule = "";
+        private string? _currentReturnType;
 
         /// <summary>Depth of nested unsafe contexts (unsafe blocks, unsafe functions, extern signatures).</summary>
         private int _unsafeDepth;
@@ -55,7 +56,8 @@ namespace Sage.Core
             if (_symbolTable.Resolve(name) != null)
                 throw new CompilerException(func, "S150", $"Callable '{name}' conflicts with an existing declaration.");
             _functionDeclarations.Add(name, func);
-            _symbolTable.Define(name, func.ReturnType, isFunction: true, isExtern: func.IsExtern);
+            _symbolTable.Define(name, func.ReturnType, isFunction: true, isExtern: func.IsExtern,
+                signature: new CallableSignature(func.ReturnType, func.Parameters.Select(parameter => parameter.Type), func.IsUnsafe));
         }
 
         /// <summary>
@@ -81,7 +83,17 @@ namespace Sage.Core
                         if (_functionDeclarations.ContainsKey($"{node.Alias}::{func.Name}"))
                             throw new CompilerException(func, "S150",
                                 $"Native alias '{node.Alias}::{func.Name}' conflicts with a Sage callable.");
-                        _symbolTable.Define($"{node.Alias}::{func.Name}", func.ReturnType, isFunction: true, isExtern: true);
+                        string name = $"{node.Alias}::{func.Name}";
+                        var signature = new CallableSignature(func.ReturnType, func.Parameters.Select(parameter => parameter.Type),
+                            func.IsUnsafe, node.Header, node.Library);
+                        var existing = _symbolTable.Resolve(name);
+                        if (existing != null)
+                        {
+                            if (existing.Signature == null || !existing.Signature.Matches(signature))
+                                throw new CompilerException(func, "S152", $"Native alias '{name}' has conflicting signatures or native origins.");
+                            break;
+                        }
+                        _symbolTable.Define(name, func.ReturnType, isFunction: true, isExtern: true, signature: signature);
                         break;
                 }
             }
@@ -115,6 +127,9 @@ namespace Sage.Core
         public string Visit(FunctionDeclarationNode node)
         {
             RegisterFunction(node, node.ModuleOwner);
+            var duplicateParameter = node.Parameters.GroupBy(parameter => parameter.Name).FirstOrDefault(group => group.Count() > 1);
+            if (duplicateParameter != null)
+                throw new CompilerException(node, "S154", $"Parameter '{duplicateParameter.Key}' is declared more than once in '{node.Name}'.");
 
             // An unsafe or extern function establishes an unsafe context for its signature and body.
             bool unsafeContext = node.IsUnsafe || node.IsExtern;
@@ -136,20 +151,28 @@ namespace Sage.Core
             }
 
             _symbolTable.EnterScope();
-
-            foreach (var param in node.Parameters)
-                _symbolTable.Define(param.Name, param.Type);
-
-            if (!node.IsExtern && node.Body != null)
+            string? previousReturnType = _currentReturnType;
+            _currentReturnType = node.ReturnType;
+            try
             {
-                _functionDepth++;
-                try { node.Body.Accept(this); }
-                finally { _functionDepth--; }
+                foreach (var param in node.Parameters)
+                    _symbolTable.Define(param.Name, param.Type);
+
+                if (!node.IsExtern && node.Body != null)
+                {
+                    _functionDepth++;
+                    try { node.Body.Accept(this); }
+                    finally { _functionDepth--; }
+                    if (node.ReturnType != "none" && CanCompleteNormally(node.Body))
+                        throw new CompilerException(node, "S163", $"Function '{node.Name}' can reach its end without returning '{node.ReturnType}'.");
+                }
             }
-
-            _symbolTable.ExitScope();
-
-            if (unsafeContext) _unsafeDepth--;
+            finally
+            {
+                _currentReturnType = previousReturnType;
+                _symbolTable.ExitScope();
+                if (unsafeContext) _unsafeDepth--;
+            }
             return node.ReturnType;
         }
 
@@ -238,11 +261,21 @@ namespace Sage.Core
 
             node.ResolvedName = name;
             node.IsExternCall = symbol.IsExtern;
+            var signature = symbol.Signature ?? throw new InvalidOperationException($"Callable '{name}' has no signature.");
+            if (signature.IsUnsafe && !InUnsafe)
+                throw new CompilerException(node, "S164", $"Calling unsafe function '{name}' requires an unsafe context.");
+            if (node.Arguments.Count != signature.ParameterTypes.Count)
+                throw new CompilerException(node, "S160",
+                    $"Function '{name}' expects {signature.ParameterTypes.Count} arguments, but received {node.Arguments.Count}.");
 
-            foreach (var arg in node.Arguments)
+            for (int index = 0; index < node.Arguments.Count; index++)
             {
-                arg.Accept(this);
+                var arg = node.Arguments[index];
+                string type = arg.Accept(this);
                 RequireValueContract(arg);
+                if (!symbol.IsExtern)
+                    ValidateValueType(arg, signature.ParameterTypes[index], type, "S161",
+                        $"Argument {index + 1} of '{name}'");
             }
 
             return symbol.Type;
@@ -271,6 +304,16 @@ namespace Sage.Core
             }
 
             return false;
+        }
+
+        private void ValidateValueType(AstNode expression, string targetType, string sourceType, string code, string description)
+        {
+            bool structInitializer = sourceType == "struct_initializer" && _structDeclarations.ContainsKey(targetType);
+            if (!structInitializer && !TypeSystem.AreTypesCompatible(targetType, sourceType) &&
+                !IsAutoPromotableLiteral(targetType, expression))
+                throw new CompilerException(expression, code, $"{description} requires '{targetType}', but received '{sourceType}'.");
+            expression.VariableType = targetType;
+            if (expression is LiteralNode literal) literal.TypeName = targetType;
         }
 
         // --- Standard Visitor Implementations ---
@@ -413,6 +456,9 @@ namespace Sage.Core
         {
             string type = node.Expression.Accept(this);
             RequireValueContract(node.Expression);
+            if (_currentReturnType == null)
+                throw new CompilerException(node, "S162", "A return statement must be inside a function.");
+            ValidateValueType(node.Expression, _currentReturnType, type, "S162", "Return expression");
             return type;
         }
         public string Visit(ExpressionStatementNode node)
@@ -558,6 +604,8 @@ namespace Sage.Core
             UnsafeBlockNode block => CanCompleteNormally(block.Body),
             IfNode conditional when conditional.ElseBranch != null =>
                 CanCompleteNormally(conditional.ThenBranch) || CanCompleteNormally(conditional.ElseBranch),
+            WhileNode loop when loop.Condition is LiteralNode { Value: true } => false,
+            ForNode loop when loop.Condition == null || loop.Condition is LiteralNode { Value: true } => false,
             _ => true
         };
 

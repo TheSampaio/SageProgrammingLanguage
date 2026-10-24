@@ -15,7 +15,8 @@ namespace Sage.Core
         bool isExtern,
         bool isConstant = false,
         bool isReference = false,
-        int declarationLoopDepth = 0)
+        int declarationLoopDepth = 0,
+        CallableSignature? signature = null)
     {
         /// <summary>Gets the Sage data type associated with this symbol.</summary>
         public string Type { get; } = type;
@@ -37,5 +38,8 @@ namespace Sage.Core
 
         /// <summary>Loop nesting at declaration, used to reject repeated consumption.</summary>
         public int DeclarationLoopDepth { get; } = declarationLoopDepth;
+
+        /// <summary>Declared parameter and return contract, present for callable symbols.</summary>
+        public CallableSignature? Signature { get; } = signature;
     }
 }

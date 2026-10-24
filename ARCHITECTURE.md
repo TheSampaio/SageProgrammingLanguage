@@ -68,6 +68,7 @@ The current compiler restricts some raw pointer operations through an **unsafe c
 ### Scope Management (`SymbolTable`)
 
 Callable origin and module-scoping rules are documented in [module resolution](docs/modules.md).
+Argument, return, and native-alias checks are documented in [function contracts](docs/function-contracts.md).
 
 The `SymbolTable` uses a `Stack<Dictionary<string, Symbol>>` to represent **Lexical Scoping**.
 

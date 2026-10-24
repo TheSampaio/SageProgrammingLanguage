@@ -43,14 +43,14 @@ module console
     /// Runs a shell command through the system's command processor.
     func run(command: str): i32
     {
-        return libc_stdlib::system(command);
+        return libc_stdlib::system(command) as i32;
     }
 
     /// Captures a single character input from the user.
     /// Returns the ASCII/Integer value of the key pressed.
     func read(): i32
     {
-        return libc_stdio::getchar();
+        return libc_stdio::getchar() as i32;
     }
 
     /// Reads a whitespace-delimited token from standard input into the provided buffer.
