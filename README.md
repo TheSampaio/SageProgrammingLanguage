@@ -13,7 +13,7 @@ The project strictly follows **SOLID principles** and **Clean Code** architectur
 
 * **Native Compilation:** Handles the entire build process from source to optimized binary (`.exe`).
 * **Pointer Boundary:** Raw pointers (`T*`) are restricted to `unsafe` contexts and FFI. This is not yet an ownership or lifetime guarantee.
-* **Local Ownership Tracking:** Heap-reference initialization transfers ownership. The compiler rejects use after move, use after deletion, and conflicting branch states. Borrowing and automatic cleanup remain future work; see [memory semantics](docs/memory.md).
+* **Local Ownership Tracking:** Heap-reference initialization transfers ownership, and scope exit releases owned allocations automatically. The compiler rejects use after move, use after deletion, and conflicting branch states. Borrowing remains future work; see [memory semantics](docs/memory.md).
 * **Ergonomic FFI:** `extern` blocks with C interop aliases (`c_int`, `c_size_t`, `c_char`, …) and opaque C types (`type FILE;`) that map cleanly onto real C signatures.
 * **Tree-Shaking Code Gen:** Smart header management that only includes necessary C headers (`stdio.h`, `stdint.h`, etc.) based on actual code usage.
 * **Modern Type System:** Explicit fixed-width types (`i32`, `f64`, `str`, `b8`) with support for **Constants** (`const`) and **Explicit Casting** (`as`).
@@ -255,7 +255,7 @@ implicitly unsafe, since they cross into C. Local heap references now have
 [move and deletion checks](docs/memory.md), while native aliases and resource
 lifetimes across API boundaries still require further work.
 
-### Manual heap allocation: `new` / `delete`
+### Transitional heap syntax: `new` / `delete`
 
 ```rust
 struct Person { name: str; age: i32; }
@@ -265,7 +265,7 @@ func main(): none
     // 'new' allocates on the heap. The reference has no pointer arithmetic.
     var hero: Person = new Person { name = "Zelda", age = 118 };
     console::print_line("{hero.name} is {hero.age}");
-    delete hero; // release it explicitly
+    // Released automatically when this scope ends. Explicit delete remains supported.
 }
 ```
 
@@ -347,7 +347,7 @@ file directly with `sage <file>.test.sg` and read the `[PASS]`/`[FAIL]` output.
 
 ## Project Status
 
-The project is currently in **v0.8.2 (Alpha)**.
+The project is currently in **v0.8.3 (Alpha)**.
 
 * [x] **CLI & Project System** (`new`, `build`, `run`, `--version`)
 * [x] **Variable Declarations** (`var`) & **Constants** (`const`)

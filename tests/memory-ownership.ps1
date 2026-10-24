@@ -28,6 +28,10 @@ $cases = @(
     @{ Name = 'outer_owner_in_loop'; Code = 'func main(): none { var a: Item = new Item {}; while (true) { delete a; } }'; Error = 'S145' },
     @{ Name = 'local_owner_in_loop'; Code = 'func main(): none { for (var i: i32 = 0; i < 2; i++) { var a: Item = new Item {}; var b: Item = a; delete b; } }' },
     @{ Name = 'copy_struct'; Code = 'func main(): none { var a: Item = { value = 1 }; var b: Item = a; a.value = 2; b.value = 3; }' },
+    @{ Name = 'anonymous_allocation'; Code = 'func main(): none { new Item {}; }'; Error = 'S146' },
+    @{ Name = 'global_allocation'; Code = 'var a: Item = new Item {}; func main(): none {}'; Error = 'S146' },
+    @{ Name = 'owner_arithmetic'; Code = 'func main(): none { var a: Item = new Item {}; a++; }'; Error = 'S144' },
+    @{ Name = 'for_assignment_initializer'; Code = 'func main(): none { var i: i32 = 0; for (i = 0; i < 2; i++) {} }' },
     @{ Name = 'rejected_uninitialized'; Code = 'func main(): none { var x: i32; }'; Error = 'S012' }
 )
 

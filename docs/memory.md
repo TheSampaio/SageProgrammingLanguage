@@ -39,17 +39,37 @@ more precise loop analysis remains future work.
 | S143 | Whole-reference reassignment is not supported yet |
 | S144 | Operation needs an owning or borrowing contract not yet implemented |
 | S145 | A loop might consume an outer reference repeatedly |
+| S146 | An allocation needs a local owning binding |
 
 S140–S142 report the source location of the invalidating operation. Passing or
 returning heap references, and storing them inside arrays or struct fields, is
 rejected until those operations carry valid ownership contracts. Raw pointer
 casts still require `unsafe` and leave the checked reference model.
 
-## Boundaries
+## Automatic local cleanup (v0.8.3)
 
-This increment does not implement automatic cleanup, borrows, lifetime analysis,
-owned strings or buffers, or ownership-aware native calls. An allocation can
-still leak when no `delete` executes. Native aliases created through `unsafe`
+Local owning references are released automatically at scope exit, including
+early returns and the end of a loop iteration. Destruction occurs in reverse
+declaration order. A return expression is evaluated before cleanup. Moves clear
+the source pointer, and a transitional explicit `delete` also clears its binding;
+subsequent scope cleanup therefore does not release the allocation twice.
+
+The C backend uses typed cleanup helpers and GCC's `cleanup` variable attribute.
+GCC is already the supported native toolchain and GNU statement expressions were
+already required by allocation and interpolation. Other native C compilers have
+not been validated. Allocation failure calls `abort()` before dereferencing a
+null pointer; recoverable allocation errors remain future work. Process-level
+termination (`exit`, `abort`, native failures) does not unwind Sage scopes.
+
+Anonymous allocation statements and global heap allocations are rejected with
+`S146`: every checked allocation needs a local owner. This keeps the compiler's
+cleanup obligation explicit. `tests/memory-cleanup.ps1` instruments native
+allocation and release to check leaks, double release, return values, and order.
+
+## Remaining boundaries
+
+Borrowing, lifetime analysis, owned strings or buffers, and ownership-aware
+native calls remain future work. Native aliases created through `unsafe`
 remain the programmer's responsibility. The parser already requires non-array
 variables to have initializers (`S012`); arrays retain zero initialization.
 

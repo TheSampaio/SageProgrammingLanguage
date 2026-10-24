@@ -17,6 +17,7 @@ namespace Sage.Core
         /// <summary>Depth of nested unsafe contexts (unsafe blocks, unsafe functions, extern signatures).</summary>
         private int _unsafeDepth;
         private int _loopDepth;
+        private int _functionDepth;
 
         /// <summary>True when analysis is currently inside an unsafe context.</summary>
         private bool InUnsafe => _unsafeDepth > 0;
@@ -129,7 +130,11 @@ namespace Sage.Core
                 _symbolTable.Define(param.Name, param.Type);
 
             if (!node.IsExtern && node.Body != null)
-                node.Body.Accept(this);
+            {
+                _functionDepth++;
+                try { node.Body.Accept(this); }
+                finally { _functionDepth--; }
+            }
 
             _symbolTable.ExitScope();
 
@@ -188,6 +193,8 @@ namespace Sage.Core
         {
             string lhs = node.Left.Accept(this);
             string rhs = node.Right.Accept(this);
+            RequireValueContract(node.Left);
+            RequireValueContract(node.Right);
 
             if (IsComparisonOp(node.Operator)) return "b8";
 
@@ -385,8 +392,20 @@ namespace Sage.Core
             RequireValueContract(node.Expression);
             return type;
         }
-        public string Visit(ExpressionStatementNode node) => node.Expression.Accept(this);
-        public string Visit(UnaryExpressionNode node) => node.Operand.Accept(this);
+        public string Visit(ExpressionStatementNode node)
+        {
+            string type = node.Expression.Accept(this);
+            if (node.Expression is NewExpressionNode)
+                throw new CompilerException(node, "S146", "An allocated reference must be bound to a local variable.");
+            return type;
+        }
+
+        public string Visit(UnaryExpressionNode node)
+        {
+            string type = node.Operand.Accept(this);
+            RequireValueContract(node.Operand);
+            return type;
+        }
 
         public string Visit(CastExpressionNode node)
         {
@@ -405,7 +424,10 @@ namespace Sage.Core
         public string Visit(InterpolatedStringNode node)
         {
             foreach (var part in node.Parts)
+            {
                 part.VariableType = part.Accept(this);
+                RequireValueContract(part);
+            }
             return "str";
         }
 
@@ -428,6 +450,8 @@ namespace Sage.Core
 
         public string Visit(NewExpressionNode node)
         {
+            if (_functionDepth == 0)
+                throw new CompilerException(node, "S146", "Heap references must be created inside a function scope.");
             if (!_structDeclarations.TryGetValue(node.TypeName, out var structDecl))
                 throw new CompilerException(node, "S130",
                     $"'new' requires a known struct type, but '{node.TypeName}' is not a struct.");

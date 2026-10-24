@@ -15,6 +15,8 @@ namespace Sage.Core
 
         /// <summary>Monotonic counter used to mint unique C temporary identifiers.</summary>
         private int _tempCounter = 0;
+        private readonly Dictionary<string, string> _cleanupHelpers = new();
+        private readonly HashSet<string> _usedNames = new(StringComparer.Ordinal);
 
         /// <summary>
         /// Gets the current indentation string based on the nesting level.
@@ -29,6 +31,10 @@ namespace Sage.Core
         /// <returns>A string containing the generated C code.</returns>
         public string Generate(ProgramNode ast, string moduleName)
         {
+            _cleanupHelpers.Clear();
+            _tempCounter = 0;
+            _usedNames.Clear();
+            ReserveNames(ast);
             string bodyCode = ast.Accept(this);
 
             var sb = new StringBuilder();
@@ -36,6 +42,11 @@ namespace Sage.Core
 
             // The C implementation file only includes its own header contract
             sb.AppendLine($"#include \"{moduleName}.h\"");
+
+            foreach (var (type, helper) in _cleanupHelpers)
+            {
+                sb.AppendLine($"static void {helper}({type}** owner) {{ free((void*)*owner); }}");
+            }
 
             sb.AppendLine("\n/* --- Generated Logic --- */");
             sb.Append(bodyCode);
@@ -113,15 +124,22 @@ namespace Sage.Core
             if (node.IsReference)
             {
                 string refType = $"{TypeSystem.ToCType(node.Type)}*";
+                string ownedType = $"{prefix}{TypeSystem.ToCType(node.Type)}";
+                if (!_cleanupHelpers.TryGetValue(ownedType, out string? helper))
+                {
+                    helper = MintName("_sage_drop_");
+                    _cleanupHelpers.Add(ownedType, helper);
+                }
+                string cleanup = $" __attribute__((cleanup({helper})))";
                 if (node.Initializer is IdentifierNode source)
                 {
-                    string temporary = $"_move{_tempCounter++}";
+                    string temporary = MintName("_move");
                     string name = source.Accept(this);
                     return $"{Indent}{refType} {temporary} = {name};\n" +
                         $"{Indent}{name} = NULL;\n" +
-                        $"{Indent}{prefix}{refType} {node.Name} = {temporary};\n";
+                        $"{Indent}{prefix}{refType} {node.Name}{cleanup} = {temporary};\n";
                 }
-                return $"{Indent}{prefix}{refType} {node.Name}{init};\n";
+                return $"{Indent}{prefix}{refType} {node.Name}{cleanup}{init};\n";
             }
 
             if (TypeSystem.IsArrayType(node.Type))
@@ -215,13 +233,13 @@ namespace Sage.Core
         public string Visit(NewExpressionNode node)
         {
             string cType = TypeSystem.ToCType(node.TypeName);
-            string tmp = $"_new{_tempCounter++}";
+            string tmp = MintName("_new");
 
             string initList = node.Fields.Count > 0
                 ? "{ " + string.Join(", ", node.Fields.Select(kvp => $".{kvp.Key} = {kvp.Value.Accept(this)}")) + " }"
                 : "{0}";
 
-            return $"({{ {cType}* {tmp} = malloc(sizeof({cType})); *{tmp} = ({cType}){initList}; {tmp}; }})";
+            return $"({{ {cType}* {tmp} = malloc(sizeof({cType})); if (!{tmp}) abort(); *{tmp} = ({cType}){initList}; {tmp}; }})";
         }
 
         /// <summary>Releases a safe heap reference produced by <c>new</c>.</summary>
@@ -289,12 +307,17 @@ namespace Sage.Core
         public string Visit(ForNode node)
         {
             var sb = new StringBuilder();
-            string init = node.Initializer != null ? node.Initializer.Accept(this).Trim().TrimEnd(';') : "";
+            sb.AppendLine($"{Indent}{{");
+            _indent++;
+            if (node.Initializer is VariableDeclarationNode declaration) sb.Append(declaration.Accept(this));
+            else if (node.Initializer != null) sb.AppendLine($"{Indent}{node.Initializer.Accept(this)};");
             string cond = node.Condition != null ? node.Condition.Accept(this) : "";
             string inc = node.Increment != null ? node.Increment.Accept(this).Trim().TrimEnd(';') : "";
 
-            sb.AppendLine($"{Indent}for ({init}; {cond}; {inc})");
+            sb.AppendLine($"{Indent}for (; {cond}; {inc})");
             sb.Append(node.Body.Accept(this));
+            _indent--;
+            sb.AppendLine($"{Indent}}}");
             return sb.ToString();
         }
 
@@ -358,7 +381,7 @@ namespace Sage.Core
 
             // Each interpolation gets a uniquely named buffer so several interpolated strings can
             // coexist within a single expression without aliasing one another.
-            string buf = $"_buf{_tempCounter++}";
+            string buf = MintName("_buf");
             string argsC = arguments.Count > 0 ? ", " + string.Join(", ", arguments) : "";
             return $"({{ static char {buf}[512]; snprintf({buf}, sizeof({buf}), \"{formatString}\"{argsC}); {buf}; }})";
         }
@@ -393,5 +416,62 @@ namespace Sage.Core
         }
 
         public string Visit(ArrayAccessNode node) => $"{node.Array.Accept(this)}[{node.Index.Accept(this)}]";
+
+        private string MintName(string prefix)
+        {
+            string name;
+            do { name = $"{prefix}{_tempCounter++}"; } while (!_usedNames.Add(name));
+            return name;
+        }
+
+        /// <summary>Reserve source identifiers before introducing backend cleanup helpers or temporaries.</summary>
+        private void ReserveNames(AstNode node)
+        {
+            switch (node)
+            {
+                case VariableDeclarationNode variable: _usedNames.Add(variable.Name); break;
+                case IdentifierNode identifier: _usedNames.Add(identifier.Name.Replace("::", "_")); break;
+                case FunctionDeclarationNode function:
+                    _usedNames.Add(CNaming.ResolveFunctionName(function));
+                    foreach (var parameter in function.Parameters) _usedNames.Add(parameter.Name);
+                    break;
+                case FunctionCallNode call:
+                    _usedNames.Add(call.IsExternCall ? call.Name.Split("::")[^1] : call.Name.Replace("::", "_"));
+                    break;
+                case StructDeclarationNode structure: _usedNames.Add(structure.Name); break;
+                case ExternTypeNode opaque: _usedNames.Add(opaque.Name); break;
+            }
+
+            IEnumerable<AstNode> children = node switch
+            {
+                ProgramNode program => program.Statements,
+                ModuleNode module => module.Members,
+                FunctionDeclarationNode function => new AstNode?[] { function.Body }.OfType<AstNode>(),
+                BlockNode block => block.Statements,
+                ExternBlockNode external => external.Declarations,
+                StructDeclarationNode structure => structure.Fields,
+                VariableDeclarationNode variable => new AstNode?[] { variable.Initializer }.OfType<AstNode>(),
+                IfNode conditional => new[] { conditional.Condition, conditional.ThenBranch, conditional.ElseBranch }.OfType<AstNode>(),
+                WhileNode loop => new[] { loop.Condition, loop.Body },
+                ForNode loop => new[] { loop.Initializer, loop.Condition, loop.Increment, loop.Body }.OfType<AstNode>(),
+                UnsafeBlockNode block => new[] { block.Body },
+                BinaryExpressionNode binary => new[] { binary.Left, binary.Right },
+                AssignmentNode assignment => new[] { assignment.Target, assignment.Expression },
+                UnaryExpressionNode unary => new[] { unary.Operand },
+                CastExpressionNode cast => new[] { cast.Expression },
+                ReturnNode returned => new[] { returned.Expression },
+                ExpressionStatementNode statement => new[] { statement.Expression },
+                DeleteNode deleted => new[] { deleted.Target },
+                FunctionCallNode call => call.Arguments,
+                MemberAccessNode member => new[] { member.Object },
+                ArrayAccessNode access => new[] { access.Array, access.Index },
+                ArrayInitializationNode array => array.Elements,
+                StructInitializationNode structure => structure.Fields.Values,
+                NewExpressionNode allocation => allocation.Fields.Values,
+                InterpolatedStringNode text => text.Parts,
+                _ => []
+            };
+            foreach (var child in children) ReserveNames(child);
+        }
     }
 }

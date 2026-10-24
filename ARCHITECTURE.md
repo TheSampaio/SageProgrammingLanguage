@@ -62,7 +62,7 @@ The current compiler restricts some raw pointer operations through an **unsafe c
 
 * **Raw pointers** (`T*`, including `none*`) may only be *declared*, *cast to*, or *dereferenced/indexed* inside an `unsafe { }` block or an `unsafe func`. `str` is a distinct surface type, but its generated `char*` lifetime is not checked.
 * **`extern` is implicitly unsafe**: FFI signatures may traffic in raw pointers without extra annotation.
-* **`new` / `delete`**: `new T { ... }` allocates on the heap and yields a reference with surface type `T`, represented as `T*` in C (member access lowers to `->`). `SymbolMetadata.Ownership` records availability, transfer, and deletion by binding identity. The analyzer snapshots and merges these states across conditional branches; the backend clears moved and deleted pointers.
+* **`new` / `delete`**: `new T { ... }` allocates on the heap and yields a reference with surface type `T`, represented as `T*` in C (member access lowers to `->`). `SymbolMetadata.Ownership` records availability, transfer, and deletion by binding identity. The analyzer snapshots and merges these states across conditional branches; the backend clears moved and deleted pointers and uses typed GCC cleanup helpers for scope exit and early return.
 * **`const` is enforced**: reassigning a constant is a compile error (`SymbolMetadata.IsConstant`).
 
 ### Scope Management (`SymbolTable`)

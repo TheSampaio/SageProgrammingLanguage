@@ -74,7 +74,8 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
   represented as `T*` in C with `->` access; no pointer arithmetic). Freed with `delete` (→ `free`).
   Reference-ness is carried by `AstNode.IsReference` and `SymbolMetadata.IsReference`.
   Local reference initialization now transfers ownership. Use after transfer or deletion
-  is rejected; see `docs/memory.md`. Automatic cleanup and borrow contracts are pending.
+  is rejected; see `docs/memory.md`. Local owners have automatic GCC scope cleanup;
+  borrow contracts are pending.
 - `const` is enforced (`SymbolMetadata.IsConstant`).
 
 ## FFI / stdlib conventions

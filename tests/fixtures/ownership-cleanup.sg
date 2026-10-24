@@ -1,0 +1,90 @@
+extern trace("@TRACKER_HEADER@")
+{
+    func ownership_outstanding(): c_int;
+    func ownership_release_order(): c_int;
+    func ownership_reset_order(): none;
+    func ownership_check(condition: b8, name: str): none;
+}
+
+struct Item { value: i32; }
+
+func early(flag: b8): i32
+{
+    var first: Item = new Item { value = 1 };
+    if (flag)
+    {
+        var second: Item = new Item { value = 2 };
+        return first.value + second.value;
+    }
+    return first.value;
+}
+
+func main(): none
+{
+    var _new0: i32 = 4;
+    var _sage_drop_1: i32 = 5;
+    if (true)
+    {
+        var a: Item = new Item { value = 1 };
+        trace::ownership_check(trace::ownership_outstanding() == 1, "live_inside_scope");
+    }
+    trace::ownership_check(trace::ownership_outstanding() == 0, "scope_cleanup");
+
+    trace::ownership_reset_order();
+    if (true)
+    {
+        var a: Item = new Item { value = 1 };
+        var b: Item = new Item { value = 2 };
+    }
+    trace::ownership_check(trace::ownership_release_order() == 21, "reverse_destruction_order");
+
+    trace::ownership_reset_order();
+    var result: i32 = early(true);
+    trace::ownership_check(result == 3, "return_evaluated_before_cleanup");
+    trace::ownership_check(trace::ownership_outstanding() == 0, "early_return_cleanup");
+    trace::ownership_check(trace::ownership_release_order() == 21, "return_reverse_order");
+
+    trace::ownership_reset_order();
+    if (true)
+    {
+        var a: Item = new Item { value = 3 };
+        var b: Item = a;
+    }
+    trace::ownership_check(trace::ownership_outstanding() == 0, "move_cleanup");
+    trace::ownership_check(trace::ownership_release_order() == 3, "move_released_once");
+
+    trace::ownership_reset_order();
+    if (true)
+    {
+        var a: Item = new Item { value = 4 };
+        if (true) { var b: Item = a; }
+    }
+    trace::ownership_check(trace::ownership_outstanding() == 0, "conditional_move_cleanup");
+    trace::ownership_check(trace::ownership_release_order() == 4, "conditional_move_released_once");
+
+    if (true) { const a: Item = new Item { value = 1 }; }
+    trace::ownership_check(trace::ownership_outstanding() == 0, "const_owner_cleanup");
+
+    trace::ownership_reset_order();
+    if (true)
+    {
+        var a: Item = new Item { value = 1 };
+        if (true) { var a: Item = new Item { value = 2 }; }
+        trace::ownership_check(trace::ownership_outstanding() == 1, "shadow_preserves_outer_owner");
+    }
+    trace::ownership_check(trace::ownership_release_order() == 21, "shadow_cleanup");
+
+    if (true)
+    {
+        var a: Item = new Item { value = 1 };
+        delete a;
+    }
+    trace::ownership_check(trace::ownership_outstanding() == 0, "manual_delete_compatibility");
+
+    for (var i: i32 = 0; i < 3; i++) { var a: Item = new Item { value = 1 }; }
+    trace::ownership_check(trace::ownership_outstanding() == 0, "per_iteration_cleanup");
+
+    for (var a: Item = new Item { value = 1 }; false;) {}
+    trace::ownership_check(trace::ownership_outstanding() == 0, "for_initializer_cleanup");
+    trace::ownership_check(_new0 + _sage_drop_1 == 9, "generated_names_do_not_collide");
+}
