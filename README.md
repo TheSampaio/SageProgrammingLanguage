@@ -12,8 +12,8 @@ The project strictly follows **SOLID principles** and **Clean Code** architectur
 ## Core Features
 
 * **Native Compilation:** Handles the entire build process from source to optimized binary (`.exe`).
-* **Memory Safety by Default:** Raw pointers (`T*`) are forbidden in ordinary code and only usable inside `unsafe { }` blocks (and FFI). Constants (`const`) are strictly enforced.
-* **Safe Heap Allocation (`new` / `delete`):** Allocate on the heap and get a memory-safe reference — no pointer arithmetic, released explicitly with `delete`.
+* **Pointer Boundary:** Raw pointers (`T*`) are restricted to `unsafe` contexts and FFI. This is not yet an ownership or lifetime guarantee.
+* **Manual Heap Allocation (`new` / `delete`):** Struct references currently require explicit deletion. Ownership, borrow checking, and automatic cleanup are proposed but not implemented.
 * **Ergonomic FFI:** `extern` blocks with C interop aliases (`c_int`, `c_size_t`, `c_char`, …) and opaque C types (`type FILE;`) that map cleanly onto real C signatures.
 * **Tree-Shaking Code Gen:** Smart header management that only includes necessary C headers (`stdio.h`, `stdint.h`, etc.) based on actual code usage.
 * **Modern Type System:** Explicit fixed-width types (`i32`, `f64`, `str`, `b8`) with support for **Constants** (`const`) and **Explicit Casting** (`as`).
@@ -246,21 +246,22 @@ func main(): none
 }
 ```
 
-## Memory Safety, `new` and FFI
+## Current memory model, `new` and FFI
 
-Sage is **memory-safe by default**. Raw pointers (`T*`, including `none*`) cannot appear in
+Sage currently restricts raw pointers (`T*`, including `none*`) in
 ordinary code — declaring, casting to, or dereferencing one is a compile error. They are only
 allowed inside an `unsafe { }` block or in an `unsafe func`. FFI declarations (`extern`) are
-implicitly unsafe, since they cross into C.
+implicitly unsafe, since they cross into C. This restriction does not prevent
+aliasing, use-after-delete, or leaks from `new`; see the [audit](docs/architecture-audit.md).
 
-### Safe heap allocation: `new` / `delete`
+### Manual heap allocation: `new` / `delete`
 
 ```rust
 struct Person { name: str; age: i32; }
 
 func main(): none
 {
-    // 'new' allocates on the heap and yields a memory-safe reference (no pointer arithmetic).
+    // 'new' allocates on the heap. The reference has no pointer arithmetic.
     var hero: Person = new Person { name = "Zelda", age = 118 };
     console::print_line("{hero.name} is {hero.age}");
     delete hero; // release it explicitly
@@ -307,7 +308,7 @@ module file
 | `i8..i64`/`u8..u64` | `int8_t..uint64_t` | Fixed-width primitives              |
 | `f32` / `f64`   | `float` / `double` |                                        |
 | `b8`            | `bool`           |                                        |
-| `str`           | `char*`          | Safe string type (not a raw pointer)   |
+| `str`           | `char*`          | String surface type; lifetime is not checked |
 | `none`          | `void`           |                                        |
 | `none*`         | `void*`          | Raw pointer — `unsafe` only            |
 | `c_int`, `c_uint`, `c_char`, `c_size_t`, `c_void`, … | `int`, `unsigned int`, `char`, `size_t`, `void`, … | FFI interop aliases (native width) |

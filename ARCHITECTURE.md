@@ -58,11 +58,11 @@ Sage utilizes a **Static Typing** system with a focus on ABI safety and predicta
 
 ### Memory Safety Model
 
-Sage is memory-safe by default. The `SemanticAnalyzer` tracks an **unsafe context depth** and rejects raw pointer usage outside it:
+The current compiler restricts some raw pointer operations through an **unsafe context depth** in `SemanticAnalyzer`. It does not yet provide general ownership, borrowing, or lifetime safety; see [the architecture audit](docs/architecture-audit.md) and [memory model proposal](docs/memory-model-proposal.md).
 
-* **Raw pointers** (`T*`, including `none*`) may only be *declared*, *cast to*, or *dereferenced/indexed* inside an `unsafe { }` block or an `unsafe func`. `str` is a first-class safe string, not a raw pointer.
+* **Raw pointers** (`T*`, including `none*`) may only be *declared*, *cast to*, or *dereferenced/indexed* inside an `unsafe { }` block or an `unsafe func`. `str` is a distinct surface type, but its generated `char*` lifetime is not checked.
 * **`extern` is implicitly unsafe**: FFI signatures may traffic in raw pointers without extra annotation.
-* **`new` / `delete`**: `new T { ... }` allocates on the heap and yields a *safe reference* — surface type `T`, but represented as `T*` in C (member access lowers to `->`). References carry no pointer arithmetic and are released with `delete` (→ `free`). The reference-ness of a value is tracked via the `AstNode.IsReference` annotation and `SymbolMetadata.IsReference`.
+* **`new` / `delete`**: `new T { ... }` allocates on the heap and yields a reference with surface type `T`, represented as `T*` in C (member access lowers to `->`). References carry no pointer arithmetic and are released with `delete` (→ `free`). The `AstNode.IsReference` and `SymbolMetadata.IsReference` flags do not track aliases, moves, or destruction.
 * **`const` is enforced**: reassigning a constant is a compile error (`SymbolMetadata.IsConstant`).
 
 ### Scope Management (`SymbolTable`)

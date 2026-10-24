@@ -4,7 +4,7 @@ Guidance for AI assistants (and humans) working in this repository. Read this be
 
 ## What this is
 
-Sage is a statically typed, **memory-safe** programming language that **transpiles to C11** and
+Sage is a statically typed programming language that **transpiles to C11** and
 then invokes GCC to produce a native `.exe`. The compiler is C# (.NET 8). See `README.md` and
 `ARCHITECTURE.md` for the full picture.
 
@@ -70,9 +70,10 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
 - Raw pointers (`T*`, incl. `none*`) are only allowed inside an `unsafe { }` block or an `unsafe func`.
   `extern` is implicitly unsafe. `str` is a safe string type, not a raw pointer. Gating lives in
   `SemanticAnalyzer` via an unsafe-context depth counter.
-- `new T { ... }` allocates on the heap and yields a memory-safe **reference** (surface type `T`,
+- `new T { ... }` allocates on the heap and yields a **reference** (surface type `T`,
   represented as `T*` in C with `->` access; no pointer arithmetic). Freed with `delete` (→ `free`).
   Reference-ness is carried by `AstNode.IsReference` and `SymbolMetadata.IsReference`.
+  The compiler does not yet enforce unique ownership or automatic cleanup.
 - `const` is enforced (`SymbolMetadata.IsConstant`).
 
 ## FFI / stdlib conventions
