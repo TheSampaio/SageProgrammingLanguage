@@ -15,6 +15,13 @@ func borrowed_read(value: &Item): i32
 }
 func borrowed_write(value: &mut Item): none { value.value++; }
 
+func named_projection(): i32
+{
+    var owner: Item = new Item { value = 7 };
+    trace::ownership_check(trace::ownership_outstanding() == 1, "named_projection_has_live_owner");
+    return owner.value;
+}
+
 func early(flag: b8): i32
 {
     var first: Item = new Item { value = 1 };
@@ -116,4 +123,8 @@ func main(): none
     for (var a: Item = new Item { value = 1 }; false;) {}
     trace::ownership_check(trace::ownership_outstanding() == 0, "for_initializer_cleanup");
     trace::ownership_check(_new0 + _sage_drop_1 == 9, "generated_names_do_not_collide");
+    trace::ownership_reset_order();
+    var projected: i32 = named_projection();
+    trace::ownership_check(projected == 7, "named_projection_return_value");
+    trace::ownership_check(trace::ownership_outstanding() == 0, "named_projection_cleanup");
 }

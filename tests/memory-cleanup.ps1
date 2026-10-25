@@ -17,8 +17,8 @@ try {
     $exitCode = $LASTEXITCODE
     $text = $output -join "`n"
     $passes = @($output | Select-String '\[PASS\]').Count
-    if ($exitCode -ne 0 -or $text -match '\[FAIL\]|error ' -or $passes -ne 22) {
-        throw "Cleanup runtime checks failed ($passes/22 PASS).`n$text"
+    if ($exitCode -ne 0 -or $text -match '\[FAIL\]|error ' -or $passes -ne 25) {
+        throw "Cleanup runtime checks failed ($passes/25 PASS).`n$text"
     }
     Write-Output "Native cleanup checks passed: $passes assertions."
 }

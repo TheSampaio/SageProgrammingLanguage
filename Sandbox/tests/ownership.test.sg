@@ -6,6 +6,12 @@ struct Counter
     value: i32;
 }
 
+func ownership_project(): i32
+{
+    var owner: Counter = new Counter { value = 9 };
+    return owner.value;
+}
+
 func main(): none
 {
     var original: Counter = new Counter { value = 7 };
@@ -20,4 +26,5 @@ func main(): none
     second.value = 3;
     test::assert_eq_i32("copy_original", first.value, 2);
     test::assert_eq_i32("copy_independent", second.value, 3);
+    test::assert_eq_i32("named_owner_field_return", ownership_project(), 9);
 }

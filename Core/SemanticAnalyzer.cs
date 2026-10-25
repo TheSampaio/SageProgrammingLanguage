@@ -24,6 +24,7 @@ namespace Sage.Core
         private int _loopDepth;
         private int _functionDepth;
         private int _borrowExpressionDepth;
+        private NewExpressionNode? _owningInitializer;
 
         /// <summary>True when analysis is currently inside an unsafe context.</summary>
         private bool InUnsafe => _unsafeDepth > 0;
@@ -217,7 +218,10 @@ namespace Sage.Core
 
             if (node.Initializer != null)
             {
-                AnalyzeValue(node.Initializer, node.Type, "S101", $"Initializer of '{node.Name}'");
+                var previousInitializer = _owningInitializer;
+                _owningInitializer = node.Initializer as NewExpressionNode;
+                try { AnalyzeValue(node.Initializer, node.Type, "S101", $"Initializer of '{node.Name}'"); }
+                finally { _owningInitializer = previousInitializer; }
                 if (TypeSystem.IsArrayType(node.Type) && node.Initializer is not ArrayInitializationNode)
                 {
                     if (_functionDepth == 0)
@@ -572,13 +576,7 @@ namespace Sage.Core
             RequireValueContract(node.Expression);
             return type;
         }
-        public string Visit(ExpressionStatementNode node)
-        {
-            string type = node.Expression.Accept(this);
-            if (node.Expression is NewExpressionNode)
-                throw new CompilerException(node, "S146", "An allocated reference must be bound to a local variable.");
-            return type;
-        }
+        public string Visit(ExpressionStatementNode node) => node.Expression.Accept(this);
 
         public string Visit(UnaryExpressionNode node)
         {
@@ -626,8 +624,8 @@ namespace Sage.Core
 
         public string Visit(NewExpressionNode node)
         {
-            if (_functionDepth == 0)
-                throw new CompilerException(node, "S146", "Heap references must be created inside a function scope.");
+            if (_functionDepth == 0 || !ReferenceEquals(node, _owningInitializer))
+                throw new CompilerException(node, "S146", "An allocation must directly initialize a local owning binding before its value can be used.");
             if (!_structDeclarations.ContainsKey(node.TypeName))
                 throw new CompilerException(node, "S130",
                     $"'new' requires a known struct type, but '{node.TypeName}' is not a struct.");

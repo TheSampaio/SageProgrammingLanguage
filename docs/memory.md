@@ -66,6 +66,28 @@ Anonymous allocation statements and global heap allocations are rejected with
 cleanup obligation explicit. `tests/memory-cleanup.ps1` instruments native
 allocation and release to check leaks, double release, return values, and order.
 
+### Direct allocation binding (v0.10.1)
+
+Every `new` expression must directly initialize a local owning binding, including
+inside `unsafe` code. Parentheses around that initializer are allowed. Creating an
+anonymous allocation and projecting a field from it is rejected with `S146`;
+the same rule covers nested allocations in arguments, fields, casts, comparisons,
+and array elements. A surrounding owning initializer does not adopt inner
+allocations. Bind the owner before reading its fields:
+
+```sage
+// Rejected: var value: i32 = (new Item { value = 7 }).value;
+var owner: Item = new Item { value = 7 };
+var value: i32 = owner.value;
+```
+
+This closes a confirmed leak where an anonymous field projection had no cleanup
+binding. Returning a plain field value from a named local owner remains valid:
+the value is evaluated before the owner's scope cleanup. A raw pointer cast of a
+named owner still belongs to the existing trusted `unsafe` boundary; it does not
+extend the owner's lifetime. Validate allocation contexts with
+`tests/allocation-contexts.ps1` and native cleanup instrumentation.
+
 ## Remaining boundaries
 
 [Borrowed parameters and lexical locals](borrowing.md) now support shared and
