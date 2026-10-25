@@ -140,6 +140,7 @@ namespace Sage.Utilities
         public object Visit(BinaryExpressionNode node) => new
         {
             Type = "BinaryExpression",
+            node.IsResourceNullComparison,
             Left = node.Left.Accept(this),
             node.Operator,
             Right = node.Right.Accept(this)

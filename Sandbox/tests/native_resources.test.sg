@@ -9,7 +9,7 @@ extern native_heap("stdlib.h")
 
 func resource_is_empty(value: &NativeAllocation): b8
 {
-    unsafe { return (value as c_void*) == (0 as c_void*); }
+    return value == null;
 }
 
 func resource_visit(value: &mut NativeAllocation): b8
@@ -39,6 +39,7 @@ func main(): none
         var raw: c_void* = second as c_void*;
         // Both allocation outcomes are legal: NULL is an empty owner.
         test::assert_true("resource_named_handle_access", raw == (second as c_void*));
+        test::assert_true("resource_presence_matches_native_handle", (second == null) == (raw == (0 as c_void*)));
     }
     test::assert_true("resource_scope_completed", true);
     unsafe
@@ -56,6 +57,7 @@ func main(): none
     test::assert_true("resource_empty_move_completed", true);
     const returned: NativeAllocation = empty_resource();
     test::assert_true("resource_factory_return", resource_is_empty(&returned));
+    test::assert_true("resource_contextual_null", null == returned);
     var roundtrip: NativeAllocation = resource_identity(returned);
     test::assert_true("resource_owning_parameter_return", resource_is_empty(&roundtrip));
     resource_consume(roundtrip);

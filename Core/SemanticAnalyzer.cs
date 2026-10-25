@@ -26,6 +26,7 @@ namespace Sage.Core
         private int _functionDepth;
         private int _borrowExpressionDepth;
         private AstNode? _owningInitializer;
+        private int _consumingArgumentDepth;
 
         /// <summary>True when analysis is currently inside an unsafe context.</summary>
         private bool InUnsafe => _unsafeDepth > 0;
@@ -333,6 +334,24 @@ namespace Sage.Core
 
         public string Visit(BinaryExpressionNode node)
         {
+            bool leftNull = IsContextualNull(node.Left);
+            bool rightNull = IsContextualNull(node.Right);
+            if (leftNull || rightNull)
+            {
+                if (leftNull == rightNull || node.Operator is not (TokenType.EqualEqual or TokenType.NotEqual))
+                    throw new CompilerException(node, "S195", "Contextual null supports only == or != against a named native resource owner or borrow.");
+                if (_consumingArgumentDepth > 0)
+                    throw new CompilerException(node, "S194", "Evaluate resource presence into a local value before passing it alongside consumed arguments.");
+                var resource = leftNull ? node.Right : node.Left;
+                string type = resource.Accept(this);
+                if (resource is not IdentifierNode identifier || !TypeSystem.IsNativeResource(type) ||
+                    _symbolTable.ResolveLocal(identifier.Name) is not { IsFunction: false, IsType: false })
+                    throw new CompilerException(node, "S195", "Contextual null requires a named native resource owner or borrow.");
+                (leftNull ? node.Left : node.Right).VariableType = "null";
+                node.IsResourceNullComparison = true;
+                node.VariableType = "b8";
+                return "b8";
+            }
             string lhs = node.Left.Accept(this);
             string rhs = node.Right.Accept(this);
             RequireValueContract(node.Left);
@@ -350,6 +369,8 @@ namespace Sage.Core
             string? dominantType = TypeSystem.GetDominantType(lhs, rhs);
             return dominantType ?? throw new CompilerException(node, "S108", $"Invalid arithmetic: {lhs} and {rhs}");
         }
+
+        private bool IsContextualNull(AstNode node) => node is IdentifierNode { Name: "null" } && _symbolTable.Resolve("null") == null;
 
         public string Visit(FunctionCallNode node)
         {
@@ -430,8 +451,13 @@ namespace Sage.Core
                 if ((hasBorrowedParameters || hasOwningParameters) && !IsPureBorrowCallArgument(arg))
                     throw new CompilerException(arg, hasOwningParameters ? "S194" : "S177",
                         "Evaluate calls and mutations into local values before passing them alongside borrowed or consumed arguments.");
-                if (symbol.IsExtern) arg.Accept(this);
-                else AnalyzeValue(arg, parameterType, "S161", $"Argument {index + 1} of '{name}'");
+                if (hasOwningParameters) _consumingArgumentDepth++;
+                try
+                {
+                    if (symbol.IsExtern) arg.Accept(this);
+                    else AnalyzeValue(arg, parameterType, "S161", $"Argument {index + 1} of '{name}'");
+                }
+                finally { if (hasOwningParameters) _consumingArgumentDepth--; }
                 RequireValueContract(arg);
             }
 

@@ -48,8 +48,8 @@ try {
     $output = & dotnet $compilerPath $source 2>&1
     $text = $output -join "`n"
     $passes = @($output | Select-String '\[PASS\]').Count
-    if ($LASTEXITCODE -ne 0 -or $text -match '\[FAIL\]|error ' -or $passes -ne 58) {
-        throw "Native resource cleanup checks failed ($passes/58 PASS).`n$text"
+    if ($LASTEXITCODE -ne 0 -or $text -match '\[FAIL\]|error ' -or $passes -ne 66) {
+        throw "Native resource cleanup checks failed ($passes/66 PASS).`n$text"
     }
     $minimalHeader = Join-Path $probeDir 'minimal-resource.h'
     Set-Content -LiteralPath $minimalHeader -Value 'typedef struct MinimalHandle MinimalHandle; static void minimal_drop(MinimalHandle* handle) { (void)handle; }'

@@ -27,6 +27,8 @@ func borrowed_write(value: &mut OwnedHandle, id: i32): none
     unsafe { trace::resource_write(value as ResourceHandle*, id as c_int); }
 }
 
+func resource_present(value: &OwnedHandle): b8 { return value != null; }
+
 func produce(id: i32): OwnedHandle
 {
     unsafe
@@ -295,5 +297,27 @@ unsafe func main(): none
         trace::resource_check(observed == 2 && trace::resource_outstanding() == 1, "distinct_borrow_survives_consuming_call");
     }
     trace::resource_check(trace::resource_outstanding() == 0 && trace::resource_drop_calls() == 2, "mixed_owned_borrowed_cleanup_once");
+
+    trace::resource_reset();
+    if (true)
+    {
+        var owner: OwnedHandle = produce(8);
+        trace::resource_check(owner != null, "safe_resource_presence");
+        trace::resource_check(null != owner && !(owner == null), "safe_symmetric_resource_presence");
+        if (true)
+        {
+            const view: &OwnedHandle = &owner;
+            trace::resource_check(resource_present(&view), "safe_borrowed_resource_presence");
+        }
+        trace::resource_check(trace::resource_outstanding() == 1 && trace::resource_drop_calls() == 0, "presence_does_not_transfer_ownership");
+        var empty: OwnedHandle = produce_empty();
+        trace::resource_check(empty == null && null == empty, "safe_empty_resource_comparison");
+        trace::resource_check(!resource_present(&empty), "safe_empty_resource_borrow");
+        consume(empty);
+        var present: b8 = owner != null;
+        var observed: i32 = consume_early(owner, present);
+        trace::resource_check(observed == 8, "bound_presence_before_consuming_call");
+    }
+    trace::resource_check(trace::resource_outstanding() == 0 && trace::resource_drop_calls() == 1, "presence_preserves_single_cleanup");
     trace::resource_check(_sage_resource_drop_0 == 9, "resource_generated_names_do_not_collide");
 }

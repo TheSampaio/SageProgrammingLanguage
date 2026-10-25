@@ -344,6 +344,12 @@ namespace Sage.Core
 
         public string Visit(BinaryExpressionNode node)
         {
+            if (node.IsResourceNullComparison)
+            {
+                string PresenceOperand(AstNode operand) => operand.VariableType == "null"
+                    ? "NULL" : $"({operand.Accept(this)})._sage_handle";
+                return $"({PresenceOperand(node.Left)} {(node.Operator == TokenType.EqualEqual ? "==" : "!=")} {PresenceOperand(node.Right)})";
+            }
             string op = node.Operator switch
             {
                 TokenType.Plus => "+",

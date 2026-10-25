@@ -85,6 +85,10 @@ consume named owners; the callee adopts them into cleanup locals before the body
 Calls reject consuming/borrowing the same resource and require stable other
 arguments to avoid depending on C argument evaluation order. Resource arrays and
 fields remain disabled.
+Resource null comparisons are validated on named owners/borrows and marked in
+the AST. The C backend reads the private handle without exposing a raw pointer.
+Contextual `null` does not construct resources or add a general raw-pointer null
+literal. Presence arguments in consuming calls require prior local evaluation.
 
 The `SymbolTable` uses a `Stack<Dictionary<string, Symbol>>` to represent **Lexical Scoping**.
 

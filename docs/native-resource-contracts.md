@@ -1,4 +1,4 @@
-# Native resource contracts (v0.16.0)
+# Native resource contracts (v0.17.0)
 
 Native ownership must be declared explicitly instead of inferred from names such
 as `open`, `malloc`, or `close`. This increment implements declarations in
@@ -189,10 +189,38 @@ clears it before cleanup, so it does not destroy the transferred handle again.
 Entry points cannot accept resource owners or borrows. Native ABI resource
 parameters remain disabled; use reviewed unsafe wrappers over native pointers.
 
+## Safe presence queries
+
+`owner == null` and `owner != null` inspect whether a named resource has an empty
+handle. The symmetric forms are also supported. Shared and mutable borrowed
+bindings can be checked with the same syntax, without unsafe or ownership transfer:
+
+```sage
+func is_empty(value: &OwnedFile): b8 { return value == null; }
+```
+
+Availability and loan checks still apply: checking a moved owner is S140, and
+direct owner access during a mutable loan is S178. The result is an ordinary
+Copy boolean; it does not refine the resource's type or prove a native handle's
+validity. Scope cleanup and ownership obligations are unchanged.
+
+`null` is contextual in these binary comparisons when no binding with that name
+exists. Existing variables named `null` keep their normal meaning. It is not a
+general value, resource constructor, or raw-pointer null literal. Only `==` and
+`!=` with one contextual null and one named resource are supported; invalid
+comparisons use S195. Resource-to-resource comparison remains disabled. Producer
+results still require direct local ownership (S193) before a query.
+
+Presence queries used as other arguments of a consuming call must first be
+evaluated into a local boolean (S194). This conservative rule also applies to
+nested queries and separate resources, preventing dependence on whether a C
+argument moves/clears an owner before the query is evaluated. Borrow-only calls
+may receive pure presence expressions directly.
+
 ## Remaining boundaries
 
 Resource globals, fields, arrays, and pointers
-to facade types remain rejected with S191. Ordinary resource comparisons,
+to facade types remain rejected with S191. Other resource comparisons,
 interpolation, and implicit native arguments are also disabled. A resource is
 not inferred Copy. This increment does not provide a safe file API or owned
 string/buffer abstractions.
@@ -207,7 +235,8 @@ Implementation order:
 3. Implemented: owning returns from named locals into direct owning call initializers.
 4. Implemented: consuming named resource parameters with callee cleanup and
    ownership/borrow call conflicts.
-5. Planned: add a bounded standard-library interface. Nested resource fields,
+5. Implemented: safe contextual null comparisons on named owners and borrows.
+6. Planned: add a bounded standard-library interface. Nested resource fields,
    arrays, buffers, and C++ adapters need their
    own subsequent contracts.
 
@@ -232,3 +261,7 @@ returning and forwarding them, cleanup header dependencies, imports/modules,
 call conflicts, branch availability, and entry-point/native ABI restrictions.
 Native instrumentation checks unused parameters, early returns, forwarding,
 identity returns, mixed ownership/borrowing, and local/parameter cleanup order.
+`tests/native-resource-presence.ps1` covers safe/symmetric/borrowed queries,
+contextual name shadowing, move/loan conflicts, consuming-argument restrictions,
+the generated NULL header dependency, and the semantic AST marker. Native runtime
+checks verify live and empty handles, no ownership transfer, and final cleanup.

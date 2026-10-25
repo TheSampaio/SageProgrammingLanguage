@@ -227,7 +227,11 @@ namespace Sage.Core
         public string Visit(IfNode node) { node.Condition.Accept(this); node.ThenBranch.Accept(this); node.ElseBranch?.Accept(this); return ""; }
         public string Visit(WhileNode node) { node.Condition.Accept(this); node.Body.Accept(this); return ""; }
         public string Visit(ForNode node) { node.Initializer?.Accept(this); node.Condition?.Accept(this); node.Increment?.Accept(this); node.Body.Accept(this); return ""; }
-        public string Visit(BinaryExpressionNode node) { node.Left.Accept(this); node.Right.Accept(this); return ""; }
+        public string Visit(BinaryExpressionNode node)
+        {
+            if (node.IsResourceNullComparison) AddHeader("stddef.h");
+            node.Left.Accept(this); node.Right.Accept(this); return "";
+        }
         public string Visit(UnaryExpressionNode node) { node.Operand.Accept(this); return ""; }
         public string Visit(CastExpressionNode node) { node.Expression.Accept(this); return ""; }
         public string Visit(MemberAccessNode node) { node.Object.Accept(this); return ""; }
