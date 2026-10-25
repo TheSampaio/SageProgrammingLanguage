@@ -7,7 +7,7 @@
 /// transport interface remain future work.
 use console;
 
-module http
+module http_client
 {
     extern libc_stdio("stdio.h")
     {

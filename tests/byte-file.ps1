@@ -20,10 +20,10 @@ $cases = @(
     @{ Name = 'wide_byte_not_implicitly_narrowed'; Code = 'func main(): none { var value: ByteFile = byte_file::empty(); var byte: i32 = 300; byte_file::write_byte(&mut value, byte); }'; Error = 'S161' }
 )
 try {
-    foreach ($name in @('byte_file.sg', 'sage_byte_file.h', 'test.sg', 'console.sg', 'file.sg')) {
+    foreach ($name in @('byte_file.sg', 'test.sg', 'console.sg', 'file.sg')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot "../Sandbox/std/$name") -Destination $stdDir
     }
-    $headerPath = (Join-Path $stdDir 'sage_byte_file.h').Replace('\', '/')
+    $headerPath = (Join-Path (Split-Path -Parent $compilerPath) 'Runtime/include/sage_byte_file.h').Replace('\', '/')
     $nativeSource = Join-Path $probeDir 'native.c'
     $nativeFixture = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'fixtures/byte-file-native.c') -Raw
     Set-Content -LiteralPath $nativeSource -Value $nativeFixture.Replace('@BYTE_HEADER@', $headerPath)

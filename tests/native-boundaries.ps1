@@ -21,16 +21,16 @@ $cases = @(
     @{ Name = 'safe_console_wrapper'; Code = 'use console; func main(): none { console::print_line("[PASS] console_wrapper"); }'; Pass = $true },
     @{ Name = 'unbounded_input_requires_unsafe'; Code = 'use console; func main(): none { console::read_line("invalid mutable buffer"); }'; Error = 'S164' },
     @{ Name = 'unbounded_input_explicit_contract'; Code = 'use console; unsafe func helper(buffer: str): none { console::read_line(buffer); } func main(): none {}' },
-    @{ Name = 'http_fetch_requires_unsafe'; Code = 'use http; func main(): none { http::fetch("https://example.invalid"); }'; Error = 'S164' },
-    @{ Name = 'http_post_requires_unsafe'; Code = 'use http; func main(): none { http::post("https://example.invalid", "body"); }'; Error = 'S164' },
-    @{ Name = 'http_download_requires_unsafe'; Code = 'use http; func main(): none { http::download("https://example.invalid", "target"); }'; Error = 'S164' },
-    @{ Name = 'http_explicit_contract_not_invoked'; Code = 'use http; unsafe func helper(): none { http::fetch("https://example.invalid"); http::post("https://example.invalid", "body"); http::download("https://example.invalid", "target"); } func main(): none {}' },
+    @{ Name = 'http_fetch_requires_unsafe'; Code = 'use http_client; func main(): none { http_client::fetch("https://example.invalid"); }'; Error = 'S164' },
+    @{ Name = 'http_post_requires_unsafe'; Code = 'use http_client; func main(): none { http_client::post("https://example.invalid", "body"); }'; Error = 'S164' },
+    @{ Name = 'http_download_requires_unsafe'; Code = 'use http_client; func main(): none { http_client::download("https://example.invalid", "target"); }'; Error = 'S164' },
+    @{ Name = 'http_explicit_contract_not_invoked'; Code = 'use http_client; unsafe func helper(): none { http_client::fetch("https://example.invalid"); http_client::post("https://example.invalid", "body"); http_client::download("https://example.invalid", "target"); } func main(): none {}' },
     @{ Name = 'unsafe_still_checks_shared_access'; Code = 'struct Item { value: i32; } func helper(value: &Item): none { unsafe { value.value = 2; } } func main(): none {}'; Error = 'S171' },
     @{ Name = 'unsafe_still_requires_allocation_owner'; Code = 'struct Item { value: i32; } func main(): none { unsafe { var x: i32 = (new Item {}).value; } }'; Error = 'S146' }
 )
 
 try {
-    foreach ($module in @('console.sg', 'http.sg')) {
+    foreach ($module in @('console.sg', 'http_client.sg')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot "../Sandbox/std/$module") -Destination $stdDir
     }
     foreach ($case in $cases) {

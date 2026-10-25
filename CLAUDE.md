@@ -91,7 +91,7 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
 - Opaque C types: `type FILE;` inside an extern block (emitted verbatim to C; used via pointers).
 - Link libraries: `extern winsock("winsock2.h", "ws2_32") { ... }`; the pipeline forwards these as
   `-l` flags. Missing an address-of operator, use a `new` struct reference to hand C a pointer
-  (see `Sandbox/std/server.sg`).
+  (see `Sandbox/std/http_server.sg`).
 - Wrappers that traffic in raw pointers must be `unsafe func` (see `Sandbox/std/memory.sg`).
 - Every direct `extern` call requires `unsafe`; regular wrappers isolate trusted
   native operations locally. Legacy `console.read_line` and shell-based HTTP
@@ -108,7 +108,8 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
   presence query before passing it alongside consumed arguments; see S195/S194.
 - `byte_file` provides bounded owned byte I/O and consuming close with explicit
   outcomes. `create(str)` remains unsafe; retain the legacy `file` module. The std
-  distribution must include `sage_byte_file.h`; see `docs/byte-files.md`.
+  distribution contains only `.sg`. Native headers ship with the compiler in
+  `Runtime/include`; see `docs/byte-files.md`.
 
 ## Generated C
 

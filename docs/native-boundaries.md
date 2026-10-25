@@ -36,9 +36,9 @@ boundary explicitly; ownership, borrowing and bounds checks remain enabled there
 - The legacy `console.read_line(buffer: str)` is now `unsafe func`. It uses an
   unbounded token read and has no capacity contract. A string literal is not a
   writable buffer. A bounded, ownership-aware replacement remains future work.
-- Legacy `http.fetch`, `post`, and `download` are now `unsafe func`: they interpolate
+- Legacy `http_client.fetch`, `post`, and `download` are now `unsafe func`: they interpolate
   caller data into shell commands without escaping it. This increment does not
-  harden that transport. `get_into`, file, memory, and server raw interfaces already
+  harden that transport. `get_into`, file, memory, and http_server raw interfaces already
   require unsafe callers.
 - String assertions isolate native `strcmp` internally. Their legacy `str`
   precondition still requires valid, terminated strings; string ownership and

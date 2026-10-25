@@ -91,7 +91,8 @@ Contextual `null` does not construct resources or add a general raw-pointer null
 literal. Presence arguments in consuming calls require prior local evaluation.
 The bounded [byte-file stdlib API](docs/byte-files.md) owns a native stream state,
 uses mutable borrows for byte I/O, and consumes ownership for fallible close.
-Its native helper header is resolved through the selected std include directory.
+Its native helper header ships in the compiler's `Runtime/include` directory,
+resolved relative to the executable. Standard-library directories contain only `.sg`.
 Path acquisition remains unsafe until checked strings/paths exist.
 
 The `SymbolTable` uses a `Stack<Dictionary<string, Symbol>>` to represent **Lexical Scoping**.

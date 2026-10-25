@@ -204,7 +204,8 @@ namespace Sage.Core
             string libFlags = libraries.Count > 0
                 ? " " + string.Join(" ", libraries.OrderBy(l => l, StringComparer.Ordinal).Select(l => $"-l{l}"))
                 : "";
-            string args = $"{sources} -o \"{exePath}\" -std=c11 -I\"{env.ObjDir}\" -I\"{env.StdDir}\"{libFlags}";
+            string runtimeIncludes = Path.Combine(AppContext.BaseDirectory, "Runtime", "include");
+            string args = $"{sources} -o \"{exePath}\" -std=c11 -I\"{env.ObjDir}\" -I\"{runtimeIncludes}\"{libFlags}";
 
             if (config.IsDebugMode) CompilerLogger.LogInfo("Invoking native toolchain: gcc");
 

@@ -17,7 +17,7 @@ struct SockAddr
     pad: u64;
 }
 
-module server
+module http_server
 {
     extern winsock("winsock2.h", "ws2_32")
     {

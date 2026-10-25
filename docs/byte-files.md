@@ -65,9 +65,12 @@ cleanup closes and frees best-effort, with no recoverable close result; use
 explicit `close` when its result matters. Ownership is unavailable afterward,
 including when close reports failure. Process termination still does not unwind.
 
-The C helper `std/sage_byte_file.h` is part of this module's trusted implementation.
-The compiler adds the resolved std directory to GCC's include search. A local or
-installed std distribution must include both `byte_file.sg` and this header.
+The C helper `Runtime/include/sage_byte_file.h` is part of the compiler's trusted
+implementation and is copied beside compiler build/publish outputs. GCC resolves
+it relative to the compiler executable, including after relocation. The `std`
+directory contains only `.sg` sources; a local std override needs `byte_file.sg`
+without copying native headers into it. Compiler distributions must retain the
+separate `Runtime/include` directory.
 The adapter requires 8-bit C bytes and has been validated with the current Windows
 GCC toolchain; broader platform behavior has not been operationally demonstrated.
 

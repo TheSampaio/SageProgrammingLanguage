@@ -31,7 +31,7 @@ tracking. The findings below describe the baseline that motivated it.
   currently share this surface type without a lifetime or ownership contract.
 - `Sandbox/std/memory.sg` exposes raw allocation and release through `unsafe`
   functions. `file.sg` returns and closes raw `FILE*` handles; the compiler does
-  not check their lifetime. `server.sg` uses `new` for an address passed to C and
+  not check their lifetime. `http_server.sg` (formerly `server.sg`) uses `new` for an address passed to C and
   has no reachable cleanup in its unbounded loop.
 
 These findings mean the current README's phrase "memory-safe by default" is
@@ -47,7 +47,7 @@ operations, not a general memory-safety proof.
   shared table, allowing silent replacement. v0.8.4 fixes Sage callable scoping
   and preserves resolved origins; see [module resolution](modules.md). Native
   alias consistency and module discovery's basename keys still need review.
-- `Sandbox/std/http.sg` launches `curl` through interpolated shell commands in
+- `Sandbox/std/http_client.sg` (formerly `http.sg`) launches `curl` through interpolated shell commands in
   its high-level helpers. Treat URL and payload inputs as untrusted until those
   wrappers stop constructing shell commands.
 - Diagnostics carry codes and source coordinates, but there is no structured
