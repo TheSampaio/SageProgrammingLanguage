@@ -53,6 +53,9 @@ namespace Sage.Interfaces
         /// <summary>Visits an opaque C type declaration (<c>type Name;</c>) inside an extern block.</summary>
         T Visit(ExternTypeNode node);
 
+        /// <summary>Visits an explicit native resource representation/destructor declaration.</summary>
+        T Visit(NativeResourceDeclarationNode node);
+
         // --- Control Flow Nodes ---
 
         /// <summary>Visits an if-else conditional branching structure.</summary>

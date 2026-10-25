@@ -1,0 +1,9 @@
+// Declaration-only foundation in Sage 0.12.0: values and cleanup are not enabled yet.
+extern native("stdio.h")
+{
+    type FILE;
+    func fclose(value: FILE*): c_int;
+    resource OwnedFile: FILE* drop fclose;
+}
+
+func main(): none {}

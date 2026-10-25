@@ -7,7 +7,7 @@ namespace Sage.Utilities
     public static class SageInfo
     {
         /// <summary>Semantic version of the Sage compiler.</summary>
-        public const string Version = "0.11.0";
+        public const string Version = "0.12.0";
 
         /// <summary>Release channel label shown alongside the version.</summary>
         public const string Channel = "Alpha";

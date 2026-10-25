@@ -35,6 +35,7 @@ namespace Sage.Core
             queue.Enqueue(config.InputPath);
 
             ParseAndDiscover(queue, parsedModules, config, env, analyzer);
+            analyzer.ValidateNativeResourceContracts();
             GenerateCode(parsedModules, generatedCFiles, config, env, analyzer);
 
             if (config.BuildNative)

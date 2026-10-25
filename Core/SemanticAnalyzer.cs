@@ -16,6 +16,7 @@ namespace Sage.Core
         private readonly SymbolTable _symbolTable = sharedTable ?? new SymbolTable();
         private readonly Dictionary<string, StructDeclarationNode> _structDeclarations = new();
         private readonly Dictionary<string, FunctionDeclarationNode> _functionDeclarations = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, (NativeResourceDeclarationNode Node, ExternBlockNode Origin, string? File)> _nativeResources = new(StringComparer.Ordinal);
         private string _currentModule = "";
         private string? _currentReturnType;
 
@@ -37,6 +38,7 @@ namespace Sage.Core
         public void RegisterModuleSymbols(ProgramNode moduleAst)
         {
             foreach (var structure in moduleAst.Statements.OfType<StructDeclarationNode>()) RegisterStructDefinition(structure);
+            foreach (var external in moduleAst.Statements.OfType<ExternBlockNode>()) RegisterExternBlock(external);
             foreach (var function in moduleAst.Statements.OfType<FunctionDeclarationNode>()) RegisterFunction(function);
             foreach (var node in moduleAst.Statements.OfType<ModuleNode>())
             {
@@ -83,14 +85,20 @@ namespace Sage.Core
 
         private void RegisterExternBlock(ExternBlockNode node)
         {
+            foreach (var opaque in node.Declarations.OfType<ExternTypeNode>())
+            {
+                if (_nativeResources.ContainsKey(opaque.Name))
+                    throw new CompilerException(opaque, "S150", $"Opaque type '{opaque.Name}' conflicts with a native resource type.");
+                TypeSystem.RegisterOpaqueType(opaque.Name);
+            }
+            foreach (var resource in node.Declarations.OfType<NativeResourceDeclarationNode>()) RegisterNativeResource(resource, node);
             foreach (var decl in node.Declarations)
             {
                 switch (decl)
                 {
-                    case ExternTypeNode opaque:
-                        TypeSystem.RegisterOpaqueType(opaque.Name);
-                        break;
                     case FunctionDeclarationNode func:
+                        RejectResourceValueType(func.ReturnType, func);
+                        foreach (var parameter in func.Parameters) RejectResourceValueType(parameter.Type, func);
                         ValidateArrayLength(func.ReturnType, func);
                         foreach (var parameter in func.Parameters) ValidateArrayLength(parameter.Type, func);
                         if (TypeSystem.IsBorrowType(func.ReturnType) || func.Parameters.Any(parameter => TypeSystem.IsBorrowType(parameter.Type)))
@@ -112,6 +120,59 @@ namespace Sage.Core
                         break;
                 }
             }
+        }
+
+        private void RegisterNativeResource(NativeResourceDeclarationNode node, ExternBlockNode origin)
+        {
+            if (_nativeResources.TryGetValue(node.Name, out var previous))
+            {
+                if (ReferenceEquals(previous.Node, node)) return;
+                throw new CompilerException(node, "S150", $"Resource type '{node.Name}' is already declared.");
+            }
+            if (TypeSystem.IsCInteropType(node.Name))
+                throw new CompilerException(node, "S190", $"Resource name '{node.Name}' conflicts with a native type alias.");
+            if (_structDeclarations.ContainsKey(node.Name) || TypeSystem.IsOpaqueType(node.Name) || _symbolTable.Resolve(node.Name) != null)
+                throw new CompilerException(node, "S150", $"Resource type '{node.Name}' conflicts with an existing declaration.");
+            _nativeResources.Add(node.Name, (node, origin, CompilerLogger.CurrentFile));
+            _symbolTable.Define(node.Name, node.Name, isType: true);
+        }
+
+        /// <summary>Resolves resource contracts after every imported native declaration is registered.</summary>
+        public void ValidateNativeResourceContracts()
+        {
+            string? previousFile = CompilerLogger.CurrentFile;
+            var validated = new List<NativeResourceContract>();
+            foreach (var (node, origin, file) in _nativeResources.Values)
+            {
+                // Keep the originating file on failure so the CLI reports the declaration that failed.
+                CompilerLogger.CurrentFile = file;
+                string nativeType = node.NativeType;
+                string pointee = nativeType.EndsWith('*') ? nativeType[..^1] : "";
+                if (pointee.Length == 0 || pointee.EndsWith('*') ||
+                    !(pointee == "none" || TypeSystem.IsCInteropType(pointee) || TypeSystem.IsOpaqueType(pointee)))
+                    throw new CompilerException(node, "S190", "A native resource requires one pointer to an opaque or native ABI type.");
+                string binding = $"{origin.Alias}::{node.DestructorName}";
+                var destructor = _symbolTable.Resolve(binding);
+                var signature = destructor?.Signature;
+                if (destructor is not { IsFunction: true, IsExtern: true } || signature == null ||
+                    signature.ParameterTypes.Count != 1 || signature.ParameterTypes[0] != nativeType ||
+                    signature.ReturnType is not ("none" or "c_void" or "c_int") ||
+                    signature.NativeHeader != origin.Header || signature.NativeLibrary != origin.Library)
+                    throw new CompilerException(node, "S190", $"Destructor '{binding}' must have one '{nativeType}' parameter, return none/c_void/c_int, and share the resource's native origin.");
+                validated.Add(new NativeResourceContract(node.Name, nativeType, origin.Alias, node.DestructorName,
+                    signature.ReturnType, origin.Header, origin.Library));
+            }
+            foreach (var contract in validated) TypeSystem.RegisterNativeResource(contract);
+            CompilerLogger.CurrentFile = previousFile;
+        }
+
+        private static void RejectResourceValueType(string type, AstNode operation)
+        {
+            string valueType = TypeSystem.GetBorrowedType(type);
+            if (TypeSystem.IsArrayType(valueType)) valueType = TypeSystem.GetArrayBaseType(valueType);
+            valueType = valueType.TrimEnd('*');
+            if (TypeSystem.IsNativeResource(valueType))
+                throw new CompilerException(operation, "S191", "Native resource value operations require ownership and cleanup lowering that is not enabled yet.");
         }
 
         public string Visit(ProgramNode node)
@@ -142,6 +203,8 @@ namespace Sage.Core
         public string Visit(FunctionDeclarationNode node)
         {
             RegisterFunction(node, node.ModuleOwner);
+            RejectResourceValueType(node.ReturnType, node);
+            foreach (var parameter in node.Parameters) RejectResourceValueType(parameter.Type, node);
             var duplicateParameter = node.Parameters.GroupBy(parameter => parameter.Name).FirstOrDefault(group => group.Count() > 1);
             if (duplicateParameter != null)
                 throw new CompilerException(node, "S154", $"Parameter '{duplicateParameter.Key}' is declared more than once in '{node.Name}'.");
@@ -207,6 +270,7 @@ namespace Sage.Core
 
         public string Visit(VariableDeclarationNode node)
         {
+            RejectResourceValueType(node.Type, node);
             ValidateArrayLength(node.Type, node);
             if (_symbolTable.IsDefinedInCurrentScope(node.Name))
                 throw new CompilerException(node, "S102", $"Variable '{node.Name}' is already defined.");
@@ -280,6 +344,7 @@ namespace Sage.Core
             node.ResolvedName = name;
             node.IsExternCall = symbol.IsExtern;
             var signature = symbol.Signature ?? throw new InvalidOperationException($"Callable '{name}' has no signature.");
+            RejectResourceValueType(signature.ReturnType, node);
             if (signature.IsUnsafe && !InUnsafe)
                 throw new CompilerException(node, "S164", $"Calling {(symbol.IsExtern ? "native" : "unsafe")} function '{name}' requires an unsafe context.");
             if (node.Arguments.Count != signature.ParameterTypes.Count)
@@ -437,6 +502,7 @@ namespace Sage.Core
         {
             var symbol = _symbolTable.Resolve(node.Name)
                 ?? throw new CompilerException(node, "S105", $"Identifier '{node.Name}' not declared.");
+            if (symbol.IsType) throw new CompilerException(node, "S191", $"Resource type '{node.Name}' is not a value.");
             if (symbol.IsReference && symbol.Ownership.Kind != OwnershipKind.Available)
             {
                 var state = symbol.Ownership;
@@ -510,6 +576,8 @@ namespace Sage.Core
             TypeSystem.RegisterOpaqueType(node.Name);
             return "none";
         }
+
+        public string Visit(NativeResourceDeclarationNode node) => "none";
 
         public string Visit(IfNode node)
         {
@@ -588,6 +656,7 @@ namespace Sage.Core
 
         public string Visit(CastExpressionNode node)
         {
+            RejectResourceValueType(node.TargetType, node);
             node.Expression.Accept(this);
             if (!TypeSystem.IsRawPointer(node.TargetType)) RequireValueContract(node.Expression);
 
@@ -612,6 +681,7 @@ namespace Sage.Core
 
         public string Visit(StructDeclarationNode node)
         {
+            foreach (var field in node.Fields) RejectResourceValueType(field.Type, node);
             if (node.Fields.Any(field => TypeSystem.IsBorrowType(field.Type)))
                 throw new CompilerException(node, "S173", "Struct fields cannot store borrowed references yet.");
             RegisterStructDefinition(node);
@@ -683,6 +753,8 @@ namespace Sage.Core
 
         private void RegisterStructDefinition(StructDeclarationNode node)
         {
+            if (_nativeResources.ContainsKey(node.Name))
+                throw new CompilerException(node, "S150", $"Struct '{node.Name}' conflicts with a native resource type.");
             foreach (var field in node.Fields) ValidateArrayLength(field.Type, node);
             var duplicate = node.Fields.GroupBy(field => field.Name).FirstOrDefault(group => group.Count() > 1);
             if (duplicate != null)

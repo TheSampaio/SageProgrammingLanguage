@@ -148,9 +148,17 @@ namespace Sage.Core
         public string Visit(ExternBlockNode node)
         {
             AddHeader(node.Header);
-            foreach (var decl in node.Declarations) decl.Accept(this);
-            return "";
+            var declarations = new StringBuilder();
+            foreach (var decl in node.Declarations)
+            {
+                string result = decl.Accept(this);
+                if (decl is NativeResourceDeclarationNode) declarations.Append(result);
+            }
+            return declarations.ToString();
         }
+
+        public string Visit(NativeResourceDeclarationNode node) =>
+            $"typedef struct {node.Name} {{ {TypeSystem.ToCType(node.NativeType)} _sage_handle; }} {node.Name};\n";
 
         // Opaque C types are provided by their extern header; nothing is emitted for them.
         public string Visit(ExternTypeNode node) => "";

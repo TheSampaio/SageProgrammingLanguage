@@ -263,6 +263,7 @@ namespace Sage.Core
         public string Visit(ExternBlockNode node) => "";
 
         public string Visit(ExternTypeNode node) => "";
+        public string Visit(NativeResourceDeclarationNode node) => "";
 
         /// <summary>An unsafe block carries no runtime cost; it emits a plain scoped C block.</summary>
         public string Visit(UnsafeBlockNode node) => node.Body.Accept(this);
@@ -496,6 +497,7 @@ namespace Sage.Core
                     break;
                 case StructDeclarationNode structure: _usedNames.Add(structure.Name); break;
                 case ExternTypeNode opaque: _usedNames.Add(opaque.Name); break;
+                case NativeResourceDeclarationNode resource: _usedNames.Add(resource.Name); break;
             }
 
             IEnumerable<AstNode> children = node switch

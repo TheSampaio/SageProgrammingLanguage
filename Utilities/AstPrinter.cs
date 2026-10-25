@@ -2,6 +2,7 @@
 using System.Text.Json.Serialization;
 using Sage.Ast;
 using Sage.Interfaces;
+using Sage.Core;
 
 namespace Sage.Utilities
 {
@@ -12,6 +13,12 @@ namespace Sage.Utilities
     /// </summary>
     public class AstPrinter : IAstVisitor<object>
     {
+        public object Visit(NativeResourceDeclarationNode node) => new
+        {
+            Type = "NativeResourceDeclaration", node.Name, node.NativeType, node.DestructorName,
+            ResolvedDestructor = TypeSystem.GetNativeResource(node.Name)?.DestructorBinding,
+            DestructorReturnType = TypeSystem.GetNativeResource(node.Name)?.DestructorReturnType
+        };
         private readonly JsonSerializerOptions _options = new()
         {
             WriteIndented = true,
@@ -42,7 +49,8 @@ namespace Sage.Utilities
         {
             Type = "Module",
             node.Name,
-            Functions = node.Functions.Select(f => f.Accept(this))
+            Functions = node.Functions.Select(f => f.Accept(this)),
+            ExternBlocks = node.Members.OfType<ExternBlockNode>().Select(external => external.Accept(this))
         };
 
         /// <summary>Visits a function declaration including signature and body.</summary>

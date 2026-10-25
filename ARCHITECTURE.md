@@ -74,6 +74,7 @@ Recursive checks of struct and fixed-array literals are documented in [aggregate
 Fixed-array access checks and runtime failure behavior are documented in [array bounds](docs/array-bounds.md).
 Inferred copy capabilities and fixed-array value passing are documented in [value copies](docs/value-copy.md).
 Explicit `extern` call contexts and the stdlib migration are documented in [native boundaries](docs/native-boundaries.md).
+The post-discovery native resource declaration pass is documented in [resource contracts](docs/native-resource-contracts.md).
 
 The `SymbolTable` uses a `Stack<Dictionary<string, Symbol>>` to represent **Lexical Scoping**.
 

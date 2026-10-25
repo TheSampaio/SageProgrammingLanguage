@@ -55,6 +55,14 @@ namespace Sage.Core
         /// They carry no Sage-side layout; the name is emitted verbatim to C.
         /// </summary>
         private static readonly HashSet<string> OpaqueTypes = [];
+        private static readonly Dictionary<string, NativeResourceContract> NativeResources = new(StringComparer.Ordinal);
+
+        /// <summary>Whether a type has a validated native resource declaration.</summary>
+        public static bool IsNativeResource(string type) => NativeResources.ContainsKey(type);
+        /// <summary>Returns declared native origin and destructor shape, without implying operational ownership.</summary>
+        public static NativeResourceContract? GetNativeResource(string type) => NativeResources.GetValueOrDefault(type);
+        /// <summary>Publishes a contract only after the complete declaration pass has validated it.</summary>
+        internal static void RegisterNativeResource(NativeResourceContract contract) => NativeResources[contract.Name] = contract;
 
         /// <summary>Registers an opaque C type (declared via <c>type Name;</c> in an extern block).</summary>
         public static void RegisterOpaqueType(string name) => OpaqueTypes.Add(name);
@@ -66,7 +74,11 @@ namespace Sage.Core
         public static bool IsCInteropType(string name) => CInteropTypes.ContainsKey(name);
 
         /// <summary>Clears run-scoped registrations. Useful when the compiler processes several inputs in-process.</summary>
-        public static void Reset() => OpaqueTypes.Clear();
+        public static void Reset()
+        {
+            OpaqueTypes.Clear();
+            NativeResources.Clear();
+        }
 
         /// <summary>
         /// Converts a Sage type identifier to its corresponding C language type.

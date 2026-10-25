@@ -161,6 +161,21 @@ namespace Sage.Core
 
             while (Current.Type != TokenType.CloseBrace && Current.Type != TokenType.EndOfFile)
             {
+                if (Current.Type == TokenType.Identifier && Current.Value == "resource")
+                {
+                    var resourceToken = Current;
+                    _pos++;
+                    string name = Consume(TokenType.Identifier, "Expected a Sage resource type name.").Value;
+                    Consume(TokenType.Colon);
+                    string nativeType = ConsumeType();
+                    var dropToken = Consume(TokenType.Identifier, "Expected 'drop' before the native destructor.");
+                    if (dropToken.Value != "drop")
+                        throw new CompilerException(dropToken, "S001", "Expected 'drop' before the native destructor.");
+                    string destructor = Consume(TokenType.Identifier, "Expected a native destructor name.").Value;
+                    Consume(TokenType.Semicolon);
+                    declarations.Add(CreateNode(new NativeResourceDeclarationNode(name, nativeType, destructor), resourceToken));
+                    continue;
+                }
                 // Opaque C type: 'type FILE;' — introduces a named C type without a Sage-side layout.
                 // 'type' is a contextual keyword recognized only inside extern blocks.
                 if (Current.Type == TokenType.Identifier && Current.Value == "type")
@@ -189,7 +204,7 @@ namespace Sage.Core
                 }
                 else
                 {
-                    throw new CompilerException(Current, "S006", "Only 'func' and 'type' declarations are allowed inside extern blocks.");
+                    throw new CompilerException(Current, "S006", "Only 'func', 'type', and 'resource' declarations are allowed inside extern blocks.");
                 }
             }
 
