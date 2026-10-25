@@ -1,4 +1,4 @@
-# Native resource contracts (v0.15.0)
+# Native resource contracts (v0.16.0)
 
 Native ownership must be declared explicitly instead of inferred from names such
 as `open`, `malloc`, or `close`. This increment implements declarations in
@@ -151,9 +151,47 @@ unsafe: a reviewed factory can isolate acquisition inside a local unsafe block.
 Raw validity, exclusive acquisition, and native destructor behavior remain its
 trusted obligations. Native ABI resource returns remain disabled.
 
+## Consuming parameters
+
+A resource parameter by value consumes a named local owner or owning parameter.
+The caller is cleared and becomes unavailable; the callee adopts cleanup before
+executing its body. Borrowed bindings cannot be consumed (S191), and live lexical
+loans block consuming the original owner (S178). Passing the same owner twice is
+S140. Consuming an outer binding repeatedly in a loop remains conservatively S145.
+
+```sage
+func consume(value: OwnedFile): none {} // implicit cleanup even if unused
+
+func identity(value: OwnedFile): OwnedFile { return value; }
+
+func main(): none
+{
+    var first: OwnedFile = empty_file();
+    var second: OwnedFile = identity(first);
+    consume(second);
+    // first and second are now unavailable.
+}
+```
+
+S194 requires consuming arguments to be named owners: bind an acquisition or
+factory result before calling. A call cannot consume and borrow the same resource,
+in either argument order. Other arguments must use the existing supported pure
+argument subset; bind calls, mutations, and unsupported aggregate expressions
+first. These restrictions keep move operations independent of C's unspecified
+argument evaluation order. Separate resources may be consumed/borrowed together.
+Raw aliases inside unsafe remain subject to their existing lifetime obligations.
+
+The C backend transfers each argument through a typed GNU statement expression
+and clears its caller binding. The callee stores incoming resource carriers in
+cleanup locals in parameter declaration order. Body locals are destroyed first,
+then owned parameters in reverse order. Moving/returning an owning parameter
+clears it before cleanup, so it does not destroy the transferred handle again.
+Entry points cannot accept resource owners or borrows. Native ABI resource
+parameters remain disabled; use reviewed unsafe wrappers over native pointers.
+
 ## Remaining boundaries
 
-By-value resource parameters, globals, fields, arrays, and pointers
+Resource globals, fields, arrays, and pointers
 to facade types remain rejected with S191. Ordinary resource comparisons,
 interpolation, and implicit native arguments are also disabled. A resource is
 not inferred Copy. This increment does not provide a safe file API or owned
@@ -167,8 +205,10 @@ Implementation order:
    cleanup after trusted unsafe acquisition. Shared/mutable resource borrows reuse
    call conflict and lexical loan checks without transferring ownership.
 3. Implemented: owning returns from named locals into direct owning call initializers.
-4. Planned: add consuming resource parameters and a bounded standard-library
-   interface. Nested resource fields, arrays, buffers, and C++ adapters need their
+4. Implemented: consuming named resource parameters with callee cleanup and
+   ownership/borrow call conflicts.
+5. Planned: add a bounded standard-library interface. Nested resource fields,
+   arrays, buffers, and C++ adapters need their
    own subsequent contracts.
 
 Invalid native contracts use S190. Acceptance tests are in
@@ -187,3 +227,8 @@ borrow escapes, native ABI borrows, and unsupported resource compositions.
 branches, imports/modules, and rejection of unbound producer results, invalid
 returns, active-loan moves, and missing return paths. Native instrumentation
 verifies returned liveness, identity, final cleanup, and cleanup of other owners.
+`tests/native-resource-parameters.ps1` covers consuming locals/parameters,
+returning and forwarding them, cleanup header dependencies, imports/modules,
+call conflicts, branch availability, and entry-point/native ABI restrictions.
+Native instrumentation checks unused parameters, early returns, forwarding,
+identity returns, mixed ownership/borrowing, and local/parameter cleanup order.

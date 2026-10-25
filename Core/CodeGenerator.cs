@@ -76,6 +76,8 @@ namespace Sage.Core
             var sb = new StringBuilder();
             var arrayParameters = node.Parameters.Where(parameter => TypeSystem.IsArrayType(parameter.Type) && !TypeSystem.IsBorrowType(parameter.Type))
                 .ToDictionary(parameter => parameter.Name, _ => MintName("_incoming"));
+            var resourceParameters = node.Parameters.Where(parameter => TypeSystem.IsNativeResource(parameter.Type))
+                .ToDictionary(parameter => parameter.Name, _ => MintName("_resource_incoming"));
             sb.Append($"{Indent}{cReturnType} {cName}(");
 
             if (node.Parameters.Count == 0)
@@ -84,13 +86,20 @@ namespace Sage.Core
             }
             else
             {
-                var paramsList = node.Parameters.Select(p => TypeSystem.FormatSageParameter(arrayParameters.GetValueOrDefault(p.Name, p.Name), p.Type));
+                var paramsList = node.Parameters.Select(p => TypeSystem.FormatSageParameter(
+                    resourceParameters.GetValueOrDefault(p.Name, arrayParameters.GetValueOrDefault(p.Name, p.Name)), p.Type));
                 sb.Append(string.Join(", ", paramsList));
             }
             sb.AppendLine(")");
 
             sb.AppendLine($"{Indent}{{");
             _indent++;
+
+            foreach (var parameter in node.Parameters.Where(parameter => resourceParameters.ContainsKey(parameter.Name)))
+            {
+                string helper = ResourceCleanupHelper(parameter.Type);
+                sb.AppendLine($"{Indent}{parameter.Type} {parameter.Name} __attribute__((cleanup({helper}))) = {resourceParameters[parameter.Name]};");
+            }
 
             foreach (var parameter in node.Parameters.Where(parameter => arrayParameters.ContainsKey(parameter.Name)))
             {
@@ -123,9 +132,15 @@ namespace Sage.Core
                 // Handle external namespace calls or internal module scoping
                 cName = node.IsExternCall ? cName.Split("::")[1] : cName.Replace("::", "_");
             }
-            var cArgs = node.Arguments.Select(a => a is ArrayInitializationNode && a.VariableType != null && TypeSystem.IsArrayType(a.VariableType)
-                ? $"({TypeSystem.ToCType(TypeSystem.GetArrayBaseType(a.VariableType))}[{TypeSystem.GetArraySize(a.VariableType)}]){a.Accept(this)}"
-                : a.Accept(this));
+            var cArgs = node.Arguments.Select(a =>
+            {
+                string expression = a.Accept(this);
+                if (!node.IsExternCall && a.VariableType != null && TypeSystem.IsNativeResource(a.VariableType))
+                    return MoveResource(expression, a.VariableType);
+                return a is ArrayInitializationNode && a.VariableType != null && TypeSystem.IsArrayType(a.VariableType)
+                    ? $"({TypeSystem.ToCType(TypeSystem.GetArrayBaseType(a.VariableType))}[{TypeSystem.GetArraySize(a.VariableType)}]){expression}"
+                    : expression;
+            });
             return $"{cName}({string.Join(", ", cArgs)})";
         }
 
@@ -149,11 +164,7 @@ namespace Sage.Core
 
             if (TypeSystem.IsNativeResource(node.Type))
             {
-                if (!_resourceCleanupHelpers.TryGetValue(node.Type, out string? helper))
-                {
-                    helper = MintName("_sage_resource_drop_");
-                    _resourceCleanupHelpers.Add(node.Type, helper);
-                }
+                string helper = ResourceCleanupHelper(node.Type);
                 string cleanup = $" __attribute__((cleanup({helper})))";
                 // The semantic const binding still needs mutable storage for move/drop bookkeeping.
                 if (node.Initializer is IdentifierNode source)
@@ -288,9 +299,7 @@ namespace Sage.Core
             string expression = node.Expression.Accept(this);
             if (node.VariableType != null && TypeSystem.IsNativeResource(node.VariableType))
             {
-                string result = MintName("_resource_return");
-                return $"{Indent}return ({{ {node.VariableType} {result} = {expression}; " +
-                    $"{expression}._sage_handle = NULL; {result}; }});\n";
+                return $"{Indent}return {MoveResource(expression, node.VariableType)};\n";
             }
             return $"{Indent}return {expression};\n";
         }
@@ -527,6 +536,21 @@ namespace Sage.Core
             string name;
             do { name = $"{prefix}{_tempCounter++}"; } while (!_usedNames.Add(name));
             return name;
+        }
+
+        /// <summary>Moves a validated named resource place into an unowned C carrier.</summary>
+        private string MoveResource(string expression, string type)
+        {
+            string result = MintName("_resource_transfer");
+            return $"({{ {type} {result} = {expression}; {expression}._sage_handle = NULL; {result}; }})";
+        }
+
+        private string ResourceCleanupHelper(string type)
+        {
+            if (_resourceCleanupHelpers.TryGetValue(type, out string? helper)) return helper;
+            helper = MintName("_sage_resource_drop_");
+            _resourceCleanupHelpers.Add(type, helper);
+            return helper;
         }
 
         /// <summary>Reserve source identifiers before introducing backend cleanup helpers or temporaries.</summary>

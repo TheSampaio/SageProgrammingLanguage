@@ -131,6 +131,7 @@ namespace Sage.Core
                     : TypeSystem.FormatSageParameter(p.Name, p.Type)));
 
             if (!node.IsExtern && node.Parameters.Any(parameter => TypeSystem.IsArrayType(parameter.Type))) AddHeader("string.h");
+            if (!node.IsExtern && node.Parameters.Any(parameter => TypeSystem.IsNativeResource(parameter.Type))) AddHeader("stddef.h");
 
             string prefix = node.IsExtern ? "extern " : "";
             return $"{prefix}{cReturnType} {cName}({paramsStr});\n";

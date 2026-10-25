@@ -36,6 +36,28 @@ func produce(id: i32): OwnedHandle
     }
 }
 
+func consume(value: OwnedHandle): none {}
+
+func consume_forward(value: OwnedHandle): none { consume(value); }
+
+func identity(value: OwnedHandle): OwnedHandle { return value; }
+
+func consume_early(value: OwnedHandle, flag: b8): i32
+{
+    if (flag) { return borrowed_read(&value); }
+    return 0;
+}
+
+func consume_pair(first: OwnedHandle, second: OwnedHandle): none
+{
+    var local: OwnedHandle = produce(3);
+}
+
+func inspect_and_consume(value: OwnedHandle, observed: &OwnedHandle): i32
+{
+    return borrowed_read(&observed);
+}
+
 func forward(id: i32): OwnedHandle
 {
     var owner: OwnedHandle = produce(id);
@@ -215,5 +237,63 @@ unsafe func main(): none
         trace::resource_check(trace::resource_outstanding() == 1 && trace::resource_drop_calls() == 0, "resource_forwarded_return_stays_live");
     }
     trace::resource_check(trace::resource_outstanding() == 0 && trace::resource_drop_calls() == 1, "resource_forwarded_return_cleanup_once");
+
+    trace::resource_reset();
+    if (true)
+    {
+        const owner: OwnedHandle = produce(4);
+        consume(owner);
+        trace::resource_check(trace::resource_outstanding() == 0 && trace::resource_drop_calls() == 1, "consuming_parameter_drops_unused_owner");
+    }
+    trace::resource_check(trace::resource_drop_calls() == 1, "consumed_caller_does_not_drop_again");
+
+    trace::resource_reset();
+    if (true)
+    {
+        var owner: OwnedHandle = produce(5);
+        var result: OwnedHandle = identity(owner);
+        trace::resource_check(trace::resource_outstanding() == 1 && trace::resource_drop_calls() == 0, "owned_parameter_return_stays_live");
+        trace::resource_check(borrowed_read(&result) == 5, "owned_parameter_return_identity");
+    }
+    trace::resource_check(trace::resource_outstanding() == 0 && trace::resource_drop_calls() == 1, "owned_parameter_return_cleanup_once");
+
+    trace::resource_reset();
+    if (true)
+    {
+        var owner: OwnedHandle = produce(6);
+        var result: i32 = consume_early(owner, true);
+        trace::resource_check(result == 6, "owned_parameter_early_return_reads_before_drop");
+        trace::resource_check(trace::resource_outstanding() == 0 && trace::resource_drop_calls() == 1, "owned_parameter_early_return_cleanup");
+    }
+    trace::resource_check(trace::resource_drop_calls() == 1, "owned_parameter_early_return_no_double_drop");
+
+    trace::resource_reset();
+    if (true)
+    {
+        var first: OwnedHandle = produce(1);
+        var second: OwnedHandle = produce(2);
+        consume_pair(first, second);
+        trace::resource_check(trace::resource_outstanding() == 0 && trace::resource_drop_calls() == 3, "multiple_owned_parameters_cleanup");
+        trace::resource_check(trace::resource_release_order() == 321, "locals_then_reverse_parameter_cleanup");
+    }
+    trace::resource_check(trace::resource_drop_calls() == 3, "multiple_consumed_callers_skip_cleanup");
+
+    trace::resource_reset();
+    if (true)
+    {
+        var owner: OwnedHandle = produce(7);
+        consume_forward(owner);
+    }
+    trace::resource_check(trace::resource_outstanding() == 0 && trace::resource_drop_calls() == 1, "forwarded_consuming_parameter_drops_once");
+
+    trace::resource_reset();
+    if (true)
+    {
+        var owner: OwnedHandle = produce(1);
+        var other: OwnedHandle = produce(2);
+        var observed: i32 = inspect_and_consume(owner, &other);
+        trace::resource_check(observed == 2 && trace::resource_outstanding() == 1, "distinct_borrow_survives_consuming_call");
+    }
+    trace::resource_check(trace::resource_outstanding() == 0 && trace::resource_drop_calls() == 2, "mixed_owned_borrowed_cleanup_once");
     trace::resource_check(_sage_resource_drop_0 == 9, "resource_generated_names_do_not_collide");
 }

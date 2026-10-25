@@ -100,8 +100,9 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
   declarations. Unsafe direct local adoption and named-owner moves have automatic
   nullable-handle cleanup; see `docs/native-resource-contracts.md`. Explicit shared/
   mutable borrows reuse lexical loan checks. Named resource owners may be returned
-  into direct local owning call initializers. Owning parameters, resource arrays,
-  and fields are not enabled yet.
+  into direct local owning call initializers. Resource value parameters consume
+  named owners and adopt cleanup in the callee. Resource arrays and fields are
+  not enabled yet. See S193/S194 producer and call restrictions in the contract.
 
 ## Generated C
 

@@ -80,8 +80,11 @@ typed GCC cleanup helpers call the declared destructor once for non-null handles
 Native adoption and raw-handle access are trusted unsafe boundaries. Resource
 borrows reuse the lexical loan/call conflict checks and never adopt ownership.
 Resource returns move a named owner, clearing it before callee cleanup; their
-call results must directly initialize local owners. Owning parameters, arrays,
-and fields remain disabled.
+call results must directly initialize local owners. Resource value parameters
+consume named owners; the callee adopts them into cleanup locals before the body.
+Calls reject consuming/borrowing the same resource and require stable other
+arguments to avoid depending on C argument evaluation order. Resource arrays and
+fields remain disabled.
 
 The `SymbolTable` uses a `Stack<Dictionary<string, Symbol>>` to represent **Lexical Scoping**.
 

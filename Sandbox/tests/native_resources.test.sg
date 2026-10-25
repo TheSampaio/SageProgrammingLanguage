@@ -26,6 +26,10 @@ func empty_resource(): NativeAllocation
     }
 }
 
+func resource_identity(value: NativeAllocation): NativeAllocation { return value; }
+
+func resource_consume(value: NativeAllocation): none {}
+
 func main(): none
 {
     unsafe
@@ -52,4 +56,8 @@ func main(): none
     test::assert_true("resource_empty_move_completed", true);
     const returned: NativeAllocation = empty_resource();
     test::assert_true("resource_factory_return", resource_is_empty(&returned));
+    var roundtrip: NativeAllocation = resource_identity(returned);
+    test::assert_true("resource_owning_parameter_return", resource_is_empty(&roundtrip));
+    resource_consume(roundtrip);
+    test::assert_true("resource_consuming_parameter_completed", true);
 }

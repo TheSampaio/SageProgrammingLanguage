@@ -30,7 +30,7 @@ $cases = @(
     @{ Name = 'extraction_after_move'; Code = 'unsafe func main(): none { ' + $adopt + 'var moved: OwnedFile = owner; var raw: FILE* = owner as FILE*; }'; Error = 'S140' },
     @{ Name = 'local_type_shadow'; Code = 'unsafe func main(): none { var OwnedFile: i32 = 1; ' + $adopt + '}'; Error = 'S150' },
     @{ Name = 'parameter_type_shadow'; Code = 'func shadow(OwnedFile: i32): none {} func main(): none {}'; Error = 'S150' },
-    @{ Name = 'owner_parameter_disabled'; Code = 'func take(value: OwnedFile): none {} func main(): none {}'; Error = 'S191' },
+    @{ Name = 'owner_parameter'; Code = 'func take(value: OwnedFile): none {} func main(): none {}' },
     @{ Name = 'resource_private_handle'; Code = 'unsafe func main(): none { ' + $adopt + 'owner._sage_handle; }'; Error = 'S109' },
     @{ Name = 'parenthesized_adoption'; Code = 'unsafe func main(): none { var owner: OwnedFile = ((0 as FILE*) as OwnedFile); }' },
     @{ Name = 'returning_branch_owner_available'; Code = 'unsafe func choose(flag: b8): i32 { ' + $adopt + 'if (flag) { var moved: OwnedFile = owner; return 1; } var moved: OwnedFile = owner; return 0; } unsafe func main(): none { var value: i32 = choose(false); }' },
@@ -48,8 +48,8 @@ try {
     $output = & dotnet $compilerPath $source 2>&1
     $text = $output -join "`n"
     $passes = @($output | Select-String '\[PASS\]').Count
-    if ($LASTEXITCODE -ne 0 -or $text -match '\[FAIL\]|error ' -or $passes -ne 44) {
-        throw "Native resource cleanup checks failed ($passes/44 PASS).`n$text"
+    if ($LASTEXITCODE -ne 0 -or $text -match '\[FAIL\]|error ' -or $passes -ne 58) {
+        throw "Native resource cleanup checks failed ($passes/58 PASS).`n$text"
     }
     $minimalHeader = Join-Path $probeDir 'minimal-resource.h'
     Set-Content -LiteralPath $minimalHeader -Value 'typedef struct MinimalHandle MinimalHandle; static void minimal_drop(MinimalHandle* handle) { (void)handle; }'

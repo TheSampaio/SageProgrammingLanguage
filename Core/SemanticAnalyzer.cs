@@ -216,8 +216,10 @@ namespace Sage.Core
             if (!returnsResource || node.IsExtern) RejectResourceValueType(node.ReturnType, node);
             if (returnsResource && node.Name.Equals("main", StringComparison.OrdinalIgnoreCase))
                 throw new CompilerException(node, "S191", "The entry point cannot return an owning native resource.");
+            if (node.Name.Equals("main", StringComparison.OrdinalIgnoreCase))
+                foreach (var parameter in node.Parameters) RejectResourceValueType(parameter.Type, node);
             foreach (var parameter in node.Parameters)
-                if (!IsResourceBorrow(parameter.Type)) RejectResourceValueType(parameter.Type, node);
+                if (!IsResourceBorrow(parameter.Type) && !TypeSystem.IsNativeResource(parameter.Type)) RejectResourceValueType(parameter.Type, node);
             foreach (var parameter in node.Parameters) RejectResourceBindingName(parameter.Name, node);
             var duplicateParameter = node.Parameters.GroupBy(parameter => parameter.Name).FirstOrDefault(group => group.Count() > 1);
             if (duplicateParameter != null)
@@ -370,6 +372,8 @@ namespace Sage.Core
             var signature = symbol.Signature ?? throw new InvalidOperationException($"Callable '{name}' has no signature.");
             bool returnsResource = TypeSystem.IsNativeResource(signature.ReturnType);
             if (!returnsResource || symbol.IsExtern) RejectResourceValueType(signature.ReturnType, node);
+            if (symbol.IsExtern)
+                foreach (string parameter in signature.ParameterTypes) RejectResourceValueType(parameter, node);
             if (signature.IsUnsafe && !InUnsafe)
                 throw new CompilerException(node, "S164", $"Calling {(symbol.IsExtern ? "native" : "unsafe")} function '{name}' requires an unsafe context.");
             if (returnsResource && (_functionDepth == 0 || !ReferenceEquals(node, _owningInitializer)))
@@ -379,7 +383,9 @@ namespace Sage.Core
                     $"Function '{name}' expects {signature.ParameterTypes.Count} arguments, but received {node.Arguments.Count}.");
 
             bool hasBorrowedParameters = signature.ParameterTypes.Any(TypeSystem.IsBorrowType);
+            bool hasOwningParameters = signature.ParameterTypes.Any(TypeSystem.IsNativeResource);
             var borrowed = new Dictionary<SymbolMetadata, (BorrowKind Kind, BorrowExpressionNode Expression)>();
+            var transferred = new HashSet<SymbolMetadata>();
             for (int index = 0; index < node.Arguments.Count; index++)
             {
                 var arg = node.Arguments[index];
@@ -388,6 +394,9 @@ namespace Sage.Core
                 {
                     if (arg is not BorrowExpressionNode borrow)
                         throw new CompilerException(arg, "S170", $"Argument {index + 1} of '{name}' requires an explicit '{parameterType}' borrow.");
+                    if (borrow.Target is IdentifierNode borrowedId && _symbolTable.ResolveLocal(borrowedId.Name) is { } binding &&
+                        transferred.Contains(BorrowRoot(binding)))
+                        throw new CompilerException(borrow, "S194", "A call cannot both consume and borrow the same resource.");
                     _borrowExpressionDepth++;
                     string borrowedType;
                     try { borrowedType = borrow.Accept(this); }
@@ -404,8 +413,23 @@ namespace Sage.Core
                 }
                 if (arg is BorrowExpressionNode)
                     throw new CompilerException(arg, "S170", $"Argument {index + 1} of '{name}' expects a value, not a borrow.");
-                if (hasBorrowedParameters && !IsPureBorrowCallArgument(arg))
-                    throw new CompilerException(arg, "S177", "Evaluate calls and mutations into local values before passing them alongside borrowed arguments.");
+                if (TypeSystem.IsNativeResource(parameterType))
+                {
+                    if (arg is not IdentifierNode owner)
+                        throw new CompilerException(arg, "S194", "A consuming resource argument must name a local owner. Bind producer results before the call.");
+                    AnalyzeValue(owner, parameterType, "S161", $"Argument {index + 1} of '{name}'");
+                    var source = _symbolTable.ResolveLocal(owner.Name);
+                    if (source is not { IsOwningValue: true })
+                        throw new CompilerException(owner, "S191", "A borrowed resource cannot be consumed. Ownership stays with its source.");
+                    if (borrowed.ContainsKey(BorrowRoot(source)))
+                        throw new CompilerException(owner, "S194", "A call cannot both consume and borrow the same resource.");
+                    ConsumeReference(owner, node, OwnershipKind.Moved);
+                    transferred.Add(BorrowRoot(source));
+                    continue;
+                }
+                if ((hasBorrowedParameters || hasOwningParameters) && !IsPureBorrowCallArgument(arg))
+                    throw new CompilerException(arg, hasOwningParameters ? "S194" : "S177",
+                        "Evaluate calls and mutations into local values before passing them alongside borrowed or consumed arguments.");
                 if (symbol.IsExtern) arg.Accept(this);
                 else AnalyzeValue(arg, parameterType, "S161", $"Argument {index + 1} of '{name}'");
                 RequireValueContract(arg);
