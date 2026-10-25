@@ -22,7 +22,7 @@ $cases = @(
     @{ Name = 'wide_byte_not_implicitly_narrowed'; Code = 'func main(): none { var value: ByteFile = byte_file::empty(); var byte: i32 = 300; byte_file::write_byte(&mut value, byte); }'; Error = 'S161' }
 )
 try {
-    foreach ($name in @('byte_file.sg', 'test.sg', 'console.sg', 'file.sg')) {
+    foreach ($name in @('byte_file.sg', 'byte_buffer.sg', 'test.sg', 'console.sg', 'file.sg')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot "../Sandbox/std/$name") -Destination $stdDir
     }
     $headerPath = (Join-Path (Split-Path -Parent $compilerPath) 'Runtime/include/sage_byte_file.h').Replace('\', '/')

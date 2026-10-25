@@ -65,5 +65,6 @@ Tests cover bounds, initialization, all 256 bytes, allocation failure/overflow,
 exact cleanup across generated translation units, rejected ownership/borrow
 operations, and a safe buffer-to-byte-file roundtrip with independently verified
 persisted content. See `tests/byte-buffer.ps1` and
-`Sandbox/tests/byte_buffer.test.sg`. File operations are currently per-byte; bulk
-buffer I/O and general owned strings remain later work.
+`Sandbox/tests/byte_buffer.test.sg`. Since v0.22.0, the [byte-file API](byte-files.md)
+also reads/writes bounded blocks through borrowed buffers, with count, EOF and
+partial-failure results. General owned strings remain later work.

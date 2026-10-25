@@ -1,6 +1,9 @@
 /// Owned, seekable binary update files. Byte paths support bounded printable ASCII;
 /// acquisition from a legacy str remains unsafe.
+use byte_buffer;
+
 struct ByteRead { value: u8; has_value: b8; failed: b8; }
+struct ByteTransfer { count: u32; eof: b8; failed: b8; }
 
 module byte_file
 {
@@ -17,6 +20,14 @@ module byte_file
         func sage_byte_file_close(value: SageByteFileState*): c_int;
         func sage_byte_file_drop(value: SageByteFileState*): none;
         resource ByteFile: SageByteFileState* drop sage_byte_file_drop;
+    }
+
+    extern byte_file_buffer_native("sage_byte_file_buffer.h")
+    {
+        func sage_byte_file_read_buffer(value: SageByteFileState*, buffer: SageByteBufferState*, limit: c_size_t): c_size_t;
+        func sage_byte_file_write_buffer(value: SageByteFileState*, buffer: SageByteBufferState*, limit: c_size_t): c_size_t;
+        func sage_byte_file_transfer_eof(value: SageByteFileState*): c_int;
+        func sage_byte_file_transfer_failed(value: SageByteFileState*): c_int;
     }
 
     /// Creates/truncates a binary update file. A valid NUL-terminated path is
@@ -71,6 +82,34 @@ module byte_file
     {
         if (value == null) { return false; }
         unsafe { return byte_file_native::sage_byte_file_write(value as SageByteFileState*, byte as c_uchar) != 0; }
+    }
+
+    /// Replaces buffer contents with up to limit bytes, bounded by capacity.
+    /// Zero limit is a no-op. Invalid owners/limits and positioning failures
+    /// preserve the buffer; after native input begins, length becomes count.
+    func read_buffer(value: &mut ByteFile, buffer: &mut ByteBuffer, limit: u32): ByteTransfer
+    {
+        if (value == null || buffer == null) { return { count = 0, eof = false, failed = true }; }
+        unsafe
+        {
+            var count: c_size_t = byte_file_buffer_native::sage_byte_file_read_buffer(value as SageByteFileState*, buffer as SageByteBufferState*, limit as c_size_t);
+            var ended: b8 = byte_file_buffer_native::sage_byte_file_transfer_eof(value as SageByteFileState*) != 0;
+            var failed: b8 = byte_file_buffer_native::sage_byte_file_transfer_failed(value as SageByteFileState*) != 0;
+            return { count = count as u32, eof = ended, failed = failed };
+        }
+    }
+
+    /// Writes up to limit initialized prefix bytes. Does not mutate the buffer.
+    /// Count can be nonzero on failure; successful writes can still be buffered.
+    func write_buffer(value: &mut ByteFile, buffer: &ByteBuffer, limit: u32): ByteTransfer
+    {
+        if (value == null || buffer == null) { return { count = 0, eof = false, failed = true }; }
+        unsafe
+        {
+            var count: c_size_t = byte_file_buffer_native::sage_byte_file_write_buffer(value as SageByteFileState*, buffer as SageByteBufferState*, limit as c_size_t);
+            var failed: b8 = byte_file_buffer_native::sage_byte_file_transfer_failed(value as SageByteFileState*) != 0;
+            return { count = count as u32, eof = false, failed = failed };
+        }
     }
 
     func seek_start(value: &mut ByteFile): b8

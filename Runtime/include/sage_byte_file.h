@@ -8,7 +8,12 @@
 _Static_assert(CHAR_BIT == 8, "Sage byte files require 8-bit bytes");
 
 /* Trusted native state. Sage sees only the declared opaque owning resource. */
-typedef struct SageByteFileState { FILE* stream; } SageByteFileState;
+typedef struct SageByteFileState
+{
+    FILE* stream;
+    int transfer_eof;
+    int transfer_failed;
+} SageByteFileState;
 
 static SageByteFileState* sage_byte_file_create(const char* path)
 {
@@ -18,6 +23,8 @@ static SageByteFileState* sage_byte_file_create(const char* path)
     SageByteFileState* state = malloc(sizeof(*state));
     if (!state) { (void)fclose(stream); return NULL; }
     state->stream = stream;
+    state->transfer_eof = 0;
+    state->transfer_failed = 0;
     return state;
 }
 

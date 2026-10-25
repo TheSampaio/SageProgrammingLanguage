@@ -115,6 +115,11 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
   shared checked reads, mutable write/push/clear, and consuming release. Spare
   capacity and cleared bytes are unreadable until pushed again. Native allocation
   support stays in `Runtime/include`; see `docs/byte-buffers.md`.
+- `byte_file.read_buffer` replaces the initialized prefix after native input;
+  `write_buffer` reads only an initialized shared prefix. Both borrow the file
+  exclusively and return `ByteTransfer { count, eof, failed }`, preserving partial
+  counts on error. Validate limits before I/O; zero-limit valid calls are no-ops.
+  Native status is captured immediately within the wrapper's exclusive borrow.
 
 ## Generated C
 

@@ -1,4 +1,4 @@
-# Owned byte files (v0.20.0)
+# Owned byte files (v0.22.0)
 
 `use byte_file;` imports a bounded file API. `ByteFile` owns an opaque native state
 and follows normal move, borrow, return, and cleanup contracts. Existing unsafe
@@ -12,6 +12,8 @@ and follows normal move, borrow, return, and cleanup contracts. Existing unsafe
 | `is_open(value: &ByteFile)` | Shared borrow | Whether its native stream is open |
 | `read_byte(value: &mut ByteFile)` | Mutable borrow | A `ByteRead` value |
 | `write_byte(value: &mut ByteFile, byte: u8)` | Mutable borrow | `true` on successful byte output |
+| `read_buffer(value: &mut ByteFile, buffer: &mut ByteBuffer, limit: u32)` | Exclusive file and target borrows | `ByteTransfer`; replaces the target with received bytes |
+| `write_buffer(value: &mut ByteFile, buffer: &ByteBuffer, limit: u32)` | Exclusive file and shared source borrows | `ByteTransfer`; writes an initialized source prefix |
 | `seek_start(value: &mut ByteFile)` | Mutable borrow | `true` on successful positioning |
 | `flush(value: &mut ByteFile)` | Mutable borrow | `true` on successful buffer flushing |
 | `close(value: ByteFile)` | **Consumes** the owner | Reports native close success; consumes even on failure |
@@ -26,6 +28,53 @@ and follows normal move, borrow, return, and cleanup contracts. Existing unsafe
 seek, flush, and close without invoking native I/O. False write/flush status does
 not promise that no earlier buffered data reached the file. Errors are per
 operation; the adapter clears native stream indicators before positioning.
+
+## Block transfers
+
+Since v0.22.0, `ByteTransfer { count: u32; eof: b8; failed: b8; }` describes a
+single bounded native block operation. `byte_file` imports `byte_buffer` as a
+dependency. The public surface exposes no data pointers.
+
+| Situation | Count and flags | Target buffer after read |
+| --- | --- | --- |
+| Requested bytes transferred | `count=limit`, normally both flags false | Exactly `count` initialized bytes |
+| Clean EOF during read | `count <= limit`, `eof=true`, `failed=false` | Exactly `count` bytes, including zero |
+| Read error after partial progress | Count remains meaningful, `failed=true`; EOF flag remains independent | Only the received prefix is accessible |
+| Invalid/empty owner or excessive limit | Zero, `eof=false`, `failed=true` | Previous contents/length preserved |
+| Positioning failure before native transfer | Zero, `eof=false`, `failed=true` | Previous contents/length preserved |
+| Zero limit with valid owners | Zero, both flags false; no native I/O or EOF probe | Previous contents/length preserved |
+
+`read_buffer` requires `limit <= capacity`. After native input starts it replaces
+length with the actual byte count even on EOF/error; it never appends or exposes
+old suffix bytes. A clean short read can therefore contain useful data. An exact
+read does not predict EOF: another nonzero read may be required to observe it.
+Unexpected short input with neither native EOF nor error is treated as failure.
+
+`write_buffer` requires `limit <= length`, so spare capacity is never read. It
+does not mutate the source. `eof` is always false; a short write is a failure,
+including when the native error indicator is absent. A nonzero count can accompany
+failure. Count reports bytes accepted by the C stream, which may still be buffered;
+use flush and consuming close to observe their separate results. Error paths do
+not roll back transferred bytes. File position after a native error is not
+guaranteed; this API performs no automatic retry or recovery.
+
+```sage
+func receive(file: &mut ByteFile, buffer: &mut ByteBuffer): ByteTransfer
+{
+    var limit: u32 = byte_buffer::capacity(&buffer);
+    return byte_file::read_buffer(&mut file, &mut buffer, limit);
+}
+```
+
+The implementation calls `fread`/`fwrite` with one-byte elements, retaining exact
+byte counts. Transfer status is private per-file state and the wrapper captures
+it immediately while the exclusive file borrow is held; no shared global status
+or allocated result handle is used. Semantics follow C11 draft N1570
+[§§7.21.8.1–2](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf).
+
+`tests/byte-file-buffer.ps1` covers deterministic partial reads/writes and errors,
+preserved buffers before I/O, initialized prefixes after I/O, all-byte persisted
+roundtrip, and static ownership/borrow rejection.
 
 ```sage
 use byte_file;
@@ -96,13 +145,14 @@ The C helper `Runtime/include/sage_byte_file.h` is part of the compiler's truste
 implementation and is copied beside compiler build/publish outputs. GCC resolves
 it relative to the compiler executable, including after relocation. The `std`
 directory contains only `.sg` sources; a local std override needs `byte_file.sg`
-without copying native headers into it. Compiler distributions must retain the
+and its `byte_buffer.sg` dependency, without copying native headers into it.
+Compiler distributions must retain the
 separate `Runtime/include` directory.
 The adapter requires 8-bit C bytes and has been validated with the current Windows
 GCC toolchain; broader platform behavior has not been operationally demonstrated.
 
 The interface intentionally omits text encoding, append/open modes, arbitrary
-seeks, byte buffers, detailed OS error codes, and safe general path acquisition.
+seeks, buffer slices, detailed OS error codes, and safe general path acquisition.
 Tests are `Sandbox/tests/byte_file.test.sg` (safe empty-owner and rejected paths) and
 `tests/byte-file.ps1` (native failure injection, all-byte roundtrip, persisted
 content, exclusive reopen after explicit/early-return close, paths with spaces,

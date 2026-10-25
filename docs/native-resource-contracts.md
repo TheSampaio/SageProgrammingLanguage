@@ -226,8 +226,8 @@ not inferred Copy. The bounded [byte-file API](byte-files.md) now provides safe
 borrowed byte operations and consuming close after valid acquisition. General
 path acquisition and owned strings remain unfinished. The bounded
 [byte-buffer API](byte-buffers.md) now provides exclusive fixed-capacity storage
-with checked access to initialized bytes; slices, resizing, and bulk I/O remain
-unfinished.
+with checked access to initialized bytes and borrowed block file I/O; slices and
+resizing remain unfinished.
 
 Implementation order:
 

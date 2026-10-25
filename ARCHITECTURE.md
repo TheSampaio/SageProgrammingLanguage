@@ -99,6 +99,10 @@ The [byte-buffer API](docs/byte-buffers.md) uses the same resource/borrow contra
 for exclusive fixed-capacity storage. Native bounds checks expose only the
 initialized prefix; push initializes before extending length, and clear hides
 previous contents without freeing the allocation. No raw buffer escapes.
+Block file reads replace the buffer's initialized prefix with the actual count;
+block writes borrow only initialized source bytes. Per-file native transfer
+flags are captured while the exclusive file borrow is held and returned as an
+ordinary `ByteTransfer` value with independent count, EOF and failure fields.
 
 The `SymbolTable` uses a `Stack<Dictionary<string, Symbol>>` to represent **Lexical Scoping**.
 

@@ -1,0 +1,79 @@
+use byte_file;
+use test;
+
+func main(): none
+{
+    var path: u8[260] = { 98, 108, 111, 99, 107, 46, 98, 105, 110 };
+    var path_length: u16 = 9;
+    var file: ByteFile = byte_file::create_bytes(path, path_length);
+    test::assert_true("block_file_created", byte_file::is_open(&file));
+    var capacity: u32 = 256;
+    var source: ByteBuffer = byte_buffer::create(capacity);
+    var initialized: b8 = true;
+    for (var index: u32 = 0; index < 256; index++)
+    {
+        var byte: u8 = index as u8;
+        if (!byte_buffer::push(&mut source, byte)) { initialized = false; }
+    }
+    test::assert_true("block_source_initialized", initialized);
+    var limit: u32 = 256;
+    var output: ByteTransfer = byte_file::write_buffer(&mut file, &source, limit);
+    test::assert_true("block_full_write_count_and_status", output.count == 256 && !output.eof && !output.failed);
+    test::assert_true("block_output_preserves_source_length", byte_buffer::length(&source) == 256);
+    capacity = 300;
+    var target: ByteBuffer = byte_buffer::create(capacity);
+    var sentinel: u8 = 77;
+    byte_buffer::push(&mut target, sentinel);
+    limit = 301;
+    var invalid: ByteTransfer = byte_file::read_buffer(&mut file, &mut target, limit);
+    test::assert_true("block_invalid_capacity_fails", invalid.count == 0 && !invalid.eof && invalid.failed);
+    test::assert_true("block_invalid_capacity_preserves_length", byte_buffer::length(&target) == 1);
+    test::assert_true("block_seek_for_chunked_input", byte_file::seek_start(&mut file));
+    var total: u32 = 0;
+    var matched: b8 = true;
+    var final: ByteTransfer = {};
+    limit = 100;
+    for (var chunk: i32 = 0; chunk < 3; chunk++)
+    {
+        final = byte_file::read_buffer(&mut file, &mut target, limit);
+        if (final.failed) { matched = false; }
+        for (var index: u32 = 0; index < final.count; index++)
+        {
+            var read: BufferRead = byte_buffer::read(&target, index);
+            if (!read.has_value || read.value != ((total + index) as u8)) { matched = false; }
+        }
+        total = total + final.count;
+    }
+    test::assert_true("block_chunked_all_bytes_match", matched && total == 256);
+    test::assert_true("block_partial_eof_count", final.count == 56 && final.eof && !final.failed);
+    test::assert_true("block_partial_read_replaces_length", byte_buffer::length(&target) == 56);
+    var index: u32 = 56;
+    var hidden: BufferRead = byte_buffer::read(&target, index);
+    test::assert_false("block_partial_read_hides_old_suffix", hidden.has_value);
+    var end: ByteTransfer = byte_file::read_buffer(&mut file, &mut target, limit);
+    test::assert_true("block_zero_count_clean_eof", end.count == 0 && end.eof && !end.failed);
+    test::assert_true("block_eof_resets_target_length", byte_buffer::length(&target) == 0);
+    byte_buffer::push(&mut target, sentinel);
+    limit = 0;
+    var noop: ByteTransfer = byte_file::read_buffer(&mut file, &mut target, limit);
+    test::assert_true("block_zero_limit_no_eof_probe", noop.count == 0 && !noop.eof && !noop.failed);
+    test::assert_true("block_zero_limit_preserves_target", byte_buffer::length(&target) == 1);
+    test::assert_true("block_seek_for_exact_input", byte_file::seek_start(&mut file));
+    limit = 256;
+    var exact: ByteTransfer = byte_file::read_buffer(&mut file, &mut target, limit);
+    test::assert_true("block_exact_input_does_not_predict_eof", exact.count == 256 && !exact.eof && !exact.failed);
+    limit = 257;
+    var invalid_output: ByteTransfer = byte_file::write_buffer(&mut file, &source, limit);
+    test::assert_true("block_uninitialized_output_rejected", invalid_output.count == 0 && invalid_output.failed);
+    capacity = 0;
+    var zero: ByteBuffer = byte_buffer::create(capacity);
+    limit = 0;
+    var zero_read: ByteTransfer = byte_file::read_buffer(&mut file, &mut zero, limit);
+    var zero_write: ByteTransfer = byte_file::write_buffer(&mut file, &zero, limit);
+    test::assert_true("block_valid_zero_capacity_noops", !zero_read.failed && !zero_write.failed);
+    limit = 1;
+    var invalid_zero: ByteTransfer = byte_file::read_buffer(&mut file, &mut zero, limit);
+    test::assert_true("block_positive_zero_capacity_read_rejected", invalid_zero.failed && invalid_zero.count == 0);
+    var closed: b8 = byte_file::close(file);
+    test::assert_true("block_explicit_close", closed);
+}
