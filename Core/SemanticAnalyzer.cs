@@ -212,7 +212,10 @@ namespace Sage.Core
         public string Visit(FunctionDeclarationNode node)
         {
             RegisterFunction(node, node.ModuleOwner);
-            RejectResourceValueType(node.ReturnType, node);
+            bool returnsResource = TypeSystem.IsNativeResource(node.ReturnType);
+            if (!returnsResource || node.IsExtern) RejectResourceValueType(node.ReturnType, node);
+            if (returnsResource && node.Name.Equals("main", StringComparison.OrdinalIgnoreCase))
+                throw new CompilerException(node, "S191", "The entry point cannot return an owning native resource.");
             foreach (var parameter in node.Parameters)
                 if (!IsResourceBorrow(parameter.Type)) RejectResourceValueType(parameter.Type, node);
             foreach (var parameter in node.Parameters) RejectResourceBindingName(parameter.Name, node);
@@ -289,9 +292,9 @@ namespace Sage.Core
                 throw new CompilerException(node, "S102", $"Variable '{node.Name}' is already defined.");
             if (TypeSystem.IsBorrowType(node.Type)) return AnalyzeBorrowedBinding(node);
 
-            if (isResource && node.Initializer is not IdentifierNode &&
+            if (isResource && node.Initializer is not (IdentifierNode or FunctionCallNode) &&
                 (node.Initializer is not CastExpressionNode adoption || adoption.TargetType != node.Type))
-                throw new CompilerException(node, "S192", "A resource local requires a named owner move or direct unsafe adoption from its declared native pointer.");
+                throw new CompilerException(node, "S192", "A resource local requires a named owner move, a direct owning call, or direct unsafe adoption from its declared native pointer.");
 
             if (TypeSystem.IsRawPointer(node.Type) && !InUnsafe)
                 throw new CompilerException(node, "S121",
@@ -365,9 +368,12 @@ namespace Sage.Core
             node.ResolvedName = name;
             node.IsExternCall = symbol.IsExtern;
             var signature = symbol.Signature ?? throw new InvalidOperationException($"Callable '{name}' has no signature.");
-            RejectResourceValueType(signature.ReturnType, node);
+            bool returnsResource = TypeSystem.IsNativeResource(signature.ReturnType);
+            if (!returnsResource || symbol.IsExtern) RejectResourceValueType(signature.ReturnType, node);
             if (signature.IsUnsafe && !InUnsafe)
                 throw new CompilerException(node, "S164", $"Calling {(symbol.IsExtern ? "native" : "unsafe")} function '{name}' requires an unsafe context.");
+            if (returnsResource && (_functionDepth == 0 || !ReferenceEquals(node, _owningInitializer)))
+                throw new CompilerException(node, "S193", "An owning resource result must directly initialize a local owner before it can be used.");
             if (node.Arguments.Count != signature.ParameterTypes.Count)
                 throw new CompilerException(node, "S160",
                     $"Function '{name}' expects {signature.ParameterTypes.Count} arguments, but received {node.Arguments.Count}.");
@@ -661,6 +667,17 @@ namespace Sage.Core
         {
             if (_currentReturnType == null)
                 throw new CompilerException(node, "S162", "A return statement must be inside a function.");
+            if (TypeSystem.IsNativeResource(_currentReturnType))
+            {
+                if (node.Expression is not IdentifierNode owner)
+                    throw new CompilerException(node, "S193", "Return a named local resource owner. Bind a producer or adoption result before returning it.");
+                AnalyzeValue(owner, _currentReturnType, "S162", "Return expression");
+                if (_symbolTable.Resolve(owner.Name) is not { IsOwningValue: true })
+                    throw new CompilerException(owner, "S191", "A borrowed resource cannot be returned as an owner. Ownership stays with its source.");
+                ConsumeReference(owner, node, OwnershipKind.Moved);
+                node.VariableType = _currentReturnType;
+                return _currentReturnType;
+            }
             string type = AnalyzeValue(node.Expression, _currentReturnType, "S162", "Return expression");
             RequireValueContract(node.Expression);
             return type;

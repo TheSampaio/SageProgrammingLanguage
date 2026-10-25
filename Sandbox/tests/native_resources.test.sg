@@ -17,6 +17,15 @@ func resource_visit(value: &mut NativeAllocation): b8
     return resource_is_empty(&value);
 }
 
+func empty_resource(): NativeAllocation
+{
+    unsafe
+    {
+        const owner: NativeAllocation = (0 as c_void*) as NativeAllocation;
+        return owner;
+    }
+}
+
 func main(): none
 {
     unsafe
@@ -41,4 +50,6 @@ func main(): none
         test::assert_true("resource_move_after_loan", resource_is_empty(&moved));
     }
     test::assert_true("resource_empty_move_completed", true);
+    const returned: NativeAllocation = empty_resource();
+    test::assert_true("resource_factory_return", resource_is_empty(&returned));
 }

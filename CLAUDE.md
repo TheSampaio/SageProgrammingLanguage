@@ -99,7 +99,8 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
 - Native resources use explicit `resource Name: NativePointer drop destructor;`
   declarations. Unsafe direct local adoption and named-owner moves have automatic
   nullable-handle cleanup; see `docs/native-resource-contracts.md`. Explicit shared/
-  mutable borrows reuse lexical loan checks. Owning parameters/returns, arrays,
+  mutable borrows reuse lexical loan checks. Named resource owners may be returned
+  into direct local owning call initializers. Owning parameters, resource arrays,
   and fields are not enabled yet.
 
 ## Generated C

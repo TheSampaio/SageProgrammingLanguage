@@ -283,7 +283,17 @@ namespace Sage.Core
         public string Visit(BorrowExpressionNode node) => node.Target.IsReference
             ? node.Target.Accept(this) : $"&({node.Target.Accept(this)})";
 
-        public string Visit(ReturnNode node) => $"{Indent}return {node.Expression.Accept(this)};\n";
+        public string Visit(ReturnNode node)
+        {
+            string expression = node.Expression.Accept(this);
+            if (node.VariableType != null && TypeSystem.IsNativeResource(node.VariableType))
+            {
+                string result = MintName("_resource_return");
+                return $"{Indent}return ({{ {node.VariableType} {result} = {expression}; " +
+                    $"{expression}._sage_handle = NULL; {result}; }});\n";
+            }
+            return $"{Indent}return {expression};\n";
+        }
 
         public string Visit(ExpressionStatementNode node) => $"{Indent}{node.Expression.Accept(this)};\n";
 

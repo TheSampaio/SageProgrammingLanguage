@@ -27,6 +27,41 @@ func borrowed_write(value: &mut OwnedHandle, id: i32): none
     unsafe { trace::resource_write(value as ResourceHandle*, id as c_int); }
 }
 
+func produce(id: i32): OwnedHandle
+{
+    unsafe
+    {
+        const owner: OwnedHandle = trace::resource_open(id as c_int) as OwnedHandle;
+        return owner;
+    }
+}
+
+func forward(id: i32): OwnedHandle
+{
+    var owner: OwnedHandle = produce(id);
+    return owner;
+}
+
+func produce_empty(): OwnedHandle
+{
+    unsafe
+    {
+        var owner: OwnedHandle = trace::resource_null() as OwnedHandle;
+        return owner;
+    }
+}
+
+func choose_owner(flag: b8): OwnedHandle
+{
+    var first: OwnedHandle = produce(1);
+    if (flag)
+    {
+        var second: OwnedHandle = produce(2);
+        return second;
+    }
+    return first;
+}
+
 unsafe func early(flag: b8): i32
 {
     var first: OwnedHandle = trace::resource_open(1) as OwnedHandle;
@@ -143,5 +178,42 @@ unsafe func main(): none
         trace::resource_check(borrowed_read(&moved) == 9, "resource_move_after_borrow_scope");
     }
     trace::resource_check(trace::resource_outstanding() == 0 && trace::resource_drop_calls() == 1, "resource_cleanup_after_borrowed_calls");
+
+    trace::resource_reset();
+    if (true)
+    {
+        const owner: OwnedHandle = produce(5);
+        trace::resource_check(trace::resource_outstanding() == 1 && trace::resource_drop_calls() == 0, "resource_return_keeps_handle_live");
+        trace::resource_check(borrowed_read(&owner) == 5, "resource_return_preserves_identity");
+    }
+    trace::resource_check(trace::resource_outstanding() == 0 && trace::resource_drop_calls() == 1, "resource_return_caller_cleanup_once");
+
+    trace::resource_reset();
+    if (true)
+    {
+        var owner: OwnedHandle = choose_owner(true);
+        trace::resource_check(trace::resource_outstanding() == 1 && trace::resource_drop_calls() == 1, "resource_return_drops_unreturned_owner");
+        trace::resource_check(borrowed_read(&owner) == 2, "resource_nested_return_identity");
+    }
+    trace::resource_check(trace::resource_outstanding() == 0 && trace::resource_release_order() == 12, "resource_nested_return_cleanup_order");
+
+    trace::resource_reset();
+    if (true)
+    {
+        var owner: OwnedHandle = choose_owner(false);
+        trace::resource_check(trace::resource_outstanding() == 1 && trace::resource_drop_calls() == 0, "resource_fallthrough_return_stays_live");
+        trace::resource_check(borrowed_read(&owner) == 1, "resource_fallthrough_return_identity");
+    }
+    trace::resource_check(trace::resource_drop_calls() == 1, "resource_fallthrough_return_cleanup");
+
+    trace::resource_reset();
+    if (true) { var owner: OwnedHandle = produce_empty(); }
+    trace::resource_check(trace::resource_drop_calls() == 0, "null_resource_return_skips_cleanup");
+    if (true)
+    {
+        var owner: OwnedHandle = forward(6);
+        trace::resource_check(trace::resource_outstanding() == 1 && trace::resource_drop_calls() == 0, "resource_forwarded_return_stays_live");
+    }
+    trace::resource_check(trace::resource_outstanding() == 0 && trace::resource_drop_calls() == 1, "resource_forwarded_return_cleanup_once");
     trace::resource_check(_sage_resource_drop_0 == 9, "resource_generated_names_do_not_collide");
 }

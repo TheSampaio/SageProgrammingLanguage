@@ -79,7 +79,9 @@ Resource locals share binding-identity move/branch tracking with heap owners;
 typed GCC cleanup helpers call the declared destructor once for non-null handles.
 Native adoption and raw-handle access are trusted unsafe boundaries. Resource
 borrows reuse the lexical loan/call conflict checks and never adopt ownership.
-Value parameters/returns, arrays, and fields remain disabled.
+Resource returns move a named owner, clearing it before callee cleanup; their
+call results must directly initialize local owners. Owning parameters, arrays,
+and fields remain disabled.
 
 The `SymbolTable` uses a `Stack<Dictionary<string, Symbol>>` to represent **Lexical Scoping**.
 

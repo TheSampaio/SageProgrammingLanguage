@@ -1,4 +1,4 @@
-# Native resource contracts (v0.14.0)
+# Native resource contracts (v0.15.0)
 
 Native ownership must be declared explicitly instead of inferred from names such
 as `open`, `malloc`, or `close`. This increment implements declarations in
@@ -118,9 +118,42 @@ must respect shared versus mutable access, check required handle validity, and
 must not release, retain, or independently adopt the handle. The compiler checks
 the Sage loan graph, not mutations or aliases created inside native code.
 
+## Owning returns
+
+A Sage function returning a resource transfers ownership of a named local owner.
+The source handle is cleared before its scope cleanup, while other locals retain
+normal reverse-order destruction. A const owner may also be returned. Returning
+through a live lexical loan is rejected, and returning a borrowed binding as an
+owner is S191. The entry point cannot return a resource.
+
+```sage
+func empty_file(): OwnedFile
+{
+    unsafe
+    {
+        const owner: OwnedFile = (0 as FILE*) as OwnedFile;
+        return owner;
+    }
+}
+
+func main(): none
+{
+    var owner: OwnedFile = empty_file(); // adopts the returned ownership
+} // non-null returned handles would be destroyed here
+```
+
+An owning call result must directly initialize a local owner. Discarding it,
+projecting/casting an anonymous result, or writing `return factory();` is S193.
+Bind the result to a local before further use or return. This bounded producer
+rule keeps every cleanup obligation explicit; it does not implement general
+temporary destruction. Declaring a resource return type does not make a function
+unsafe: a reviewed factory can isolate acquisition inside a local unsafe block.
+Raw validity, exclusive acquisition, and native destructor behavior remain its
+trusted obligations. Native ABI resource returns remain disabled.
+
 ## Remaining boundaries
 
-By-value resource parameters/returns, globals, fields, arrays, and pointers
+By-value resource parameters, globals, fields, arrays, and pointers
 to facade types remain rejected with S191. Ordinary resource comparisons,
 interpolation, and implicit native arguments are also disabled. A resource is
 not inferred Copy. This increment does not provide a safe file API or owned
@@ -133,7 +166,8 @@ Implementation order:
 2. Implemented: exclusive local ownership, moves, and single-call nullable-handle
    cleanup after trusted unsafe acquisition. Shared/mutable resource borrows reuse
    call conflict and lexical loan checks without transferring ownership.
-3. Planned: add ownership transfer through parameters/returns and a bounded standard-library
+3. Implemented: owning returns from named locals into direct owning call initializers.
+4. Planned: add consuming resource parameters and a bounded standard-library
    interface. Nested resource fields, arrays, buffers, and C++ adapters need their
    own subsequent contracts.
 
@@ -149,3 +183,7 @@ the native instrumented fixture is the evidence for cleanup counts and order.
 `tests/native-resource-borrowing.ps1` covers positive borrowed calls/locals,
 reborrowing, forward prototypes, and rejection of illegal moves, alias conflicts,
 borrow escapes, native ABI borrows, and unsupported resource compositions.
+`tests/native-resource-returns.ps1` covers factories, forwarding through locals,
+branches, imports/modules, and rejection of unbound producer results, invalid
+returns, active-loan moves, and missing return paths. Native instrumentation
+verifies returned liveness, identity, final cleanup, and cleanup of other owners.
