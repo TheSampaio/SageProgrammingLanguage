@@ -1,4 +1,4 @@
-# Borrowing (parameters in v0.9.0, lexical locals in v0.9.1)
+# Borrowing (parameters v0.9.0, lexical locals v0.9.1, resources v0.14.0)
 
 Borrowing grants temporary access to a value without transferring its ownership:
 
@@ -32,7 +32,8 @@ A mutable parameter may be reborrowed as shared or mutable; a shared parameter
 may only be reborrowed as shared. A call-duration borrow by itself leaves its
 source usable after the call; existing lexical loans still apply.
 The callee does not acquire a cleanup obligation and cannot delete the borrowed
-value. A returned plain value is copied rather than returning its borrow.
+value. A returned supported Copy value is independent of the borrow; resource
+values cannot be copied or returned through this rule.
 
 ## Lexical local borrows (v0.9.1)
 
@@ -81,7 +82,12 @@ composed of these types. Since v0.10.0, those structs may also contain fixed
 arrays of copyable values; [value-copy semantics](value-copy.md) prevent Sage
 array parameters from mutating a shared source through pointer decay.
 This property is inferred from field composition.
-Strings, direct array borrows, raw pointers, opaque resources, and recursive value layouts
+Declared native resource facade types also support explicit shared/mutable borrows
+since v0.14.0, without copying or adopting the handle. Moving from a resource
+borrow is rejected. Raw handle exposure inside wrappers remains trusted unsafe
+code; see [native resource contracts](native-resource-contracts.md).
+
+Strings, direct array borrows, raw pointers, opaque C values, and recursive value layouts
 require further contracts and are rejected. In particular, a struct with a
 `str` field is outside this initial supported subset.
 

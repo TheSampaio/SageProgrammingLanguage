@@ -172,8 +172,11 @@ namespace Sage.Core
             if (TypeSystem.IsArrayType(valueType)) valueType = TypeSystem.GetArrayBaseType(valueType);
             valueType = valueType.TrimEnd('*');
             if (TypeSystem.IsNativeResource(valueType))
-                throw new CompilerException(operation, "S191", "Native resources support local ownership only; this value type or operation has no ownership contract yet.");
+                throw new CompilerException(operation, "S191", "Native resources support local owners and explicit borrows; this value type or operation has no ownership contract yet.");
         }
+
+        private static bool IsResourceBorrow(string type) => TypeSystem.IsBorrowType(type) &&
+            TypeSystem.IsNativeResource(TypeSystem.GetBorrowedType(type));
 
         private void RejectResourceBindingName(string name, AstNode operation)
         {
@@ -210,7 +213,8 @@ namespace Sage.Core
         {
             RegisterFunction(node, node.ModuleOwner);
             RejectResourceValueType(node.ReturnType, node);
-            foreach (var parameter in node.Parameters) RejectResourceValueType(parameter.Type, node);
+            foreach (var parameter in node.Parameters)
+                if (!IsResourceBorrow(parameter.Type)) RejectResourceValueType(parameter.Type, node);
             foreach (var parameter in node.Parameters) RejectResourceBindingName(parameter.Name, node);
             var duplicateParameter = node.Parameters.GroupBy(parameter => parameter.Name).FirstOrDefault(group => group.Count() > 1);
             if (duplicateParameter != null)
@@ -218,7 +222,7 @@ namespace Sage.Core
             foreach (var parameter in node.Parameters.Where(parameter => TypeSystem.IsBorrowType(parameter.Type)))
                 if (!IsBorrowableValue(TypeSystem.GetBorrowedType(parameter.Type)))
                     throw new CompilerException(node, "S176",
-                        $"Borrowed parameter '{parameter.Name}' requires a scalar or a struct composed of borrowable values; '{parameter.Type}' is not supported yet.");
+                        $"Borrowed parameter '{parameter.Name}' requires a scalar, a supported struct, or a native resource; '{parameter.Type}' is not supported yet.");
             foreach (var parameter in node.Parameters.Where(parameter => TypeSystem.IsArrayType(parameter.Type) && !TypeSystem.IsBorrowType(parameter.Type)))
                 RequireCopyableArray(parameter.Type, node);
 
@@ -278,7 +282,7 @@ namespace Sage.Core
         public string Visit(VariableDeclarationNode node)
         {
             bool isResource = TypeSystem.IsNativeResource(node.Type);
-            if (!isResource || _functionDepth == 0) RejectResourceValueType(node.Type, node);
+            if (_functionDepth == 0 || (!isResource && !IsResourceBorrow(node.Type))) RejectResourceValueType(node.Type, node);
             RejectResourceBindingName(node.Name, node);
             ValidateArrayLength(node.Type, node);
             if (_symbolTable.IsDefinedInCurrentScope(node.Name))
@@ -311,7 +315,11 @@ namespace Sage.Core
             }
 
             if (node.Initializer is IdentifierNode source && (node.IsReference || isResource))
+            {
+                if (isResource && _symbolTable.Resolve(source.Name) is not { IsOwningValue: true })
+                    throw new CompilerException(source, "S191", "A borrowed resource cannot initialize an owning value. Ownership stays with its source.");
                 ConsumeReference(source, node, OwnershipKind.Moved);
+            }
 
             _symbolTable.Define(node.Name, node.Type, isConstant: node.IsConstant,
                 isReference: node.IsReference, declarationLoopDepth: _loopDepth);
@@ -684,7 +692,7 @@ namespace Sage.Core
             if (TypeSystem.GetNativeResource(expressionType) is { } sourceResource)
             {
                 if (!InUnsafe || node.Expression is not IdentifierNode || node.TargetType != sourceResource.NativeType)
-                    throw new CompilerException(node, "S192", $"A resource handle may only be exposed from a named owner as '{sourceResource.NativeType}' inside unsafe.");
+                    throw new CompilerException(node, "S192", $"A resource handle may only be exposed from a named owner or borrow as '{sourceResource.NativeType}' inside unsafe.");
                 node.VariableType = node.TargetType;
                 return node.TargetType;
             }
@@ -794,7 +802,8 @@ namespace Sage.Core
             _structDeclarations[node.Name] = node;
         }
 
-        private bool IsBorrowableValue(string type) => !TypeSystem.IsArrayType(type) && TypeCapabilities.IsCopyable(type, _structDeclarations);
+        private bool IsBorrowableValue(string type) => TypeSystem.IsNativeResource(type) ||
+            (!TypeSystem.IsArrayType(type) && TypeCapabilities.IsCopyable(type, _structDeclarations));
 
         private void RequireCopyableArray(string type, AstNode operation)
         {

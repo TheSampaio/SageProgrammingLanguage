@@ -11,6 +11,7 @@ namespace Sage.Core
     public class HeaderGenerator : IAstVisitor<string>
     {
         private readonly HashSet<string> _requiredHeaders = [];
+        private readonly List<string> _resourceDeclarations = [];
 
         /// <summary>
         /// Generates the full content of a C header file based on the provided AST.
@@ -20,6 +21,7 @@ namespace Sage.Core
         public string Generate(ProgramNode ast)
         {
             _requiredHeaders.Clear();
+            _resourceDeclarations.Clear();
 
             // Collect all declarations and dependencies by visiting the AST
             string declarations = ast.Accept(this);
@@ -40,6 +42,7 @@ namespace Sage.Core
 
             sb.AppendLine();
             sb.AppendLine("/* --- Declarations --- */");
+            foreach (var resource in _resourceDeclarations) sb.Append(resource);
             sb.Append(declarations);
 
             return sb.ToString();
@@ -157,8 +160,12 @@ namespace Sage.Core
             return declarations.ToString();
         }
 
-        public string Visit(NativeResourceDeclarationNode node) =>
-            $"typedef struct {node.Name} {{ {TypeSystem.ToCType(node.NativeType)} _sage_handle; }} {node.Name};\n";
+        public string Visit(NativeResourceDeclarationNode node)
+        {
+            // Borrowed prototypes may appear before their resource declaration in source.
+            _resourceDeclarations.Add($"typedef struct {node.Name} {{ {TypeSystem.ToCType(node.NativeType)} _sage_handle; }} {node.Name};\n");
+            return "";
+        }
 
         // Opaque C types are provided by their extern header; nothing is emitted for them.
         public string Visit(ExternTypeNode node) => "";

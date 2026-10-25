@@ -7,6 +7,16 @@ extern native_heap("stdlib.h")
     resource NativeAllocation: c_void* drop free;
 }
 
+func resource_is_empty(value: &NativeAllocation): b8
+{
+    unsafe { return (value as c_void*) == (0 as c_void*); }
+}
+
+func resource_visit(value: &mut NativeAllocation): b8
+{
+    return resource_is_empty(&value);
+}
+
 func main(): none
 {
     unsafe
@@ -21,7 +31,14 @@ func main(): none
     unsafe
     {
         var empty: NativeAllocation = (0 as c_void*) as NativeAllocation;
+        if (true)
+        {
+            var view: &NativeAllocation = &empty;
+            test::assert_true("resource_shared_borrow", resource_is_empty(&view));
+        }
+        test::assert_true("resource_mutable_borrow", resource_visit(&mut empty));
         var moved: NativeAllocation = empty;
+        test::assert_true("resource_move_after_loan", resource_is_empty(&moved));
     }
     test::assert_true("resource_empty_move_completed", true);
 }

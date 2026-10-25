@@ -98,8 +98,9 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
   helpers require unsafe callers; see `docs/native-boundaries.md`.
 - Native resources use explicit `resource Name: NativePointer drop destructor;`
   declarations. Unsafe direct local adoption and named-owner moves have automatic
-  nullable-handle cleanup; see `docs/native-resource-contracts.md`. Resource borrows,
-  parameters/returns, arrays, and fields are not enabled yet.
+  nullable-handle cleanup; see `docs/native-resource-contracts.md`. Explicit shared/
+  mutable borrows reuse lexical loan checks. Owning parameters/returns, arrays,
+  and fields are not enabled yet.
 
 ## Generated C
 

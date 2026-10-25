@@ -35,6 +35,7 @@ static int resource_close(ResourceHandle* handle)
 }
 static void resource_close_void(ResourceHandle* handle) { (void)resource_close(handle); }
 static int resource_read(ResourceHandle* handle) { return handle->id; }
+static void resource_write(ResourceHandle* handle, int id) { handle->id = id; }
 static int resource_outstanding(void) { return resource_count; }
 static int resource_release_order(void) { return resource_order; }
 static int resource_drop_calls(void) { return resource_calls; }

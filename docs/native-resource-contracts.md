@@ -1,4 +1,4 @@
-# Native resource contracts (v0.13.0)
+# Native resource contracts (v0.14.0)
 
 Native ownership must be declared explicitly instead of inferred from names such
 as `open`, `malloc`, or `close`. This increment implements declarations in
@@ -26,7 +26,8 @@ Pointer-to-pointer and unknown pointee layouts are rejected. Native alias, heade
 and library must agree with the destructor declaration. Native declarations are
 registered before validation, so declaration order and transitive imports work.
 
-The C header exposes a typed private-handle facade. Verbose AST output records the
+The C header exposes a typed private-handle facade before borrowed prototypes,
+including when its source declaration appears later. Verbose AST output records the
 fully qualified destructor and its declared return type. Contract errors retain
 the originating source filename even when detected after import discovery.
 
@@ -59,8 +60,8 @@ func main(): none
 Initialization from another named owner moves the handle and clears the source.
 The analyzer tracks moved/possibly moved bindings across branches and rejects
 repeated moves of outer bindings in loops (S140/S142/S145). Overwriting owners
-is disabled (S143); assigning to const remains S103. Resource locals cannot
-shadow a resource type name (S150), because the C backend uses its typedef.
+is disabled (S143); assigning to const remains S103. Local bindings and parameters
+cannot shadow a resource type name (S150), because the C backend uses its typedef.
 
 Scope exit, early return, and loop iteration exit call typed GCC cleanup helpers
 in reverse declaration order. Return expressions are evaluated first. Null and
@@ -77,7 +78,7 @@ contract before adoption. A future explicit fallible close/flush API must report
 errors before implicit cleanup; this increment provides none. Process termination
 (`exit`, `abort`, native crashes) does not unwind scopes.
 
-Inside unsafe, a named owner can be converted to its exact native pointer for a
+Inside unsafe, a named owner or borrowed binding can be converted to its exact native pointer for a
 native operation. This exposes an alias, without transferring ownership. The
 caller must handle null, keep the alias within the owner's lifetime, and must not
 release or independently adopt it. Retaining/returning that raw pointer or adopting
@@ -85,9 +86,41 @@ it twice can violate these obligations; the unsafe escape is not lifetime checke
 Other resource casts and anonymous adoption are rejected with S192. The facade's
 generated handle field is inaccessible through Sage member access.
 
+## Shared and mutable borrows
+
+Resources are non-Copy, but support explicit `&Resource` and `&mut Resource`
+parameters and lexical borrowed locals. A borrowed binding never owns the handle
+and receives no cleanup helper. Existing lexical loans block moving the owner
+until the borrowed scope ends; mutable loans also block competing owner access.
+Calls reject shared/mutable conflicts, missing explicit borrows, and effectful
+arguments alongside borrows. Reborrowing and const shared access follow the
+same rules as other checked borrows; see [borrowing](borrowing.md).
+
+```sage
+func is_empty(value: &OwnedFile): b8
+{
+    unsafe { return (value as FILE*) == (0 as FILE*); }
+}
+
+// With a live local owner:
+// var view: &OwnedFile = &owner;
+// var empty: b8 = is_empty(&view);
+```
+
+Moving a resource out of a borrowed binding is rejected (S191), including from
+mutable parameters. Deleting a borrow is S174; upgrading shared/const access to
+mutable is S171. Whole resource replacement remains disabled, even through a
+mutable borrow. Borrowed returns and native ABI borrow signatures remain disabled
+(S173); resource arrays/fields are still unsupported.
+
+Raw handle exposure inside a borrowed wrapper is trusted unsafe code. Its author
+must respect shared versus mutable access, check required handle validity, and
+must not release, retain, or independently adopt the handle. The compiler checks
+the Sage loan graph, not mutations or aliases created inside native code.
+
 ## Remaining boundaries
 
-Resource borrows, by-value parameters/returns, globals, fields, arrays, and pointers
+By-value resource parameters/returns, globals, fields, arrays, and pointers
 to facade types remain rejected with S191. Ordinary resource comparisons,
 interpolation, and implicit native arguments are also disabled. A resource is
 not inferred Copy. This increment does not provide a safe file API or owned
@@ -98,7 +131,8 @@ Implementation order:
 1. Implemented: parse and validate declarations after the complete import closure is known.
    Preserve native origin and diagnostic source file, and emit a typed facade.
 2. Implemented: exclusive local ownership, moves, and single-call nullable-handle
-   cleanup after trusted unsafe acquisition. Shared/mutable resource borrows remain planned.
+   cleanup after trusted unsafe acquisition. Shared/mutable resource borrows reuse
+   call conflict and lexical loan checks without transferring ownership.
 3. Planned: add ownership transfer through parameters/returns and a bounded standard-library
    interface. Nested resource fields, arrays, buffers, and C++ adapters need their
    own subsequent contracts.
@@ -112,3 +146,6 @@ shadowing, early returns, destruction order, null handles, loops, void destructo
 and integer failure status, plus semantic rejection cases and a minimal-header
 dependency check. Sandbox tests exercise the standard C allocator integration;
 the native instrumented fixture is the evidence for cleanup counts and order.
+`tests/native-resource-borrowing.ps1` covers positive borrowed calls/locals,
+reborrowing, forward prototypes, and rejection of illegal moves, alias conflicts,
+borrow escapes, native ABI borrows, and unsupported resource compositions.

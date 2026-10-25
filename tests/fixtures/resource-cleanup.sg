@@ -6,6 +6,7 @@ extern trace("@TRACKER_HEADER@")
     func resource_close(handle: ResourceHandle*): c_int;
     func resource_close_void(handle: ResourceHandle*): none;
     func resource_read(handle: ResourceHandle*): c_int;
+    func resource_write(handle: ResourceHandle*, id: c_int): none;
     func resource_outstanding(): c_int;
     func resource_release_order(): c_int;
     func resource_drop_calls(): c_int;
@@ -14,6 +15,16 @@ extern trace("@TRACKER_HEADER@")
     func resource_check(condition: b8, name: str): none;
     resource OwnedHandle: ResourceHandle* drop resource_close;
     resource VoidHandle: ResourceHandle* drop resource_close_void;
+}
+
+func borrowed_read(value: &OwnedHandle): i32
+{
+    unsafe { return trace::resource_read(value as ResourceHandle*) as i32; }
+}
+
+func borrowed_write(value: &mut OwnedHandle, id: i32): none
+{
+    unsafe { trace::resource_write(value as ResourceHandle*, id as c_int); }
 }
 
 unsafe func early(flag: b8): i32
@@ -104,5 +115,33 @@ unsafe func main(): none
     if (true) { var owner: OwnedHandle = trace::resource_open(5) as OwnedHandle; }
     trace::resource_check(trace::resource_drop_calls() == 1, "failed_status_destructor_not_retried");
     trace::resource_check(trace::resource_outstanding() == 0, "failed_status_cleanup_continues");
+
+    trace::resource_reset();
+    if (true)
+    {
+        var owner: OwnedHandle = trace::resource_open(7) as OwnedHandle;
+        trace::resource_check(borrowed_read(&owner) == 7, "shared_resource_parameter");
+        borrowed_write(&mut owner, 8);
+        trace::resource_check(borrowed_read(&owner) == 8, "mutable_resource_parameter");
+        if (true)
+        {
+            const view: &OwnedHandle = &owner;
+            trace::resource_check(borrowed_read(&view) == 8, "lexical_resource_borrow");
+        }
+        if (true)
+        {
+            var view: &mut OwnedHandle = &mut owner;
+            if (true)
+            {
+                var child: &mut OwnedHandle = &mut view;
+                borrowed_write(&mut child, 9);
+            }
+            trace::resource_check(borrowed_read(&view) == 9, "mutable_resource_reborrow");
+        }
+        trace::resource_check(trace::resource_outstanding() == 1 && trace::resource_drop_calls() == 0, "resource_borrows_do_not_adopt_owner");
+        var moved: OwnedHandle = owner;
+        trace::resource_check(borrowed_read(&moved) == 9, "resource_move_after_borrow_scope");
+    }
+    trace::resource_check(trace::resource_outstanding() == 0 && trace::resource_drop_calls() == 1, "resource_cleanup_after_borrowed_calls");
     trace::resource_check(_sage_resource_drop_0 == 9, "resource_generated_names_do_not_collide");
 }

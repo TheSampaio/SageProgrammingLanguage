@@ -15,7 +15,7 @@ The project strictly follows **SOLID principles** and **Clean Code** architectur
 * **Pointer Boundary:** Raw pointers (`T*`) are restricted to `unsafe` contexts and FFI. This is not yet an ownership or lifetime guarantee.
 * **Local Ownership and Borrowing:** Heap-reference initialization transfers ownership, and scope exit releases owned allocations automatically. Explicit borrowed parameters and lexical local bindings provide shared or mutable access for supported scalar/struct values; see [borrowing semantics](docs/borrowing.md) and [memory semantics](docs/memory.md).
 * **Explicit FFI Boundaries:** `extern` blocks use C interop aliases (`c_int`, `c_size_t`, `c_char`, …) and opaque types (`type FILE;`). Direct calls require `unsafe`; see [native boundaries](docs/native-boundaries.md).
-* **Native Resource Ownership:** Explicit native representation/destructor metadata is validated across imports. Unsafe adoption creates local owners with moves and automatic scope cleanup; see [resource contracts and boundaries](docs/native-resource-contracts.md).
+* **Native Resource Ownership:** Explicit native representation/destructor metadata is validated across imports. Unsafe adoption creates local owners with moves, explicit borrows, and automatic scope cleanup; see [resource contracts and boundaries](docs/native-resource-contracts.md).
 * **Tree-Shaking Code Gen:** Smart header management that only includes necessary C headers (`stdio.h`, `stdint.h`, etc.) based on actual code usage.
 * **Modern Type System:** Explicit fixed-width types (`i32`, `f64`, `str`, `b8`) with support for **Constants** (`const`) and **Explicit Casting** (`as`).
 * **Aggregate Contracts:** Struct fields and fixed-array initializer elements are checked recursively before C generation; see [aggregate initialization](docs/aggregate-contracts.md).
@@ -357,7 +357,7 @@ file directly with `sage <file>.test.sg` and read the `[PASS]`/`[FAIL]` output.
 
 ## Project Status
 
-The project is currently in **v0.13.0 (Alpha)**.
+The project is currently in **v0.14.0 (Alpha)**.
 
 * [x] **CLI & Project System** (`new`, `build`, `run`, `--version`)
 * [x] **Variable Declarations** (`var`) & **Constants** (`const`)
