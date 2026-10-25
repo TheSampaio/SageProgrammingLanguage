@@ -26,7 +26,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $compilerDir 'Runtime') -Destination $appDir -Recurse
     Copy-Item -Path (Join-Path $stdlib '*.sg') -Destination (Join-Path $projectDir 'std')
     $source = Join-Path $projectDir 'src/layout.sg'
-    Set-Content -LiteralPath $source -Value 'use byte_file; use http_server; use http_client; func main(): none { var owner: ByteFile = byte_file::empty(); var closed: b8 = byte_file::close(owner); }'
+    Set-Content -LiteralPath $source -Value 'use byte_file; use byte_buffer; use http_server; use http_client; func main(): none { var owner: ByteFile = byte_file::empty(); var closed: b8 = byte_file::close(owner); var buffer: ByteBuffer = byte_buffer::empty(); byte_buffer::release(buffer); }'
     $relocatedCompiler = Join-Path $appDir 'Sage.dll'
     $output = & dotnet $relocatedCompiler $source 2>&1
     if ($LASTEXITCODE -ne 0 -or ($output -join "`n") -match 'error |\[FAIL\]|Fatal') { throw "Relocated runtime/std compile failed.`n$($output -join "`n")" }

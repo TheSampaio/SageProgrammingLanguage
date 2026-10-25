@@ -224,7 +224,10 @@ to facade types remain rejected with S191. Other resource comparisons,
 interpolation, and implicit native arguments are also disabled. A resource is
 not inferred Copy. The bounded [byte-file API](byte-files.md) now provides safe
 borrowed byte operations and consuming close after valid acquisition. General
-path acquisition and owned string/buffer abstractions remain unfinished.
+path acquisition and owned strings remain unfinished. The bounded
+[byte-buffer API](byte-buffers.md) now provides exclusive fixed-capacity storage
+with checked access to initialized bytes; slices, resizing, and bulk I/O remain
+unfinished.
 
 Implementation order:
 
@@ -239,7 +242,8 @@ Implementation order:
 5. Implemented: safe contextual null comparisons on named owners and borrows.
 6. In progress: the bounded byte-file interface provides borrowed byte I/O and
    consuming fallible close. Safe general paths/strings and broader std migration
-   remain unfinished. Nested resource fields, arrays, buffers, and C++ adapters
+   remain unfinished. Fixed-capacity byte buffers are available; nested resource
+   fields, arrays, general collections, and C++ adapters
    need their own subsequent contracts.
 
 Invalid native contracts use S190. Acceptance tests are in

@@ -111,6 +111,10 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
   bytes; `create(str)` remains unsafe. Retain the legacy `file` module. The std
   distribution contains only `.sg`. Native headers ship with the compiler in
   `Runtime/include`; see `docs/byte-files.md`.
+- `byte_buffer` provides exclusive fixed-capacity storage with `u32` length/capacity,
+  shared checked reads, mutable write/push/clear, and consuming release. Spare
+  capacity and cleared bytes are unreadable until pushed again. Native allocation
+  support stays in `Runtime/include`; see `docs/byte-buffers.md`.
 
 ## Generated C
 

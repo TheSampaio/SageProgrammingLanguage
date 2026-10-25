@@ -1,0 +1,43 @@
+use byte_buffer;
+use byte_file;
+use test;
+
+func main(): none
+{
+    var capacity: u32 = 256;
+    var bytes: ByteBuffer = byte_buffer::create(capacity);
+    test::assert_true("buffer_file_storage_allocated", byte_buffer::is_allocated(&bytes));
+    var path: u8[260] = { 98, 117, 102, 102, 101, 114, 46, 98, 105, 110 };
+    var path_length: u16 = 10;
+    var file: ByteFile = byte_file::create_bytes(path, path_length);
+    test::assert_true("buffer_file_safe_acquisition", byte_file::is_open(&file));
+    var appended: b8 = true;
+    for (var index: u32 = 0; index < 256; index++)
+    {
+        var byte: u8 = index as u8;
+        if (!byte_buffer::push(&mut bytes, byte)) { appended = false; }
+    }
+    test::assert_true("buffer_file_all_bytes_appended", appended);
+    var written: b8 = true;
+    for (var index: u32 = 0; index < 256; index++)
+    {
+        var byte: BufferRead = byte_buffer::read(&bytes, index);
+        if (!byte.has_value) { written = false; }
+        if (!byte_file::write_byte(&mut file, byte.value)) { written = false; }
+    }
+    test::assert_true("buffer_file_all_bytes_written", written);
+    test::assert_true("buffer_file_rewind", byte_file::seek_start(&mut file));
+    var roundtrip: b8 = true;
+    for (var index: u32 = 0; index < 256; index++)
+    {
+        var expected: BufferRead = byte_buffer::read(&bytes, index);
+        var actual: ByteRead = byte_file::read_byte(&mut file);
+        if (!expected.has_value || !actual.has_value || actual.failed || actual.value != expected.value) { roundtrip = false; }
+    }
+    test::assert_true("buffer_file_all_bytes_roundtrip", roundtrip);
+    var end: ByteRead = byte_file::read_byte(&mut file);
+    test::assert_true("buffer_file_clean_eof", !end.has_value && !end.failed);
+    var closed: b8 = byte_file::close(file);
+    test::assert_true("buffer_file_consuming_close", closed);
+    byte_buffer::release(bytes);
+}

@@ -1,0 +1,66 @@
+use test;
+use byte_buffer;
+
+func main(): none
+{
+    var limit: u32 = 2;
+    var owner: ByteBuffer = byte_buffer::create(limit);
+    test::assert_true("buffer_created", byte_buffer::is_allocated(&owner));
+    test::assert_true("buffer_initial_length_zero", byte_buffer::length(&owner) == 0);
+    test::assert_true("buffer_capacity", byte_buffer::capacity(&owner) == 2);
+    var index: u32 = 0;
+    var missing: BufferRead = byte_buffer::read(&owner, index);
+    test::assert_false("buffer_uninitialized_capacity_unreadable", missing.has_value);
+    test::assert_true("buffer_missing_value_is_zero", missing.value == 0);
+    var byte: u8 = 0;
+    test::assert_false("buffer_write_does_not_initialize", byte_buffer::write(&mut owner, index, byte));
+    test::assert_true("buffer_push_zero", byte_buffer::push(&mut owner, byte));
+    byte = 255;
+    test::assert_true("buffer_push_ff", byte_buffer::push(&mut owner, byte));
+    test::assert_false("buffer_full_push_fails", byte_buffer::push(&mut owner, byte));
+    test::assert_true("buffer_full_length_unchanged", byte_buffer::length(&owner) == 2);
+    var first: BufferRead = byte_buffer::read(&owner, index);
+    test::assert_true("buffer_zero_is_data", first.has_value && first.value == 0);
+    index = 1;
+    var last: BufferRead = byte_buffer::read(&owner, index);
+    test::assert_true("buffer_ff_is_data", last.has_value && last.value == 255);
+    byte = 42;
+    test::assert_true("buffer_replace_initialized_byte", byte_buffer::write(&mut owner, index, byte));
+    index = 2;
+    test::assert_false("buffer_write_at_length_fails", byte_buffer::write(&mut owner, index, byte));
+    var outside: BufferRead = byte_buffer::read(&owner, index);
+    test::assert_false("buffer_read_at_length_fails", outside.has_value);
+    index = 4294967295;
+    var far: BufferRead = byte_buffer::read(&owner, index);
+    test::assert_false("buffer_max_index_fails", far.has_value);
+    test::assert_false("buffer_max_write_fails", byte_buffer::write(&mut owner, index, byte));
+    byte_buffer::clear(&mut owner);
+    test::assert_true("buffer_clear_resets_length", byte_buffer::length(&owner) == 0);
+    test::assert_true("buffer_clear_retains_capacity", byte_buffer::capacity(&owner) == 2);
+    index = 0;
+    var cleared: BufferRead = byte_buffer::read(&owner, index);
+    test::assert_false("buffer_clear_hides_old_bytes", cleared.has_value);
+    test::assert_true("buffer_reuse_after_clear", byte_buffer::push(&mut owner, byte));
+    var reused: BufferRead = byte_buffer::read(&owner, index);
+    test::assert_true("buffer_reuse_exposes_only_new_byte", reused.has_value && reused.value == 42);
+    var moved: ByteBuffer = owner;
+    test::assert_true("buffer_move_preserves_length", byte_buffer::length(&moved) == 1);
+    byte_buffer::release(moved);
+
+    limit = 0;
+    var zero: ByteBuffer = byte_buffer::create(limit);
+    test::assert_true("buffer_zero_capacity_is_allocated", zero != null);
+    test::assert_false("buffer_zero_capacity_push_fails", byte_buffer::push(&mut zero, byte));
+    byte_buffer::release(zero);
+
+    var absent: ByteBuffer = byte_buffer::empty();
+    test::assert_false("buffer_empty_not_allocated", byte_buffer::is_allocated(&absent));
+    test::assert_true("buffer_empty_length_zero", byte_buffer::length(&absent) == 0);
+    test::assert_true("buffer_empty_capacity_zero", byte_buffer::capacity(&absent) == 0);
+    var empty_read: BufferRead = byte_buffer::read(&absent, index);
+    test::assert_false("buffer_empty_read_unavailable", empty_read.has_value);
+    test::assert_false("buffer_empty_write_fails", byte_buffer::write(&mut absent, index, byte));
+    test::assert_false("buffer_empty_push_fails", byte_buffer::push(&mut absent, byte));
+    byte_buffer::clear(&mut absent);
+    byte_buffer::release(absent);
+}

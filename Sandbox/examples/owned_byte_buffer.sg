@@ -1,0 +1,18 @@
+use byte_buffer;
+use console;
+
+func main(): none
+{
+    var capacity: u32 = 4;
+    var owner: ByteBuffer = byte_buffer::create(capacity);
+    if (owner != null)
+    {
+        var byte: u8 = 42;
+        var pushed: b8 = byte_buffer::push(&mut owner, byte);
+        var index: u32 = 0;
+        var read: BufferRead = byte_buffer::read(&owner, index);
+        if (pushed && read.has_value) { console::print_line("Buffer value: {read.value}"); }
+    }
+    else { console::print_line("Buffer allocation failed."); }
+    byte_buffer::release(owner);
+}

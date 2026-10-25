@@ -330,6 +330,7 @@ The bundled standard library (`Sandbox/std/`) doubles as the reference for idiom
 | `memory`  | Raw heap primitives (`alloc`/`release`, `unsafe`). Prefer `new`/`delete`.|
 | `file`    | File I/O over `<stdio.h>` (opaque `FILE`, `c_*` aliases).               |
 | `byte_file` | Owned binary byte I/O, bounded ASCII paths, explicit EOF/failure, consuming close. |
+| `byte_buffer` | Owned fixed-capacity byte storage, checked initialized-prefix access and consuming release. |
 | `http_client` | Legacy shell-based `curl` helpers (`unsafe`; caller must validate inputs). |
 | `http_server` | Minimal HTTP server on Winsock (links `ws2_32`).                        |
 | `test`    | Unit-testing assertions that emit `[PASS]`/`[FAIL]` lines.              |
@@ -337,6 +338,9 @@ The bundled standard library (`Sandbox/std/`) doubles as the reference for idiom
 The `std` directory contains only `.sg` files. Native support ships with the
 compiler in `Runtime/include`. Since v0.19.0, import `http_client` and
 `http_server` instead of `http` and `server`; see [the migration notes](docs/std-layout.md).
+
+The [owned byte buffer](docs/byte-buffers.md) supports safe creation, shared reads,
+exclusive mutation, and automatic cleanup without exposing native storage.
 
 Direct native calls and legacy unbounded input helpers require an explicit
 `unsafe` context; see [migration and remaining contracts](docs/native-boundaries.md).
@@ -363,7 +367,7 @@ file directly with `sage <file>.test.sg` and read the `[PASS]`/`[FAIL]` output.
 
 ## Project Status
 
-The project is currently in **v0.20.0 (Alpha)**.
+The project is currently in **v0.21.0 (Alpha)**.
 
 * [x] **CLI & Project System** (`new`, `build`, `run`, `--version`)
 * [x] **Variable Declarations** (`var`) & **Constants** (`const`)

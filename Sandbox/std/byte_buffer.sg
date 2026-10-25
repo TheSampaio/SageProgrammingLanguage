@@ -1,0 +1,83 @@
+/// Exclusive, fixed-capacity byte storage. Only pushed bytes can be read/written.
+struct BufferRead { value: u8; has_value: b8; }
+
+module byte_buffer
+{
+    extern byte_buffer_native("sage_byte_buffer.h")
+    {
+        type SageByteBufferState;
+        func sage_byte_buffer_create(capacity: c_size_t): SageByteBufferState*;
+        func sage_byte_buffer_length(value: SageByteBufferState*): c_size_t;
+        func sage_byte_buffer_capacity(value: SageByteBufferState*): c_size_t;
+        func sage_byte_buffer_read(value: SageByteBufferState*, index: c_size_t): c_int;
+        func sage_byte_buffer_write(value: SageByteBufferState*, index: c_size_t, byte: c_uchar): c_int;
+        func sage_byte_buffer_push(value: SageByteBufferState*, byte: c_uchar): c_int;
+        func sage_byte_buffer_clear(value: SageByteBufferState*): none;
+        func sage_byte_buffer_drop(value: SageByteBufferState*): none;
+        resource ByteBuffer: SageByteBufferState* drop sage_byte_buffer_drop;
+    }
+
+    /// Zero capacity is valid. Allocation failure returns an empty owner.
+    func create(capacity: u32): ByteBuffer
+    {
+        unsafe
+        {
+            var owner: ByteBuffer = byte_buffer_native::sage_byte_buffer_create(capacity as c_size_t) as ByteBuffer;
+            return owner;
+        }
+    }
+
+    func empty(): ByteBuffer
+    {
+        unsafe
+        {
+            var owner: ByteBuffer = (0 as SageByteBufferState*) as ByteBuffer;
+            return owner;
+        }
+    }
+
+    func is_allocated(value: &ByteBuffer): b8 { return value != null; }
+
+    /// Empty owners report zero for both length and capacity.
+    func length(value: &ByteBuffer): u32
+    {
+        unsafe { return byte_buffer_native::sage_byte_buffer_length(value as SageByteBufferState*) as u32; }
+    }
+
+    func capacity(value: &ByteBuffer): u32
+    {
+        unsafe { return byte_buffer_native::sage_byte_buffer_capacity(value as SageByteBufferState*) as u32; }
+    }
+
+    /// has_value=false for an empty owner or index >= length; value then is zero.
+    func read(value: &ByteBuffer, index: u32): BufferRead
+    {
+        unsafe
+        {
+            var result: c_int = byte_buffer_native::sage_byte_buffer_read(value as SageByteBufferState*, index as c_size_t);
+            if (result < 0) { return { value = 0, has_value = false }; }
+            return { value = result as u8, has_value = true };
+        }
+    }
+
+    /// Replaces an initialized byte; failure preserves contents and length.
+    func write(value: &mut ByteBuffer, index: u32, byte: u8): b8
+    {
+        unsafe { return byte_buffer_native::sage_byte_buffer_write(value as SageByteBufferState*, index as c_size_t, byte as c_uchar) != 0; }
+    }
+
+    /// Appends within capacity. Failure preserves contents and length.
+    func push(value: &mut ByteBuffer, byte: u8): b8
+    {
+        unsafe { return byte_buffer_native::sage_byte_buffer_push(value as SageByteBufferState*, byte as c_uchar) != 0; }
+    }
+
+    /// Resets length, retaining the allocation. Does not securely erase storage.
+    func clear(value: &mut ByteBuffer): none
+    {
+        unsafe { byte_buffer_native::sage_byte_buffer_clear(value as SageByteBufferState*); }
+    }
+
+    /// Consumes ownership; the parameter's automatic cleanup frees storage once.
+    func release(value: ByteBuffer): none {}
+}
