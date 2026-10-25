@@ -222,8 +222,9 @@ may receive pure presence expressions directly.
 Resource globals, fields, arrays, and pointers
 to facade types remain rejected with S191. Other resource comparisons,
 interpolation, and implicit native arguments are also disabled. A resource is
-not inferred Copy. This increment does not provide a safe file API or owned
-string/buffer abstractions.
+not inferred Copy. The bounded [byte-file API](byte-files.md) now provides safe
+borrowed byte operations and consuming close after valid acquisition. General
+path acquisition and owned string/buffer abstractions remain unfinished.
 
 Implementation order:
 

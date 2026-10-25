@@ -1,0 +1,79 @@
+# Owned byte files (v0.18.0)
+
+`use byte_file;` imports a bounded file API. `ByteFile` owns an opaque native state
+and follows normal move, borrow, return, and cleanup contracts. Existing unsafe
+`file` wrappers are unchanged.
+
+| Operation | Contract | Outcome |
+|---|---|---|
+| `empty()` | Returns a local owner | Empty handle; no file is opened |
+| `create(path: str)` | **unsafe**, returns an owner | Creates/truncates a binary `w+b` file; empty on failure |
+| `is_open(value: &ByteFile)` | Shared borrow | Whether its native stream is open |
+| `read_byte(value: &mut ByteFile)` | Mutable borrow | A `ByteRead` value |
+| `write_byte(value: &mut ByteFile, byte: u8)` | Mutable borrow | `true` on successful byte output |
+| `seek_start(value: &mut ByteFile)` | Mutable borrow | `true` on successful positioning |
+| `flush(value: &mut ByteFile)` | Mutable borrow | `true` on successful buffer flushing |
+| `close(value: ByteFile)` | **Consumes** the owner | Reports native close success; consumes even on failure |
+
+`ByteRead` contains `value: u8`, `has_value: b8`, and `failed: b8`:
+
+- Data: `has_value=true`, `failed=false`; all bytes, including 0 and 255, are valid.
+- Clean end of file: both flags are false.
+- Empty handle or I/O/positioning failure: `has_value=false`, `failed=true`.
+
+`value` is meaningful only when `has_value` is true. Empty owners fail write,
+seek, flush, and close without invoking native I/O. False write/flush status does
+not promise that no earlier buffered data reached the file. Errors are per
+operation; the adapter clears native stream indicators before positioning.
+
+```sage
+use byte_file;
+
+func write_one(value: &mut ByteFile, byte: u8): b8
+{
+    return byte_file::write_byte(&mut value, byte);
+}
+
+unsafe func example(): b8
+{
+    var owner: ByteFile = byte_file::create("example.bin");
+    if (owner == null) { return false; }
+    var byte: u8 = 255;
+    var written: b8 = write_one(&mut owner, byte);
+    var closed: b8 = byte_file::close(owner);
+    return written && closed;
+}
+```
+
+Acquisition stays unsafe because legacy `str` has an unchecked `char*` lifetime.
+The caller must supply a valid, NUL-terminated path for the duration of the call,
+with the platform C runtime's path encoding. Creation truncates existing content.
+There is no safe general path/string API yet. Once valid ownership is established,
+the byte operations above require neither legacy strings nor raw pointer syntax.
+Unsafe direct native calls or fabricated resource handles can violate this contract.
+
+The adapter uses a positioning barrier before read, write, and flush, preventing
+invalid input/output transitions on C update streams. Non-seekable streams fail
+the operation. Successful flush concerns C buffering, not durable storage against
+power failure. The behavior follows C11 draft N1570 §§7.21.5.2–3 and 7.21.9.2;
+see [the C draft](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf).
+
+Explicit close clears the stored stream before `fclose`. Whether close succeeds
+or fails, it is not retried; normal resource cleanup then frees the native state.
+This follows `fclose` disassociation in N1570 §7.21.5.1. Implicit scope/early-return
+cleanup closes and frees best-effort, with no recoverable close result; use
+explicit `close` when its result matters. Ownership is unavailable afterward,
+including when close reports failure. Process termination still does not unwind.
+
+The C helper `std/sage_byte_file.h` is part of this module's trusted implementation.
+The compiler adds the resolved std directory to GCC's include search. A local or
+installed std distribution must include both `byte_file.sg` and this header.
+The adapter requires 8-bit C bytes and has been validated with the current Windows
+GCC toolchain; broader platform behavior has not been operationally demonstrated.
+
+The interface intentionally omits text encoding, append/open modes, arbitrary
+seeks, byte buffers, detailed OS error codes, and safe general path acquisition.
+Tests are `Sandbox/tests/byte_file.test.sg` (safe empty-owner behavior) and
+`tests/byte-file.ps1` (native failure injection, all-byte roundtrip, persisted
+content, exclusive reopen after explicit/early-return close, paths with spaces,
+and invalid ownership/borrow/native calls).

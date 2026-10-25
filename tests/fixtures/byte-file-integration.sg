@@ -1,0 +1,69 @@
+use test;
+use byte_file;
+use file;
+
+// Only acquisition uses legacy str. The actual byte operations are safe Sage.
+func roundtrip(value: &mut ByteFile): none
+{
+    var initial: ByteRead = byte_file::read_byte(&mut value);
+    test::assert_false("new_file_eof_has_no_byte", initial.has_value);
+    test::assert_false("new_file_eof_is_not_failure", initial.failed);
+    var writes_ok: b8 = true;
+    for (var i: i32 = 0; i < 256; i++)
+    {
+        var byte: u8 = i as u8;
+        var written: b8 = byte_file::write_byte(&mut value, byte);
+        if (!written) { writes_ok = false; }
+    }
+    test::assert_true("all_256_byte_values_written", writes_ok);
+    test::assert_true("byte_file_flush_output", byte_file::flush(&mut value));
+    var at_end: ByteRead = byte_file::read_byte(&mut value);
+    test::assert_false("output_to_input_eof_has_no_byte", at_end.has_value);
+    test::assert_false("output_to_input_eof_is_not_failure", at_end.failed);
+    test::assert_true("byte_file_seek_start", byte_file::seek_start(&mut value));
+    var reads_ok: b8 = true;
+    for (var i: i32 = 0; i < 256; i++)
+    {
+        var read: ByteRead = byte_file::read_byte(&mut value);
+        if (!read.has_value || read.failed || read.value != (i as u8)) { reads_ok = false; }
+    }
+    test::assert_true("all_256_byte_values_roundtrip", reads_ok);
+    var end: ByteRead = byte_file::read_byte(&mut value);
+    test::assert_false("ff_byte_distinct_from_eof", end.has_value);
+    test::assert_false("roundtrip_eof_is_not_error", end.failed);
+    test::assert_true("seek_before_update", byte_file::seek_start(&mut value));
+    var first: ByteRead = byte_file::read_byte(&mut value);
+    test::assert_true("first_byte_before_update", first.has_value && first.value == 0);
+    test::assert_true("flush_after_input", byte_file::flush(&mut value));
+    var replacement: u8 = 9;
+    test::assert_true("write_after_non_eof_input", byte_file::write_byte(&mut value, replacement));
+}
+
+func early_return(): i32
+{
+    unsafe
+    {
+        var owner: ByteFile = byte_file::create("automatic.bin");
+        if (owner == null) { return -1; }
+        var byte: u8 = 11;
+        var written: b8 = byte_file::write_byte(&mut owner, byte);
+        if (!written) { return -2; }
+        return 7;
+    }
+}
+
+func main(): none
+{
+    unsafe
+    {
+        var owner: ByteFile = byte_file::create("roundtrip.bin");
+        var opened: b8 = byte_file::is_open(&owner);
+        test::assert_true("owned_byte_file_created", opened);
+        if (opened) { roundtrip(&mut owner); }
+        var closed: b8 = byte_file::close(owner);
+        test::assert_true("explicit_close_reports_success", closed);
+        var absent: ByteFile = byte_file::create("missing-parent/never-created.bin");
+        test::assert_true("failed_create_returns_empty_owner", absent == null);
+    }
+    test::assert_eq_i32("automatic_close_on_early_return", early_return(), 7);
+}

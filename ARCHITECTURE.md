@@ -89,6 +89,10 @@ Resource null comparisons are validated on named owners/borrows and marked in
 the AST. The C backend reads the private handle without exposing a raw pointer.
 Contextual `null` does not construct resources or add a general raw-pointer null
 literal. Presence arguments in consuming calls require prior local evaluation.
+The bounded [byte-file stdlib API](docs/byte-files.md) owns a native stream state,
+uses mutable borrows for byte I/O, and consumes ownership for fallible close.
+Its native helper header is resolved through the selected std include directory.
+Path acquisition remains unsafe until checked strings/paths exist.
 
 The `SymbolTable` uses a `Stack<Dictionary<string, Symbol>>` to represent **Lexical Scoping**.
 

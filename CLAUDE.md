@@ -106,6 +106,9 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
 - `owner == null` / `owner != null` checks a named resource or borrow in safe
   Sage. `null` is contextual and existing bindings keep their meaning. Bind a
   presence query before passing it alongside consumed arguments; see S195/S194.
+- `byte_file` provides bounded owned byte I/O and consuming close with explicit
+  outcomes. `create(str)` remains unsafe; retain the legacy `file` module. The std
+  distribution must include `sage_byte_file.h`; see `docs/byte-files.md`.
 
 ## Generated C
 
@@ -126,8 +129,9 @@ The planned compiler-derived semantic navigation tool is named **Graphify**.
   "Sage: Run Current File" command, and a **Test Explorer** that runs `*.test.sg` files and parses
   `[PASS]`/`[FAIL]`.
 - It invokes the compiler via the `sage.command` setting (e.g. `dotnet <path>/Sage.dll`).
-- The repo is initialized locally but **not yet pushed to GitHub** (no `gh` on this machine). When
-  publishing, keep it MIT-licensed and update `repository.url` in `package.json`.
+- Source is published to `TheSampaio/SageExtensionCode`, branch `codex/sage-extension`.
+  The remote `main` is an independent wrapper history; preserve it and use the
+  nested extension's configured branch/upstream. Keep the MIT license and repository metadata current.
 
 ## Environment notes
 

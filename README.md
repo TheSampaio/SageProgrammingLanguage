@@ -16,6 +16,7 @@ The project strictly follows **SOLID principles** and **Clean Code** architectur
 * **Local Ownership and Borrowing:** Heap-reference initialization transfers ownership, and scope exit releases owned allocations automatically. Explicit borrowed parameters and lexical local bindings provide shared or mutable access for supported scalar/struct values; see [borrowing semantics](docs/borrowing.md) and [memory semantics](docs/memory.md).
 * **Explicit FFI Boundaries:** `extern` blocks use C interop aliases (`c_int`, `c_size_t`, `c_char`, …) and opaque types (`type FILE;`). Direct calls require `unsafe`; see [native boundaries](docs/native-boundaries.md).
 * **Native Resource Ownership:** Explicit native representation/destructor metadata is validated across imports. Owners support moves, borrows, consuming parameters, factory returns, safe null checks, and automatic scope cleanup; native adoption remains unsafe. See [resource contracts and boundaries](docs/native-resource-contracts.md).
+* **Owned Byte Files:** Borrowed byte I/O, positioning, flush, and consuming close expose explicit failure outcomes. Path acquisition remains unsafe while strings are unchecked; see [byte files](docs/byte-files.md).
 * **Tree-Shaking Code Gen:** Smart header management that only includes necessary C headers (`stdio.h`, `stdint.h`, etc.) based on actual code usage.
 * **Modern Type System:** Explicit fixed-width types (`i32`, `f64`, `str`, `b8`) with support for **Constants** (`const`) and **Explicit Casting** (`as`).
 * **Aggregate Contracts:** Struct fields and fixed-array initializer elements are checked recursively before C generation; see [aggregate initialization](docs/aggregate-contracts.md).
@@ -357,7 +358,7 @@ file directly with `sage <file>.test.sg` and read the `[PASS]`/`[FAIL]` output.
 
 ## Project Status
 
-The project is currently in **v0.17.0 (Alpha)**.
+The project is currently in **v0.18.0 (Alpha)**.
 
 * [x] **CLI & Project System** (`new`, `build`, `run`, `--version`)
 * [x] **Variable Declarations** (`var`) & **Constants** (`const`)

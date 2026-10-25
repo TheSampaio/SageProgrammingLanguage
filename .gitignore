@@ -8,5 +8,6 @@ obj/
 # Files
 *.ast
 *.c
+!/tests/fixtures/*.c
 *.tok
 *.user

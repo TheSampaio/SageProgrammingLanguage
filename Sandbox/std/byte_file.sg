@@ -1,0 +1,82 @@
+/// Owned, seekable binary update files. Byte operations are safe; path acquisition
+/// remains unsafe until Sage has a checked string/path representation.
+struct ByteRead { value: u8; has_value: b8; failed: b8; }
+
+module byte_file
+{
+    extern byte_file_native("sage_byte_file.h")
+    {
+        type SageByteFileState;
+        func sage_byte_file_create(path: c_char*): SageByteFileState*;
+        func sage_byte_file_is_open(value: SageByteFileState*): c_int;
+        func sage_byte_file_read(value: SageByteFileState*): c_int;
+        func sage_byte_file_write(value: SageByteFileState*, byte: c_uchar): c_int;
+        func sage_byte_file_seek_start(value: SageByteFileState*): c_int;
+        func sage_byte_file_flush(value: SageByteFileState*): c_int;
+        func sage_byte_file_close(value: SageByteFileState*): c_int;
+        func sage_byte_file_drop(value: SageByteFileState*): none;
+        resource ByteFile: SageByteFileState* drop sage_byte_file_drop;
+    }
+
+    /// Creates/truncates a binary update file. A valid NUL-terminated path is
+    /// required. Failure returns an empty owner; no native pointer is returned.
+    unsafe func create(path: str): ByteFile
+    {
+        var owner: ByteFile = byte_file_native::sage_byte_file_create(path as c_char*) as ByteFile;
+        return owner;
+    }
+
+    func empty(): ByteFile
+    {
+        unsafe
+        {
+            var owner: ByteFile = (0 as SageByteFileState*) as ByteFile;
+            return owner;
+        }
+    }
+
+    func is_open(value: &ByteFile): b8
+    {
+        if (value == null) { return false; }
+        unsafe { return byte_file_native::sage_byte_file_is_open(value as SageByteFileState*) != 0; }
+    }
+
+    /// EOF: has_value=false, failed=false. Failure: has_value=false, failed=true.
+    /// value is meaningful only when has_value=true.
+    func read_byte(value: &mut ByteFile): ByteRead
+    {
+        if (value == null) { return { value = 0, has_value = false, failed = true }; }
+        unsafe
+        {
+            var result: c_int = byte_file_native::sage_byte_file_read(value as SageByteFileState*);
+            if (result >= 0) { return { value = result as u8, has_value = true, failed = false }; }
+            return { value = 0, has_value = false, failed = result != -1 };
+        }
+    }
+
+    func write_byte(value: &mut ByteFile, byte: u8): b8
+    {
+        if (value == null) { return false; }
+        unsafe { return byte_file_native::sage_byte_file_write(value as SageByteFileState*, byte as c_uchar) != 0; }
+    }
+
+    func seek_start(value: &mut ByteFile): b8
+    {
+        if (value == null) { return false; }
+        unsafe { return byte_file_native::sage_byte_file_seek_start(value as SageByteFileState*) != 0; }
+    }
+
+    func flush(value: &mut ByteFile): b8
+    {
+        if (value == null) { return false; }
+        unsafe { return byte_file_native::sage_byte_file_flush(value as SageByteFileState*) != 0; }
+    }
+
+    /// Consumes ownership even on failure. Reports fclose status; automatic drop
+    /// then frees the native state without attempting fclose again.
+    func close(value: ByteFile): b8
+    {
+        if (value == null) { return false; }
+        unsafe { return byte_file_native::sage_byte_file_close(value as SageByteFileState*) == 0; }
+    }
+}
