@@ -21,6 +21,21 @@ static SageByteFileState* sage_byte_file_create(const char* path)
     return state;
 }
 
+/* Caller supplies 260 readable bytes. Validate the selected prefix before I/O. */
+static SageByteFileState* sage_byte_file_create_bytes(const unsigned char path[260], size_t length)
+{
+    if (!path || length == 0 || length >= 260) return NULL;
+    char native_path[260];
+    for (size_t index = 0; index < length; ++index)
+    {
+        unsigned char byte = path[index];
+        if (byte < 32 || byte > 126) return NULL;
+        native_path[index] = (char)byte;
+    }
+    native_path[length] = '\0';
+    return sage_byte_file_create(native_path);
+}
+
 static int sage_byte_file_is_open(const SageByteFileState* state)
 {
     return state && state->stream;

@@ -1,4 +1,4 @@
-# Owned byte files (v0.18.0)
+# Owned byte files (v0.20.0)
 
 `use byte_file;` imports a bounded file API. `ByteFile` owns an opaque native state
 and follows normal move, borrow, return, and cleanup contracts. Existing unsafe
@@ -8,6 +8,7 @@ and follows normal move, borrow, return, and cleanup contracts. Existing unsafe
 |---|---|---|
 | `empty()` | Returns a local owner | Empty handle; no file is opened |
 | `create(path: str)` | **unsafe**, returns an owner | Creates/truncates a binary `w+b` file; empty on failure |
+| `create_bytes(path: u8[260], length: u16)` | Safe fixed-array value parameter, returns an owner | Creates/truncates using 1..259 printable ASCII bytes; empty on failure |
 | `is_open(value: &ByteFile)` | Shared borrow | Whether its native stream is open |
 | `read_byte(value: &mut ByteFile)` | Mutable borrow | A `ByteRead` value |
 | `write_byte(value: &mut ByteFile, byte: u8)` | Mutable borrow | `true` on successful byte output |
@@ -45,12 +46,38 @@ unsafe func example(): b8
 }
 ```
 
-Acquisition stays unsafe because legacy `str` has an unchecked `char*` lifetime.
+Acquisition using `create(str)` stays unsafe because legacy `str` has an unchecked `char*` lifetime.
 The caller must supply a valid, NUL-terminated path for the duration of the call,
 with the platform C runtime's path encoding. Creation truncates existing content.
 There is no safe general path/string API yet. Once valid ownership is established,
 the byte operations above require neither legacy strings nor raw pointer syntax.
 Unsafe direct native calls or fabricated resource handles can violate this contract.
+
+Since v0.20.0, `create_bytes` provides a safe bounded alternative. Its fixed array
+is copied on Sage function entry. `length` selects 1..259 bytes; every selected
+byte must be printable ASCII (32..126). Zero, controls, non-ASCII bytes, empty
+prefixes, and lengths at or beyond 260 are rejected before any file is opened.
+The remaining array bytes are ignored. No input NUL terminator is needed: the
+native adapter adds one inside its own 260-byte stack buffer.
+
+```sage
+func example_bytes(): b8
+{
+    // ASCII for example.bin; the unused array entries are zero-filled.
+    var path: u8[260] = { 101, 120, 97, 109, 112, 108, 101, 46, 98, 105, 110 };
+    var length: u16 = 11;
+    var owner: ByteFile = byte_file::create_bytes(path, length);
+    if (owner == null) { return false; }
+    return byte_file::close(owner);
+}
+```
+
+This is a bounded ASCII byte-path interface, not Unicode/text ownership or a
+portable OS path model. Printable bytes can still form invalid platform paths;
+native open failure returns an empty owner. Both constructors create/truncate;
+allocation failure after a successful open can leave a truncated file. Only
+prefix validation failure guarantees no native open. Scalar/pointer-to-array
+casts cannot fabricate the fixed array: unsupported array casts report S188.
 
 The adapter uses a positioning barrier before read, write, and flush, preventing
 invalid input/output transitions on C update streams. Non-seekable streams fail
@@ -76,7 +103,9 @@ GCC toolchain; broader platform behavior has not been operationally demonstrated
 
 The interface intentionally omits text encoding, append/open modes, arbitrary
 seeks, byte buffers, detailed OS error codes, and safe general path acquisition.
-Tests are `Sandbox/tests/byte_file.test.sg` (safe empty-owner behavior) and
+Tests are `Sandbox/tests/byte_file.test.sg` (safe empty-owner and rejected paths) and
 `tests/byte-file.ps1` (native failure injection, all-byte roundtrip, persisted
 content, exclusive reopen after explicit/early-return close, paths with spaces,
-and invalid ownership/borrow/native calls).
+safe ASCII path creation, prefix validation before I/O, and invalid
+ownership/borrow/native calls). `tests/array-casts.ps1` verifies unsupported casts
+are rejected before C generation without executing invalid programs.

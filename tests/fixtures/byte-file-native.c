@@ -1,11 +1,18 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 static int live_streams, live_states, close_calls, free_calls;
 static int fail_open, fail_allocate, fail_seek, fail_read, fail_write, fail_flush, fail_close;
+static int open_calls;
+static size_t last_open_length;
+static char last_open_path[260];
 
 static FILE* tracked_open(const char* path, const char* mode)
 {
+    ++open_calls;
+    last_open_length = strlen(path);
+    if (last_open_length < sizeof(last_open_path)) memcpy(last_open_path, path, last_open_length + 1);
     if (fail_open) return NULL;
     FILE* stream = fopen(path, mode);
     if (stream) ++live_streams;
@@ -136,6 +143,48 @@ int main(int argc, char** argv)
     CHECK(state != NULL, "create_for_implicit_drop");
     sage_byte_file_drop(state);
     CHECK(live_streams == 0 && live_states == 0 && close_calls == 4 && free_calls == 3, "implicit_drop_closes_and_frees");
+
+    size_t length = strlen(argv[1]);
+    CHECK(length > 0 && length < 260, "fixture_path_fits_byte_contract");
+    unsigned char path[260] = {0};
+    memcpy(path, argv[1], length);
+    FILE* sentinel = fopen(argv[1], "wb");
+    CHECK(sentinel != NULL, "sentinel_file_open");
+    CHECK(fputc(77, sentinel) == 77 && fclose(sentinel) == 0, "sentinel_file_written");
+    int opens_before = open_calls;
+    CHECK(sage_byte_file_create_bytes(NULL, 1) == NULL, "byte_path_null");
+    CHECK(sage_byte_file_create_bytes(path, 0) == NULL, "byte_path_empty");
+    CHECK(sage_byte_file_create_bytes(path, 260) == NULL, "byte_path_capacity_rejected");
+    CHECK(sage_byte_file_create_bytes(path, (size_t)-1) == NULL, "byte_path_large_length_rejected_before_read");
+    const unsigned char invalid_bytes[] = {0, 31, 127, 255};
+    for (size_t index = 0; index < sizeof(invalid_bytes); ++index)
+    {
+        path[length - 1] = invalid_bytes[index];
+        CHECK(sage_byte_file_create_bytes(path, length) == NULL, "invalid_byte_prefix_rejected");
+    }
+    CHECK(open_calls == opens_before && live_streams == 0 && live_states == 0, "invalid_byte_paths_never_open_or_allocate");
+    sentinel = fopen(argv[1], "rb");
+    CHECK(sentinel != NULL, "sentinel_reopen");
+    CHECK(fgetc(sentinel) == 77 && fclose(sentinel) == 0, "invalid_paths_preserve_existing_content");
+
+    memcpy(path, argv[1], length);
+    path[length] = 255; /* Outside the selected prefix; no terminator required. */
+    state = sage_byte_file_create_bytes(path, length);
+    CHECK(state && sage_byte_file_is_open(state), "valid_byte_path_opens_without_input_terminator");
+    CHECK(sage_byte_file_write(state, 42), "byte_path_owner_supports_io");
+    CHECK(sage_byte_file_close(state) == 0, "byte_path_owner_consuming_close");
+    sage_byte_file_drop(state);
+    CHECK(live_states == 0 && live_streams == 0, "byte_path_owner_no_leak");
+    fail_allocate = 1;
+    CHECK(sage_byte_file_create_bytes(path, length) == NULL && live_streams == 0 && live_states == 0, "byte_path_allocation_failure_closes_stream");
+    fail_allocate = 0;
+    memset(path, 'a', sizeof(path));
+    path[259] = 255;
+    fail_open = 1; /* Observe the maximum prefix without creating a long filename. */
+    opens_before = open_calls;
+    CHECK(sage_byte_file_create_bytes(path, 259) == NULL && open_calls == opens_before + 1, "maximum_byte_prefix_reaches_native_open");
+    CHECK(last_open_length == 259 && last_open_path[258] == 'a' && last_open_path[259] == '\0', "maximum_byte_prefix_is_terminated_within_capacity");
+    fail_open = 0;
     printf("Native byte file checks passed: %d assertions.\n", assertions);
     return 0;
 }

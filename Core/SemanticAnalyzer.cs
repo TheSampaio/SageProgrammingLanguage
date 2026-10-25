@@ -744,6 +744,8 @@ namespace Sage.Core
 
         public string Visit(CastExpressionNode node)
         {
+            if (TypeSystem.IsArrayType(node.TargetType))
+                throw new CompilerException(node, "S188", "A cast cannot construct a fixed array. Use an array literal or a checked value copy.");
             if (TypeSystem.GetNativeResource(node.TargetType) is { } resource)
             {
                 if (!InUnsafe || _functionDepth == 0 || !ReferenceEquals(node, _owningInitializer))
@@ -756,6 +758,8 @@ namespace Sage.Core
             }
             RejectResourceValueType(node.TargetType, node);
             string expressionType = node.Expression.Accept(this);
+            if (TypeSystem.IsArrayType(expressionType) && !TypeSystem.IsRawPointer(node.TargetType))
+                throw new CompilerException(node, "S188", "A fixed array may only be cast to a raw pointer at an explicit unsafe native boundary.");
             if (TypeSystem.GetNativeResource(expressionType) is { } sourceResource)
             {
                 if (!InUnsafe || node.Expression is not IdentifierNode || node.TargetType != sourceResource.NativeType)

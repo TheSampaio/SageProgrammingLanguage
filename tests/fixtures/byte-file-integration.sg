@@ -66,4 +66,25 @@ func main(): none
         test::assert_true("failed_create_returns_empty_owner", absent == null);
     }
     test::assert_eq_i32("automatic_close_on_early_return", early_return(), 7);
+    safe_path();
+}
+
+// All file operations, including acquisition, use the safe public surface.
+func safe_path(): none
+{
+    var path: u8[260] = { 115, 97, 102, 101, 46, 98, 105, 110 };
+    var length: u16 = 8;
+    path[8] = 255;
+    var owner: ByteFile = byte_file::create_bytes(path, length);
+    test::assert_true("safe_byte_path_opens", byte_file::is_open(&owner));
+    var byte: u8 = 42;
+    test::assert_true("safe_byte_path_writes", byte_file::write_byte(&mut owner, byte));
+    var closed: b8 = byte_file::close(owner);
+    test::assert_true("safe_byte_path_closes", closed);
+    length = 9;
+    var invalid: ByteFile = byte_file::create_bytes(path, length);
+    test::assert_true("safe_invalid_prefix_returns_empty", invalid == null);
+    length = 260;
+    var oversized: ByteFile = byte_file::create_bytes(path, length);
+    test::assert_true("safe_oversized_path_returns_empty", oversized == null);
 }

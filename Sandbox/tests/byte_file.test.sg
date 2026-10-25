@@ -17,4 +17,14 @@ func main(): none
     test::assert_false("byte_file_empty_close_fails", byte_file::close(file));
     var other: ByteFile = byte_file::empty();
     test::assert_false("byte_file_empty_consuming_call", consume_empty(other));
+    var path: u8[260] = { 97, 0, 98 };
+    var length: u16 = 3;
+    var invalid: ByteFile = byte_file::create_bytes(path, length);
+    test::assert_true("byte_file_embedded_zero_rejected", invalid == null);
+    length = 0;
+    var empty_path: ByteFile = byte_file::create_bytes(path, length);
+    test::assert_true("byte_file_empty_path_rejected", empty_path == null);
+    length = 65535;
+    var oversized: ByteFile = byte_file::create_bytes(path, length);
+    test::assert_true("byte_file_oversized_path_rejected", oversized == null);
 }

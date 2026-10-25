@@ -107,7 +107,8 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
   Sage. `null` is contextual and existing bindings keep their meaning. Bind a
   presence query before passing it alongside consumed arguments; see S195/S194.
 - `byte_file` provides bounded owned byte I/O and consuming close with explicit
-  outcomes. `create(str)` remains unsafe; retain the legacy `file` module. The std
+  outcomes. `create_bytes(u8[260], u16)` safely accepts 1..259 printable ASCII
+  bytes; `create(str)` remains unsafe. Retain the legacy `file` module. The std
   distribution contains only `.sg`. Native headers ship with the compiler in
   `Runtime/include`; see `docs/byte-files.md`.
 

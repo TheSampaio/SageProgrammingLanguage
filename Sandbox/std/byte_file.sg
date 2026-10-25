@@ -1,5 +1,5 @@
-/// Owned, seekable binary update files. Byte operations are safe; path acquisition
-/// remains unsafe until Sage has a checked string/path representation.
+/// Owned, seekable binary update files. Byte paths support bounded printable ASCII;
+/// acquisition from a legacy str remains unsafe.
 struct ByteRead { value: u8; has_value: b8; failed: b8; }
 
 module byte_file
@@ -8,6 +8,7 @@ module byte_file
     {
         type SageByteFileState;
         func sage_byte_file_create(path: c_char*): SageByteFileState*;
+        func sage_byte_file_create_bytes(path: u8[260], length: c_size_t): SageByteFileState*;
         func sage_byte_file_is_open(value: SageByteFileState*): c_int;
         func sage_byte_file_read(value: SageByteFileState*): c_int;
         func sage_byte_file_write(value: SageByteFileState*, byte: c_uchar): c_int;
@@ -24,6 +25,18 @@ module byte_file
     {
         var owner: ByteFile = byte_file_native::sage_byte_file_create(path as c_char*) as ByteFile;
         return owner;
+    }
+
+    /// Creates/truncates a file using 1..259 printable ASCII bytes from path.
+    /// Rejects invalid prefixes before opening; ignores the remaining array bytes.
+    /// Returns an empty owner on validation, allocation, or native open failure.
+    func create_bytes(path: u8[260], length: u16): ByteFile
+    {
+        unsafe
+        {
+            var owner: ByteFile = byte_file_native::sage_byte_file_create_bytes(path, length as c_size_t) as ByteFile;
+            return owner;
+        }
     }
 
     func empty(): ByteFile

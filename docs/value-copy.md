@@ -47,6 +47,12 @@ then assign its array field. Array literals remain accepted in fields, Sage
 arguments, and assignment. Existing legacy string-array literals remain available;
 this does not permit checked copies of their unchecked storage.
 
+Since v0.20.0, S188 also rejects casts whose destination is a fixed array and
+casts from an array to a non-pointer type, including inside unsafe. A scalar or
+native pointer cannot establish a checked array's storage or length by casting.
+Use literals or checked value copies. Array-to-raw-pointer casts remain available
+inside unsafe for explicit native contracts; outside unsafe they report S122.
+
 Array-field reads from returned temporaries can be copied as a whole while the
 temporary is alive. The backend consumes the source inside the copying call's
 full expression, following [C11 draft N1570, 6.2.4 paragraph 8](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf).

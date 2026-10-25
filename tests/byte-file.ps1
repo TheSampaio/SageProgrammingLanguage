@@ -9,6 +9,8 @@ $stdDir = Join-Path $projectDir 'std'
 New-Item -ItemType Directory -Path $sourceDir, $stdDir | Out-Null
 $cases = @(
     @{ Name = 'create_requires_unsafe'; Code = 'func main(): none { var value: ByteFile = byte_file::create("not-run.bin"); }'; Error = 'S164' },
+    @{ Name = 'byte_path_requires_exact_capacity'; Code = 'func main(): none { var path: u8[2]; var length: u16 = 1; var value: ByteFile = byte_file::create_bytes(path, length); }'; Error = 'S161' },
+    @{ Name = 'byte_path_cannot_be_fabricated'; Code = 'func main(): none { var length: u16 = 1; var value: ByteFile = byte_file::create_bytes(0 as u8[260], length); }'; Error = 'S188' },
     @{ Name = 'write_requires_explicit_borrow'; Code = 'func main(): none { var value: ByteFile = byte_file::empty(); var byte: u8 = 1; byte_file::write_byte(value, byte); }'; Error = 'S170' },
     @{ Name = 'shared_write_rejected'; Code = 'func mutate(value: &ByteFile): none { var byte: u8 = 1; byte_file::write_byte(&mut value, byte); } func main(): none {}'; Error = 'S171' },
     @{ Name = 'close_cannot_consume_borrow'; Code = 'func close_borrow(value: &mut ByteFile): b8 { return byte_file::close(value); } func main(): none {}'; Error = 'S191' },
@@ -40,8 +42,8 @@ try {
     $exitCode = $LASTEXITCODE
     $text = $output -join "`n"
     $passes = @($output | Select-String '\[PASS\]').Count
-    if ($exitCode -ne 0 -or $text -match '\[FAIL\]|error |Fatal' -or $passes -ne 18) {
-        throw "Byte file Sage integration failed ($passes/18 PASS).`n$text"
+    if ($exitCode -ne 0 -or $text -match '\[FAIL\]|error |Fatal' -or $passes -ne 23) {
+        throw "Byte file Sage integration failed ($passes/23 PASS).`n$text"
     }
     $roundtripPath = Join-Path $projectDir 'bin/roundtrip.bin'
     $bytes = [IO.File]::ReadAllBytes($roundtripPath)
@@ -52,7 +54,9 @@ try {
     }
     $automaticPath = Join-Path $projectDir 'bin/automatic.bin'
     if (([IO.File]::ReadAllBytes($automaticPath) -join ',') -ne '11') { throw 'Early-return output was not closed/flushed.' }
-    foreach ($path in @($roundtripPath, $automaticPath)) {
+    $safePath = Join-Path $projectDir 'bin/safe.bin'
+    if (([IO.File]::ReadAllBytes($safePath) -join ',') -ne '42') { throw 'Safe byte-path creation failed or invalid prefix truncated the file.' }
+    foreach ($path in @($roundtripPath, $automaticPath, $safePath)) {
         $stream = [IO.File]::Open($path, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
         $stream.Dispose()
     }

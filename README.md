@@ -329,7 +329,7 @@ The bundled standard library (`Sandbox/std/`) doubles as the reference for idiom
 | `console` | Terminal I/O (`print`, `print_line`, `read`, `run`).                    |
 | `memory`  | Raw heap primitives (`alloc`/`release`, `unsafe`). Prefer `new`/`delete`.|
 | `file`    | File I/O over `<stdio.h>` (opaque `FILE`, `c_*` aliases).               |
-| `byte_file` | Owned binary byte I/O, explicit EOF/failure, consuming close.         |
+| `byte_file` | Owned binary byte I/O, bounded ASCII paths, explicit EOF/failure, consuming close. |
 | `http_client` | Legacy shell-based `curl` helpers (`unsafe`; caller must validate inputs). |
 | `http_server` | Minimal HTTP server on Winsock (links `ws2_32`).                        |
 | `test`    | Unit-testing assertions that emit `[PASS]`/`[FAIL]` lines.              |
@@ -363,7 +363,7 @@ file directly with `sage <file>.test.sg` and read the `[PASS]`/`[FAIL]` output.
 
 ## Project Status
 
-The project is currently in **v0.19.0 (Alpha)**.
+The project is currently in **v0.20.0 (Alpha)**.
 
 * [x] **CLI & Project System** (`new`, `build`, `run`, `--version`)
 * [x] **Variable Declarations** (`var`) & **Constants** (`const`)
