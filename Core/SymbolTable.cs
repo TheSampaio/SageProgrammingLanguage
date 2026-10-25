@@ -93,7 +93,7 @@
 
         /// <summary>Snapshots binding identities so shadowed names retain separate state.</summary>
         public Dictionary<SymbolMetadata, OwnershipState> CaptureOwnership() =>
-            _scopes.SelectMany(scope => scope.Values).Where(symbol => symbol.IsReference)
+            _scopes.SelectMany(scope => scope.Values).Where(symbol => symbol.IsOwningValue)
                 .ToDictionary(symbol => symbol, symbol => symbol.Ownership);
 
         /// <summary>Restores states captured before a branch or loop.</summary>

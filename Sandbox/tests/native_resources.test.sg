@@ -1,0 +1,27 @@
+use test;
+
+extern native_heap("stdlib.h")
+{
+    func malloc(size: c_size_t): c_void*;
+    func free(value: c_void*): none;
+    resource NativeAllocation: c_void* drop free;
+}
+
+func main(): none
+{
+    unsafe
+    {
+        const first: NativeAllocation = native_heap::malloc(1 as c_size_t) as NativeAllocation;
+        var second: NativeAllocation = first;
+        var raw: c_void* = second as c_void*;
+        // Both allocation outcomes are legal: NULL is an empty owner.
+        test::assert_true("resource_named_handle_access", raw == (second as c_void*));
+    }
+    test::assert_true("resource_scope_completed", true);
+    unsafe
+    {
+        var empty: NativeAllocation = (0 as c_void*) as NativeAllocation;
+        var moved: NativeAllocation = empty;
+    }
+    test::assert_true("resource_empty_move_completed", true);
+}

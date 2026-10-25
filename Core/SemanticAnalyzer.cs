@@ -25,7 +25,7 @@ namespace Sage.Core
         private int _loopDepth;
         private int _functionDepth;
         private int _borrowExpressionDepth;
-        private NewExpressionNode? _owningInitializer;
+        private AstNode? _owningInitializer;
 
         /// <summary>True when analysis is currently inside an unsafe context.</summary>
         private bool InUnsafe => _unsafeDepth > 0;
@@ -172,7 +172,13 @@ namespace Sage.Core
             if (TypeSystem.IsArrayType(valueType)) valueType = TypeSystem.GetArrayBaseType(valueType);
             valueType = valueType.TrimEnd('*');
             if (TypeSystem.IsNativeResource(valueType))
-                throw new CompilerException(operation, "S191", "Native resource value operations require ownership and cleanup lowering that is not enabled yet.");
+                throw new CompilerException(operation, "S191", "Native resources support local ownership only; this value type or operation has no ownership contract yet.");
+        }
+
+        private void RejectResourceBindingName(string name, AstNode operation)
+        {
+            if (_nativeResources.ContainsKey(name))
+                throw new CompilerException(operation, "S150", $"Binding '{name}' conflicts with a native resource type name.");
         }
 
         public string Visit(ProgramNode node)
@@ -205,6 +211,7 @@ namespace Sage.Core
             RegisterFunction(node, node.ModuleOwner);
             RejectResourceValueType(node.ReturnType, node);
             foreach (var parameter in node.Parameters) RejectResourceValueType(parameter.Type, node);
+            foreach (var parameter in node.Parameters) RejectResourceBindingName(parameter.Name, node);
             var duplicateParameter = node.Parameters.GroupBy(parameter => parameter.Name).FirstOrDefault(group => group.Count() > 1);
             if (duplicateParameter != null)
                 throw new CompilerException(node, "S154", $"Parameter '{duplicateParameter.Key}' is declared more than once in '{node.Name}'.");
@@ -270,11 +277,17 @@ namespace Sage.Core
 
         public string Visit(VariableDeclarationNode node)
         {
-            RejectResourceValueType(node.Type, node);
+            bool isResource = TypeSystem.IsNativeResource(node.Type);
+            if (!isResource || _functionDepth == 0) RejectResourceValueType(node.Type, node);
+            RejectResourceBindingName(node.Name, node);
             ValidateArrayLength(node.Type, node);
             if (_symbolTable.IsDefinedInCurrentScope(node.Name))
                 throw new CompilerException(node, "S102", $"Variable '{node.Name}' is already defined.");
             if (TypeSystem.IsBorrowType(node.Type)) return AnalyzeBorrowedBinding(node);
+
+            if (isResource && node.Initializer is not IdentifierNode &&
+                (node.Initializer is not CastExpressionNode adoption || adoption.TargetType != node.Type))
+                throw new CompilerException(node, "S192", "A resource local requires a named owner move or direct unsafe adoption from its declared native pointer.");
 
             if (TypeSystem.IsRawPointer(node.Type) && !InUnsafe)
                 throw new CompilerException(node, "S121",
@@ -283,7 +296,7 @@ namespace Sage.Core
             if (node.Initializer != null)
             {
                 var previousInitializer = _owningInitializer;
-                _owningInitializer = node.Initializer as NewExpressionNode;
+                _owningInitializer = node.Initializer;
                 try { AnalyzeValue(node.Initializer, node.Type, "S101", $"Initializer of '{node.Name}'"); }
                 finally { _owningInitializer = previousInitializer; }
                 if (TypeSystem.IsArrayType(node.Type) && node.Initializer is not ArrayInitializationNode)
@@ -297,7 +310,7 @@ namespace Sage.Core
                 node.IsReference = node.Initializer.IsReference;
             }
 
-            if (node.Initializer is IdentifierNode source && node.IsReference)
+            if (node.Initializer is IdentifierNode source && (node.IsReference || isResource))
                 ConsumeReference(source, node, OwnershipKind.Moved);
 
             _symbolTable.Define(node.Name, node.Type, isConstant: node.IsConstant,
@@ -503,7 +516,7 @@ namespace Sage.Core
             var symbol = _symbolTable.Resolve(node.Name)
                 ?? throw new CompilerException(node, "S105", $"Identifier '{node.Name}' not declared.");
             if (symbol.IsType) throw new CompilerException(node, "S191", $"Resource type '{node.Name}' is not a value.");
-            if (symbol.IsReference && symbol.Ownership.Kind != OwnershipKind.Available)
+            if (symbol.IsOwningValue && symbol.Ownership.Kind != OwnershipKind.Available)
             {
                 var state = symbol.Ownership;
                 string code = state.Kind switch
@@ -519,7 +532,7 @@ namespace Sage.Core
                     _ => "may have been moved or deleted on another path"
                 };
                 throw new CompilerException(node, code,
-                    $"Reference '{node.Name}' {reason} at ({state.Line},{state.Column}) and cannot be used here.");
+                    $"Owner '{node.Name}' {reason} at ({state.Line},{state.Column}) and cannot be used here.");
             }
             node.VariableType = symbol.Type;
             node.IsReference = symbol.IsReference;
@@ -553,9 +566,9 @@ namespace Sage.Core
                 RequireStableArrayPlace(node.Target);
                 RequireCopyableArray(targetType, node);
             }
-            if (node.Target.IsReference)
+            if (node.Target.IsReference || TypeSystem.IsNativeResource(targetType))
                 throw new CompilerException(node, "S143",
-                    "Reassigning an owning reference is not supported yet. Create a new binding to transfer ownership.");
+                    "Reassigning an owning value is not supported yet. Create a new binding to transfer ownership.");
             AnalyzeValue(node.Expression, targetType, "S108", "Assignment");
             RequireValueContract(node.Expression);
             node.VariableType = targetType;
@@ -656,8 +669,25 @@ namespace Sage.Core
 
         public string Visit(CastExpressionNode node)
         {
+            if (TypeSystem.GetNativeResource(node.TargetType) is { } resource)
+            {
+                if (!InUnsafe || _functionDepth == 0 || !ReferenceEquals(node, _owningInitializer))
+                    throw new CompilerException(node, "S192", "Native resource adoption requires unsafe and must directly initialize a local owner.");
+                string sourceType = node.Expression.Accept(this);
+                if (sourceType != resource.NativeType)
+                    throw new CompilerException(node, "S192", $"Adopting '{resource.Name}' requires its exact native pointer '{resource.NativeType}', not '{sourceType}'.");
+                node.VariableType = node.TargetType;
+                return node.TargetType;
+            }
             RejectResourceValueType(node.TargetType, node);
-            node.Expression.Accept(this);
+            string expressionType = node.Expression.Accept(this);
+            if (TypeSystem.GetNativeResource(expressionType) is { } sourceResource)
+            {
+                if (!InUnsafe || node.Expression is not IdentifierNode || node.TargetType != sourceResource.NativeType)
+                    throw new CompilerException(node, "S192", $"A resource handle may only be exposed from a named owner as '{sourceResource.NativeType}' inside unsafe.");
+                node.VariableType = node.TargetType;
+                return node.TargetType;
+            }
             if (!TypeSystem.IsRawPointer(node.TargetType)) RequireValueContract(node.Expression);
 
             if (TypeSystem.IsRawPointer(node.TargetType) && !InUnsafe)
@@ -747,7 +777,7 @@ namespace Sage.Core
             EnsureBorrowAccess(symbol, operation, isWrite: true);
             if (_loopDepth > symbol.DeclarationLoopDepth)
                 throw new CompilerException(operation, "S145",
-                    $"Reference '{source.Name}' is declared outside this loop and cannot be moved or deleted on a potentially repeated path.");
+                    $"Owner '{source.Name}' is declared outside this loop and cannot be moved or deleted on a potentially repeated path.");
             symbol.Ownership = new OwnershipState(kind, operation.Line, operation.Column);
         }
 
@@ -839,6 +869,8 @@ namespace Sage.Core
 
         private static void RequireValueContract(AstNode expression)
         {
+            if (expression.VariableType != null && TypeSystem.IsNativeResource(expression.VariableType))
+                throw new CompilerException(expression, "S191", "A native resource cannot be copied or passed as an ordinary value. Move it into a local owning binding.");
             if (expression.IsReference)
                 throw new CompilerException(expression, "S144",
                     "This operation has no owning or borrowing reference contract yet. Pass a field value or keep the reference in a local binding.");

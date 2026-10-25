@@ -36,7 +36,11 @@ namespace Sage.Core
         /// <summary>Gets a value indicating whether this symbol holds a safe heap reference (from <c>new</c>).</summary>
         public bool IsReference { get; } = isReference;
 
-        /// <summary>Current path-sensitive availability of an owning reference.</summary>
+        /// <summary>Whether this binding owns a heap allocation or native resource.</summary>
+        public bool IsOwningValue => !IsType && !IsFunction && Borrowing == BorrowKind.None &&
+            (IsReference || TypeSystem.IsNativeResource(Type));
+
+        /// <summary>Current path-sensitive availability of an owning value.</summary>
         public OwnershipState Ownership { get; set; } = OwnershipState.Available;
 
         /// <summary>Loop nesting at declaration, used to reject repeated consumption.</summary>

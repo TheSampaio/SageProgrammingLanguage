@@ -1,4 +1,4 @@
-// Declaration-only foundation in Sage 0.12.0: values and cleanup are not enabled yet.
+// Native resource declaration; Sage 0.13.0 also supports unsafe local adoption.
 extern native("stdio.h")
 {
     type FILE;

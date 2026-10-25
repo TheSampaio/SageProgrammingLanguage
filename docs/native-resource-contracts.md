@@ -1,4 +1,4 @@
-# Native resource contract declarations (v0.12.0)
+# Native resource contracts (v0.13.0)
 
 Native ownership must be declared explicitly instead of inferred from names such
 as `open`, `malloc`, or `close`. This increment implements declarations in
@@ -16,9 +16,8 @@ extern native("stdio.h")
 `resource` and `drop` are contextual words. The contract names a Sage facade,
 one native pointer representation, and a native destructor in the same alias,
 header, and linked library. Declared destructor ABI must accept exactly that
-pointer and return `none`, `c_void`, or `c_int`. An integer destructor result will
-require an explicit cleanup error policy in the operational API; this declaration
-does not provide one. The actual native implementation remains trusted.
+pointer and return `none`, `c_void`, or `c_int`. The actual native implementation
+and the correctness of its ABI declaration remain trusted.
 
 Names are unique across the import closure and cannot conflict with structs,
 opaque types, functions, or C interop aliases. The initial representation supports
@@ -31,23 +30,85 @@ The C header exposes a typed private-handle facade. Verbose AST output records t
 fully qualified destructor and its declared return type. Contract errors retain
 the originating source filename even when detected after import discovery.
 
+## Local ownership
+
+An unsafe conversion of the exact declared native pointer may directly initialize
+a local owner. The caller promises that it is either null or a valid, exclusively
+owned handle that the declared destructor can consume. This is adoption, not a
+checked cast: the compiler cannot prove the pointer's provenance or exclusivity.
+
+```sage
+extern native_heap("stdlib.h")
+{
+    func malloc(size: c_size_t): c_void*;
+    func free(value: c_void*): none;
+    resource NativeAllocation: c_void* drop free;
+}
+
+func main(): none
+{
+    unsafe
+    {
+        const first: NativeAllocation = native_heap::malloc(16 as c_size_t) as NativeAllocation;
+        var second: NativeAllocation = first; // move, including from const
+        // first is unavailable here (S140).
+    } // free is called once if the allocation was non-null.
+}
+```
+
+Initialization from another named owner moves the handle and clears the source.
+The analyzer tracks moved/possibly moved bindings across branches and rejects
+repeated moves of outer bindings in loops (S140/S142/S145). Overwriting owners
+is disabled (S143); assigning to const remains S103. Resource locals cannot
+shadow a resource type name (S150), because the C backend uses its typedef.
+
+Scope exit, early return, and loop iteration exit call typed GCC cleanup helpers
+in reverse declaration order. Return expressions are evaluated first. Null and
+moved-from handles skip the destructor. Semantic const bindings use internally
+mutable bookkeeping so move/drop can clear their handles. Resources use their
+declared destructor, never an inferred `free`; transitional `delete` does not
+apply to them.
+
+Cleanup is a single best-effort destructor call. Integer status is discarded,
+the owner is cleared, and cleanup is not retried or propagated. A resource
+contract must therefore promise that the destructor consumes the handle even
+when it reports a failure. APIs where failure retains ownership need a different
+contract before adoption. A future explicit fallible close/flush API must report
+errors before implicit cleanup; this increment provides none. Process termination
+(`exit`, `abort`, native crashes) does not unwind scopes.
+
+Inside unsafe, a named owner can be converted to its exact native pointer for a
+native operation. This exposes an alias, without transferring ownership. The
+caller must handle null, keep the alias within the owner's lifetime, and must not
+release or independently adopt it. Retaining/returning that raw pointer or adopting
+it twice can violate these obligations; the unsafe escape is not lifetime checked.
+Other resource casts and anonymous adoption are rejected with S192. The facade's
+generated handle field is inaccessible through Sage member access.
+
+## Remaining boundaries
+
+Resource borrows, by-value parameters/returns, globals, fields, arrays, and pointers
+to facade types remain rejected with S191. Ordinary resource comparisons,
+interpolation, and implicit native arguments are also disabled. A resource is
+not inferred Copy. This increment does not provide a safe file API or owned
+string/buffer abstractions.
+
 Implementation order:
 
 1. Implemented: parse and validate declarations after the complete import closure is known.
-   Preserve native origin and diagnostic source file. Emit a typed facade, but
-   reject resource value operations until ownership lowering exists.
-2. Planned: add exclusive local ownership, moves, shared/mutable borrows, and exactly-once
-   nullable-handle cleanup. Trusted acquisition must establish exclusive ownership.
+   Preserve native origin and diagnostic source file, and emit a typed facade.
+2. Implemented: exclusive local ownership, moves, and single-call nullable-handle
+   cleanup after trusted unsafe acquisition. Shared/mutable resource borrows remain planned.
 3. Planned: add ownership transfer through parameters/returns and a bounded standard-library
    interface. Nested resource fields, arrays, buffers, and C++ adapters need their
    own subsequent contracts.
 
-This declaration foundation does not implement automatic cleanup or a safe file
-API. Resource values in locals, signatures, fields, arrays, or
-casts remain rejected with `S191` during that first increment. Invalid native
-contracts use `S190`; conflicting type names retain `S150`.
-
-Acceptance tests are in `tests/native-resource-contracts.ps1`: forward
+Invalid native contracts use S190. Acceptance tests are in
+`tests/native-resource-contracts.ps1`: forward
 declarations, context-sensitive words, native ABI/origin consistency, collisions,
-unsupported operations, and imported diagnostics. Later increments must add
-native destruction instrumentation before enabling value construction.
+unsupported operations, and imported diagnostics. `tests/native-resource-ownership.ps1`
+adds native instrumentation for liveness, invalid/double release, moves, const,
+shadowing, early returns, destruction order, null handles, loops, void destructors,
+and integer failure status, plus semantic rejection cases and a minimal-header
+dependency check. Sandbox tests exercise the standard C allocator integration;
+the native instrumented fixture is the evidence for cleanup counts and order.

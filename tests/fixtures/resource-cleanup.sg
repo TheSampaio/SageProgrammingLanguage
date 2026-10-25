@@ -1,0 +1,108 @@
+extern trace("@TRACKER_HEADER@")
+{
+    type ResourceHandle;
+    func resource_open(id: c_int): ResourceHandle*;
+    func resource_null(): ResourceHandle*;
+    func resource_close(handle: ResourceHandle*): c_int;
+    func resource_close_void(handle: ResourceHandle*): none;
+    func resource_read(handle: ResourceHandle*): c_int;
+    func resource_outstanding(): c_int;
+    func resource_release_order(): c_int;
+    func resource_drop_calls(): c_int;
+    func resource_reset(): none;
+    func resource_fail_close(): none;
+    func resource_check(condition: b8, name: str): none;
+    resource OwnedHandle: ResourceHandle* drop resource_close;
+    resource VoidHandle: ResourceHandle* drop resource_close_void;
+}
+
+unsafe func early(flag: b8): i32
+{
+    var first: OwnedHandle = trace::resource_open(1) as OwnedHandle;
+    if (flag)
+    {
+        var second: OwnedHandle = trace::resource_open(2) as OwnedHandle;
+        return trace::resource_read(first as ResourceHandle*) as i32;
+    }
+    return 0;
+}
+
+unsafe func main(): none
+{
+    var _sage_resource_drop_0: i32 = 9;
+    if (true)
+    {
+        var owner: OwnedHandle = trace::resource_open(1) as OwnedHandle;
+        trace::resource_check(trace::resource_outstanding() == 1, "resource_live_in_scope");
+        trace::resource_check(trace::resource_read(owner as ResourceHandle*) == 1, "trusted_handle_access");
+    }
+    trace::resource_check(trace::resource_outstanding() == 0, "resource_scope_cleanup");
+    trace::resource_check(trace::resource_drop_calls() == 1, "resource_drop_once");
+
+    trace::resource_reset();
+    if (true)
+    {
+        const first: OwnedHandle = trace::resource_open(3) as OwnedHandle;
+        const second: OwnedHandle = first;
+        var third: OwnedHandle = second;
+        trace::resource_check(trace::resource_outstanding() == 1, "move_does_not_duplicate_handle");
+    }
+    trace::resource_check(trace::resource_outstanding() == 0, "resource_move_cleanup");
+    trace::resource_check(trace::resource_drop_calls() == 1, "const_move_drop_once");
+    trace::resource_check(trace::resource_release_order() == 3, "moved_handle_preserves_identity");
+
+    trace::resource_reset();
+    if (true)
+    {
+        var owner: OwnedHandle = trace::resource_open(1) as OwnedHandle;
+        if (true) { var owner: OwnedHandle = owner; }
+        trace::resource_check(trace::resource_outstanding() == 0, "shadowed_move_releases_inner_owner");
+    }
+    trace::resource_check(trace::resource_drop_calls() == 1, "shadowed_move_drop_once");
+
+    trace::resource_reset();
+    var handle: ResourceHandle* = trace::resource_open(6);
+    if (true)
+    {
+        var handle: OwnedHandle = handle as OwnedHandle;
+        trace::resource_check(trace::resource_read(handle as ResourceHandle*) == 6, "shadowed_adoption_reads_outer_pointer");
+    }
+    trace::resource_check(trace::resource_outstanding() == 0, "shadowed_adoption_cleanup");
+
+    trace::resource_reset();
+    var result: i32 = early(true);
+    trace::resource_check(result == 1, "resource_return_evaluated_before_cleanup");
+    trace::resource_check(trace::resource_outstanding() == 0, "resource_early_return_cleanup");
+    trace::resource_check(trace::resource_release_order() == 21, "resource_reverse_destruction_order");
+
+    trace::resource_reset();
+    if (true) { var empty: OwnedHandle = trace::resource_null() as OwnedHandle; }
+    trace::resource_check(trace::resource_drop_calls() == 0, "null_resource_skips_destructor");
+
+    trace::resource_reset();
+    for (var i: i32 = 0; i < 3; i++) { var owner: OwnedHandle = trace::resource_open(1) as OwnedHandle; }
+    trace::resource_check(trace::resource_outstanding() == 0, "resource_per_iteration_cleanup");
+    trace::resource_check(trace::resource_drop_calls() == 3, "resource_per_iteration_drop_count");
+    for (var owner: OwnedHandle = trace::resource_open(2) as OwnedHandle; false;) {}
+    trace::resource_check(trace::resource_outstanding() == 0, "resource_for_initializer_cleanup");
+
+    trace::resource_reset();
+    if (true)
+    {
+        var first: OwnedHandle = trace::resource_open(1) as OwnedHandle;
+        if (true) { var second: OwnedHandle = first; }
+    }
+    trace::resource_check(trace::resource_drop_calls() == 1, "resource_branch_move_cleanup");
+
+    trace::resource_reset();
+    if (true) { var owner: VoidHandle = trace::resource_open(4) as VoidHandle; }
+    trace::resource_check(trace::resource_drop_calls() == 1, "void_destructor_cleanup");
+    trace::resource_check(trace::resource_outstanding() == 0, "void_destructor_releases_handle");
+
+    trace::resource_reset();
+    trace::resource_fail_close();
+    if (true) { var owner: OwnedHandle = trace::resource_open(5) as OwnedHandle; }
+    trace::resource_check(trace::resource_drop_calls() == 1, "failed_status_destructor_not_retried");
+    trace::resource_check(trace::resource_outstanding() == 0, "failed_status_cleanup_continues");
+    trace::resource_check(_sage_resource_drop_0 == 9, "resource_generated_names_do_not_collide");
+}

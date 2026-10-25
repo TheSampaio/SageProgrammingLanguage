@@ -59,7 +59,7 @@ namespace Sage.Core
 
         /// <summary>Whether a type has a validated native resource declaration.</summary>
         public static bool IsNativeResource(string type) => NativeResources.ContainsKey(type);
-        /// <summary>Returns declared native origin and destructor shape, without implying operational ownership.</summary>
+        /// <summary>Returns the validated native origin, representation, and local-owner destructor contract.</summary>
         public static NativeResourceContract? GetNativeResource(string type) => NativeResources.GetValueOrDefault(type);
         /// <summary>Publishes a contract only after the complete declaration pass has validated it.</summary>
         internal static void RegisterNativeResource(NativeResourceContract contract) => NativeResources[contract.Name] = contract;

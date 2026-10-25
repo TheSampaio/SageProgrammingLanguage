@@ -75,6 +75,10 @@ Fixed-array access checks and runtime failure behavior are documented in [array 
 Inferred copy capabilities and fixed-array value passing are documented in [value copies](docs/value-copy.md).
 Explicit `extern` call contexts and the stdlib migration are documented in [native boundaries](docs/native-boundaries.md).
 The post-discovery native resource declaration pass is documented in [resource contracts](docs/native-resource-contracts.md).
+Resource locals share binding-identity move/branch tracking with heap owners;
+typed GCC cleanup helpers call the declared destructor once for non-null handles.
+Native adoption and raw-handle access are trusted unsafe boundaries. Resource
+borrows, value parameters/returns, arrays, and fields remain disabled.
 
 The `SymbolTable` uses a `Stack<Dictionary<string, Symbol>>` to represent **Lexical Scoping**.
 

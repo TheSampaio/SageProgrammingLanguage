@@ -16,6 +16,7 @@ namespace Sage.Core
         /// <summary>Monotonic counter used to mint unique C temporary identifiers.</summary>
         private int _tempCounter = 0;
         private readonly Dictionary<string, string> _cleanupHelpers = new();
+        private readonly Dictionary<string, string> _resourceCleanupHelpers = new();
         private readonly HashSet<string> _usedNames = new(StringComparer.Ordinal);
 
         /// <summary>
@@ -32,6 +33,7 @@ namespace Sage.Core
         public string Generate(ProgramNode ast, string moduleName)
         {
             _cleanupHelpers.Clear();
+            _resourceCleanupHelpers.Clear();
             _tempCounter = 0;
             _usedNames.Clear();
             ReserveNames(ast);
@@ -46,6 +48,12 @@ namespace Sage.Core
             foreach (var (type, helper) in _cleanupHelpers)
             {
                 sb.AppendLine($"static void {helper}({type}** owner) {{ free((void*)*owner); }}");
+            }
+            foreach (var (type, helper) in _resourceCleanupHelpers)
+            {
+                var contract = TypeSystem.GetNativeResource(type)!;
+                sb.AppendLine($"static void {helper}({type}* owner) {{ if (owner->_sage_handle != NULL) {{ " +
+                    $"(void){contract.DestructorName}(owner->_sage_handle); owner->_sage_handle = NULL; }} }}");
             }
 
             sb.AppendLine("\n/* --- Generated Logic --- */");
@@ -137,6 +145,29 @@ namespace Sage.Core
                 string bindingConst = node.IsConstant ? "const " : "";
                 return $"{Indent}{pointerType} {temporary}{init};\n" +
                     $"{Indent}{pointerType} {bindingConst}{node.Name} = {temporary};\n";
+            }
+
+            if (TypeSystem.IsNativeResource(node.Type))
+            {
+                if (!_resourceCleanupHelpers.TryGetValue(node.Type, out string? helper))
+                {
+                    helper = MintName("_sage_resource_drop_");
+                    _resourceCleanupHelpers.Add(node.Type, helper);
+                }
+                string cleanup = $" __attribute__((cleanup({helper})))";
+                // The semantic const binding still needs mutable storage for move/drop bookkeeping.
+                if (node.Initializer is IdentifierNode source)
+                {
+                    string temporary = MintName("_resource_move");
+                    string name = source.Accept(this);
+                    return $"{Indent}{node.Type} {temporary} = {name};\n" +
+                        $"{Indent}{name}._sage_handle = NULL;\n" +
+                        $"{Indent}{node.Type} {node.Name}{cleanup} = {temporary};\n";
+                }
+                string adopted = MintName("_resource_adopt");
+                // Evaluate acquisition before introducing a possibly shadowing owner name.
+                return $"{Indent}{node.Type} {adopted}{init};\n" +
+                    $"{Indent}{node.Type} {node.Name}{cleanup} = {adopted};\n";
             }
 
             // Safe heap references are represented as pointers in C.
@@ -314,7 +345,15 @@ namespace Sage.Core
             return $"({node.Left.Accept(this)} {op} {node.Right.Accept(this)})";
         }
 
-        public string Visit(CastExpressionNode node) => $"(({TypeSystem.ToCType(node.TargetType)}){node.Expression.Accept(this)})";
+        public string Visit(CastExpressionNode node)
+        {
+            string expression = node.Expression.Accept(this);
+            if (TypeSystem.IsNativeResource(node.TargetType))
+                return $"({node.TargetType}){{ ._sage_handle = {expression} }}";
+            if (node.Expression.VariableType != null && TypeSystem.IsNativeResource(node.Expression.VariableType))
+                return $"({expression}._sage_handle)";
+            return $"(({TypeSystem.ToCType(node.TargetType)}){expression})";
+        }
 
         public string Visit(IfNode node)
         {
