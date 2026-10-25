@@ -73,6 +73,7 @@ The initial borrowed-parameter model and its lifetime boundary are documented in
 Recursive checks of struct and fixed-array literals are documented in [aggregate contracts](docs/aggregate-contracts.md).
 Fixed-array access checks and runtime failure behavior are documented in [array bounds](docs/array-bounds.md).
 Inferred copy capabilities and fixed-array value passing are documented in [value copies](docs/value-copy.md).
+Explicit `extern` call contexts and the stdlib migration are documented in [native boundaries](docs/native-boundaries.md).
 
 The `SymbolTable` uses a `Stack<Dictionary<string, Symbol>>` to represent **Lexical Scoping**.
 

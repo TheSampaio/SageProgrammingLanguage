@@ -18,8 +18,8 @@ Since v0.9.2, [aggregate contracts](aggregate-contracts.md) recursively check th
 supplied fields and elements against that expected type before C generation.
 
 Calling an `unsafe func` requires an `unsafe` block or another unsafe function.
-Existing direct `extern` calls retain their current trusted ABI behavior during
-migration. Their declared arity is checked, but argument type conversions and
+Since v0.11.0, direct `extern` calls require the same explicit context; see
+[native boundaries](native-boundaries.md). Their declared arity is checked, but argument type conversions and
 the real C header's ABI are not yet validated by Sage.
 
 Repeated native aliases are accepted only when return type, ordered parameter
@@ -35,7 +35,7 @@ does not prove that a declaration matches the actual C library.
 | S161 | Wrong Sage argument type |
 | S162 | Wrong return type or return outside a function |
 | S163 | Non-`none` function can reach its end without a result |
-| S164 | Unsafe Sage call outside an unsafe context |
+| S164 | Unsafe Sage or native call outside an unsafe context |
 
 C interop aliases remain distinct from fixed-width Sage types. The console
 wrappers now explicitly cast their native `c_int` results to `i32`, following

@@ -2,8 +2,9 @@
 /// Consume HTTP(S) APIs by delegating to the system `curl` binary (available on
 /// Windows 10+ and most Unix systems), so no extra libraries need to be linked.
 ///
-/// The high-level helpers (fetch/post/download) are fully memory-safe. The
-/// capturing helper `get_into` traffics in raw buffers, so it is `unsafe func`.
+/// These legacy helpers construct shell commands from their arguments and do not
+/// escape untrusted input. They require unsafe; owned buffers and a hardened
+/// transport interface remain future work.
 use console;
 
 module http
@@ -18,19 +19,19 @@ module http
     }
 
     /// Performs a GET request and prints the response body to standard output.
-    func fetch(url: str): none
+    unsafe func fetch(url: str): none
     {
         console::run("curl -s \"{url}\"");
     }
 
     /// Performs a POST request with a raw body and prints the response.
-    func post(url: str, data: str): none
+    unsafe func post(url: str, data: str): none
     {
         console::run("curl -s -X POST -d \"{data}\" \"{url}\"");
     }
 
     /// Downloads a URL into a local file path.
-    func download(url: str, path: str): none
+    unsafe func download(url: str, path: str): none
     {
         console::run("curl -s -o \"{path}\" \"{url}\"");
     }

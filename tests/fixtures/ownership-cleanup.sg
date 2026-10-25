@@ -8,14 +8,14 @@ extern trace("@TRACKER_HEADER@")
 
 struct Item { value: i32; }
 
-func borrowed_read(value: &Item): i32
+unsafe func borrowed_read(value: &Item): i32
 {
     trace::ownership_check(trace::ownership_outstanding() == 1, "borrow_does_not_adopt_owner");
     return value.value;
 }
 func borrowed_write(value: &mut Item): none { value.value++; }
 
-func named_projection(): i32
+unsafe func named_projection(): i32
 {
     var owner: Item = new Item { value = 7 };
     trace::ownership_check(trace::ownership_outstanding() == 1, "named_projection_has_live_owner");
@@ -33,7 +33,7 @@ func early(flag: b8): i32
     return first.value;
 }
 
-func main(): none
+unsafe func main(): none
 {
     var _new0: i32 = 4;
     var _sage_drop_1: i32 = 5;

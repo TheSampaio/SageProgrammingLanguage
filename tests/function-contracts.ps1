@@ -20,12 +20,12 @@ $cases = @(
     @{ Name = 'duplicate_parameter'; Code = 'func take(value: i32, value: i32): none {} func main(): none {}'; Error = 'S154' },
     @{ Name = 'unsafe_call'; Code = 'unsafe func native(): none {} func main(): none { native(); }'; Error = 'S164' },
     @{ Name = 'unsafe_context'; Code = 'unsafe func native(): none {} func main(): none { unsafe { native(); } }' },
-    @{ Name = 'native_arity'; Code = 'extern c("stdlib.h") { func abs(value: c_int): c_int; } func main(): none { c::abs(); }'; Error = 'S160' },
-    @{ Name = 'same_native_contract'; Code = 'extern c("stdlib.h") { func abs(value: c_int): c_int; } extern c("stdlib.h") { func abs(number: c_int): c_int; } func main(): none { var x: i32 = c::abs(-2) as i32; }' },
+    @{ Name = 'native_arity'; Code = 'extern c("stdlib.h") { func abs(value: c_int): c_int; } unsafe func main(): none { c::abs(); }'; Error = 'S160' },
+    @{ Name = 'same_native_contract'; Code = 'extern c("stdlib.h") { func abs(value: c_int): c_int; } extern c("stdlib.h") { func abs(number: c_int): c_int; } unsafe func main(): none { var x: i32 = c::abs(-2) as i32; }' },
     @{ Name = 'native_parameter_conflict'; Code = 'extern c("stdlib.h") { func abs(value: c_int): c_int; } extern c("stdlib.h") { func abs(value: c_double): c_int; } func main(): none {}'; Error = 'S152' },
     @{ Name = 'native_return_conflict'; Code = 'extern c("stdlib.h") { func abs(value: c_int): c_int; } extern c("stdlib.h") { func abs(value: c_int): c_long; } func main(): none {}'; Error = 'S152' },
     @{ Name = 'native_origin_conflict'; Code = 'extern c("stdlib.h") { func abs(value: c_int): c_int; } extern c("math.h") { func abs(value: c_int): c_int; } func main(): none {}'; Error = 'S152' },
-    @{ Name = 'native_return_requires_cast'; Code = 'extern c("stdlib.h") { func abs(value: c_int): c_int; } func make(): i32 { return c::abs(-2); } func main(): none {}'; Error = 'S162' },
+    @{ Name = 'native_return_requires_cast'; Code = 'extern c("stdlib.h") { func abs(value: c_int): c_int; } func make(): i32 { unsafe { return c::abs(-2); } } func main(): none {}'; Error = 'S162' },
     @{ Name = 'infinite_loop_no_fallthrough'; Code = 'func never(): i32 { while (true) {} } func main(): none {}' }
 )
 

@@ -24,7 +24,7 @@ try {
     $sourceDir = Join-Path $probeDir 'src'
     New-Item -ItemType Directory -Path $sourceDir | Out-Null
     $runtimeSource = Join-Path $sourceDir 'main.sg'
-    Set-Content -LiteralPath $runtimeSource -Value 'extern native("stdlib.h") { func exit(code: c_int): none; } func main(): none { native::exit(37); }'
+    Set-Content -LiteralPath $runtimeSource -Value 'extern native("stdlib.h") { func exit(code: c_int): none; } unsafe func main(): none { native::exit(37); }'
     $output = & dotnet $compilerPath $runtimeSource 2>&1
     if ($LASTEXITCODE -ne 37) {
         throw "Explicit-file execution must propagate native exit 37, received $LASTEXITCODE.`n$output"

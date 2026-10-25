@@ -89,13 +89,17 @@ module test
     /// Asserts equality between two strings.
     func assert_eq_str(name: str, actual: str, expected: str): none
     {
-        if (libc_string::strcmp(actual, expected) == 0)
+        // The legacy str contract requires valid terminated strings; strcmp does not retain them.
+        unsafe
         {
-            console::print_line("[PASS] {name}");
-        }
-        else
-        {
-            console::print_line("[FAIL] {name} (expected '{expected}', got '{actual}')");
+            if (libc_string::strcmp(actual, expected) == 0)
+            {
+                console::print_line("[PASS] {name}");
+            }
+            else
+            {
+                console::print_line("[FAIL] {name} (expected '{expected}', got '{actual}')");
+            }
         }
     }
 }

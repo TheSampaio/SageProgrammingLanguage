@@ -93,6 +93,9 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
   `-l` flags. Missing an address-of operator, use a `new` struct reference to hand C a pointer
   (see `Sandbox/std/server.sg`).
 - Wrappers that traffic in raw pointers must be `unsafe func` (see `Sandbox/std/memory.sg`).
+- Every direct `extern` call requires `unsafe`; regular wrappers isolate trusted
+  native operations locally. Legacy `console.read_line` and shell-based HTTP
+  helpers require unsafe callers; see `docs/native-boundaries.md`.
 
 ## Generated C
 

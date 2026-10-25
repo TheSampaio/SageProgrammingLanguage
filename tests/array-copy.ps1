@@ -5,8 +5,8 @@ $compilerPath = (Resolve-Path -LiteralPath $CompilerDll).Path
 $probeDir = Join-Path ([IO.Path]::GetTempPath()) ("sage-copy-" + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $probeDir | Out-Null
 $cases = @(
-    @{ Name = 'parameter_value_copy'; Code = 'extern io("stdio.h") { func puts(text: str): c_int; } func change(a: i32[2]): none { a[0] = 9; } func main(): none { var a: i32[2] = { 1, 2 }; change(a); if (a[0] == 1) { io::puts("[PASS] parameter_copy"); } else { io::puts("[FAIL] parameter_alias"); } }'; Pass = $true },
-    @{ Name = 'module_parameter_copy'; Code = 'use array_worker; extern io("stdio.h") { func puts(text: str): c_int; } func main(): none { var a: i32[2] = { 1, 2 }; array_worker::change(a); if (a[0] == 1) { io::puts("[PASS] module_copy"); } else { io::puts("[FAIL] module_alias"); } }'; Pass = $true },
+    @{ Name = 'parameter_value_copy'; Code = 'extern io("stdio.h") { func puts(text: str): c_int; } func change(a: i32[2]): none { a[0] = 9; } unsafe func main(): none { var a: i32[2] = { 1, 2 }; change(a); if (a[0] == 1) { io::puts("[PASS] parameter_copy"); } else { io::puts("[FAIL] parameter_alias"); } }'; Pass = $true },
+    @{ Name = 'module_parameter_copy'; Code = 'use array_worker; extern io("stdio.h") { func puts(text: str): c_int; } unsafe func main(): none { var a: i32[2] = { 1, 2 }; array_worker::change(a); if (a[0] == 1) { io::puts("[PASS] module_copy"); } else { io::puts("[FAIL] module_alias"); } }'; Pass = $true },
     @{ Name = 'binding_copy'; Code = 'func main(): none { var a: i32[2] = { 1, 2 }; var b: i32[2] = a; b[0]++; }' },
     @{ Name = 'assignment_copy'; Code = 'func main(): none { var a: i32[2] = { 1, 2 }; var b: i32[2]; b = a; b = b; }' },
     @{ Name = 'literal_assignment'; Code = 'func main(): none { var a: i32[2]; a = { 1, 2 }; }' },

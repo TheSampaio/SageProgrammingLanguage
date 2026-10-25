@@ -100,7 +100,7 @@ namespace Sage.Core
                                 $"Native alias '{node.Alias}::{func.Name}' conflicts with a Sage callable.");
                         string name = $"{node.Alias}::{func.Name}";
                         var signature = new CallableSignature(func.ReturnType, func.Parameters.Select(parameter => parameter.Type),
-                            func.IsUnsafe, node.Header, node.Library);
+                            isUnsafe: true, nativeHeader: node.Header, nativeLibrary: node.Library);
                         var existing = _symbolTable.Resolve(name);
                         if (existing != null)
                         {
@@ -200,8 +200,8 @@ namespace Sage.Core
         public string Visit(UnsafeBlockNode node)
         {
             _unsafeDepth++;
-            node.Body.Accept(this);
-            _unsafeDepth--;
+            try { node.Body.Accept(this); }
+            finally { _unsafeDepth--; }
             return "none";
         }
 
@@ -281,7 +281,7 @@ namespace Sage.Core
             node.IsExternCall = symbol.IsExtern;
             var signature = symbol.Signature ?? throw new InvalidOperationException($"Callable '{name}' has no signature.");
             if (signature.IsUnsafe && !InUnsafe)
-                throw new CompilerException(node, "S164", $"Calling unsafe function '{name}' requires an unsafe context.");
+                throw new CompilerException(node, "S164", $"Calling {(symbol.IsExtern ? "native" : "unsafe")} function '{name}' requires an unsafe context.");
             if (node.Arguments.Count != signature.ParameterTypes.Count)
                 throw new CompilerException(node, "S160",
                     $"Function '{name}' expects {signature.ParameterTypes.Count} arguments, but received {node.Arguments.Count}.");
