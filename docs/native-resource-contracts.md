@@ -1,4 +1,4 @@
-# Native resource contracts (v0.17.0)
+# Native resource contracts (v0.18.0)
 
 Native ownership must be declared explicitly instead of inferred from names such
 as `open`, `malloc`, or `close`. This increment implements declarations in
@@ -237,9 +237,10 @@ Implementation order:
 4. Implemented: consuming named resource parameters with callee cleanup and
    ownership/borrow call conflicts.
 5. Implemented: safe contextual null comparisons on named owners and borrows.
-6. Planned: add a bounded standard-library interface. Nested resource fields,
-   arrays, buffers, and C++ adapters need their
-   own subsequent contracts.
+6. In progress: the bounded byte-file interface provides borrowed byte I/O and
+   consuming fallible close. Safe general paths/strings and broader std migration
+   remain unfinished. Nested resource fields, arrays, buffers, and C++ adapters
+   need their own subsequent contracts.
 
 Invalid native contracts use S190. Acceptance tests are in
 `tests/native-resource-contracts.ps1`: forward
