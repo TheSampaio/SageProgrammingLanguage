@@ -210,13 +210,14 @@ namespace Sage.Core
             string[] includeDirectories = [env.ObjDir, runtimeIncludes];
 
             // Native build integration point: every native source (generated C modules today,
-            // other C/C++ sources later) becomes one translation unit compiled to obj/<name>.o.
+            // other C/C++ sources later) becomes one translation unit compiled to obj/<name>.o
+            // and cached by content (see Core/Build/NativeBuilder).
             var units = cFiles.Select(file => NativeTranslationUnit.ForC(file, includeDirectories)).ToList();
             var link = new NativeLinkRequest(exePath, libraries);
 
             if (config.IsDebugMode) CompilerLogger.LogInfo("Invoking native toolchain: gcc");
 
-            new NativeBuilder(config.IsDebugMode).Build(units, link);
+            new NativeBuilder(env.ObjDir, config.ForceClean, config.IsDebugMode).Build(units, link);
 
             if (config.RunOnSuccess)
             {

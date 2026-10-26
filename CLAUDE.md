@@ -148,6 +148,9 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
 - `Core/Build/NativeBuilder` compiles each `NativeTranslationUnit` (source + compiler +
   flags + include dirs) with `-c` into `obj/<name>.o`, then links. New native sources
   (e.g. C++ adapters) plug in as extra units in `CompilationPipeline.LinkNativeBinary`.
+- Objects/links are cached in `obj/sage-build-cache.json` (content-addressed: generated C +
+  transitive headers + `SageInfo.Version` + compiler/flags + `gcc -v` identity). `--clean`
+  forces a rebuild. Anything new that affects object code must enter the unit's key.
 
 ## Generated C
 

@@ -18,7 +18,7 @@ The Sage compilation process is divided into six sequential stages. Each stage t
 ### C. Backend (Synthesis)
 
 4. **Code Generator:** Traverses the AST and emits optimized, standards-compliant C11 source code. It handles the translation of Sage features (like string interpolation) into C-compatible logic.
-5. **Native Compiler (GCC):** `Core/Build/NativeBuilder` compiles each generated C module separately (`gcc -c` into `obj/<module>.o`, in parallel) and links the objects with the `extern` link libraries into a standalone binary (`.exe`). See [incremental builds](docs/incremental-build.md).
+5. **Native Compiler (GCC):** `Core/Build/NativeBuilder` compiles each generated C module separately (`gcc -c` into `obj/<module>.o`, in parallel) and links the objects with the `extern` link libraries into a standalone binary (`.exe`). Unchanged objects and executables are reused from a content-addressed cache. See [incremental builds](docs/incremental-build.md).
 6. **Process Executor:** Manages the secure execution and cleanup of the final program within the host environment.
 
 ## 2. Project Structure
