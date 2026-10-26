@@ -20,7 +20,7 @@ $cases = @(
     @{ Name = 'anonymous_field_result'; Code = 'var box: Box = { item = make() };'; Error = 'S196' },
     @{ Name = 'borrowed_field_source'; Code = $owner + 'var view: &OwnedFile = &owner; var box: Box = { item = view };'; Error = 'S191' },
     @{ Name = 'live_borrow_on_field_move'; Code = $owner + 'var view: &OwnedFile = &owner; var box: Box = { item = owner };'; Error = 'S178' },
-    @{ Name = 'resource_field_array'; Code = 'var values: Box[1] = { {} };'; Error = 'S196' },
+    @{ Name = 'resource_field_array'; Code = 'var values: Box[1] = { {} };' },
     @{ Name = 'declared_nested_resource_struct'; Code = 'struct Outer { box: Box; }' },
     @{ Name = 'resource_struct_pointer_field'; Code = 'struct Outer { box: Box*; }'; Error = 'S196' },
     @{ Name = 'global_resource_struct'; Code = 'var global: Box = {};'; Error = 'S196'; Global = $true },

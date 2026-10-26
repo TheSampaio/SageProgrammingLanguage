@@ -1,4 +1,4 @@
-# Local fixed arrays of native resources (v0.27.0)
+# Local fixed arrays of native resources (v0.27.0-v0.28.0)
 
 A local fixed array may contain direct native resource owners. A literal moves
 each named local owner or parameter into its corresponding element. Sources
@@ -22,9 +22,27 @@ return, and loop iteration exit, and skips null handles. No array heap
 allocation is added. The native resource destructor retains its declared
 best-effort contract.
 
+Since v0.28.0, a local fixed array may also contain a same-file struct with
+direct or nested resource fields. Each initialized element must be a struct
+literal. Omitted elements and fields are zeroed. Cleanup visits elements in
+reverse index order and recursively visits resource fields in reverse declaration
+order. A local `const` array has the same cleanup behavior.
+
+```sage
+struct Item { owner: OwnedHandle; }
+
+func example_struct_array(): none
+{
+    var owner: OwnedHandle = produce(1);
+    var items: Item[2] = { { owner = owner } };
+    // owner is moved; items[1] is empty.
+}
+```
+
 This is a bounded contract. Whole-array copies and assignments, array
 parameters/returns, globals, borrows, resource-array fields, and moving or
-replacing individual elements are rejected. Arrays of structs that contain
-resources also remain unsupported. Unsafe native code can still violate the
-declared ownership contract. `tests/native-resource-array.ps1` checks cleanup,
-partial initialization, source invalidation, and rejected unsupported uses.
+replacing individual elements are rejected. A named resource struct cannot be
+copied into an element; use a direct literal. Unsafe native code can still
+violate the declared ownership contract. `tests/native-resource-array.ps1` and
+`tests/native-resource-struct-array.ps1` check cleanup, partial initialization,
+source invalidation, and rejected unsupported uses.

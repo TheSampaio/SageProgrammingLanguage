@@ -229,7 +229,7 @@ may receive pure presence expressions directly.
 Resource globals and pointers
 to facade types remain rejected with S191. Direct resource fields are supported
 in the [local resource-struct subset](resource-structs.md). Local fixed arrays
-of native resources have a [bounded ownership subset](resource-arrays.md). Other resource comparisons,
+of native resources and resource structs have a [bounded ownership subset](resource-arrays.md). Other resource comparisons,
 interpolation, and implicit native arguments are also disabled. A resource is
 not inferred Copy. The bounded [byte-file API](byte-files.md) now provides safe
 borrowed byte operations and consuming close after valid acquisition. General
@@ -252,8 +252,8 @@ Implementation order:
 6. In progress: the bounded byte-file interface provides borrowed byte I/O and
    consuming fallible close. Safe general paths/strings and broader std migration
    remain unfinished. Fixed-capacity byte buffers and direct or nested resource fields in
-   local structs and fixed arrays of direct native resources are available;
-   resource-struct arrays, general collections, and C++ adapters
+   local structs and fixed arrays of native resources or resource structs are available;
+   general collections and C++ adapters
    need their own subsequent contracts.
 
 Invalid native contracts use S190. Acceptance tests are in
