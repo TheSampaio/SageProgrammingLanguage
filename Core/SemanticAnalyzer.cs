@@ -121,7 +121,7 @@ namespace Sage.Core
                         var signature = new CallableSignature(func.ReturnType, func.Parameters.Select(parameter => parameter.Type),
                             isUnsafe: true, nativeHeader: node.Header, nativeLibrary: node.Library,
                             nativeSymbol: func.CppBinding == null ? null : CNaming.ResolveFunctionName(func),
-                            nativeTarget: func.CppBinding == null ? null : $"{func.CppBinding.Kind}:{func.CppBinding.Target}");
+                            nativeTarget: func.CppBinding == null ? null : $"{func.CppBinding.Kind}:{func.CppBinding.Target}:{func.CppBinding.Recoverable}");
                         var existing = _symbolTable.Resolve(name);
                         if (existing != null)
                         {

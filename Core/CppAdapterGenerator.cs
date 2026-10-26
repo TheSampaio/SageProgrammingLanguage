@@ -7,7 +7,8 @@ namespace Sage.Core
     /// Generates the C++ translation unit that exposes <c>extern cpp</c> declarations to the C backend.
     /// Each adapter has C linkage, converts class handles to their C++ types, and contains C++
     /// exceptions: none may unwind into C frames, so an escaping exception terminates the process
-    /// with a diagnostic naming the Sage binding.
+    /// with a diagnostic naming the Sage binding. A binding that opts in with <c>catch</c> instead records the failure
+    /// in thread-local state, returns a zero value, and is queried through <c>= catch</c> / <c>= catch.message</c>.
     /// </summary>
     public sealed class CppAdapterGenerator
     {
@@ -32,6 +33,17 @@ namespace Sage.Core
             sb.AppendLine("    std::fprintf(stderr, \"Sage C++ interop: %s: %s\\n\", binding, reason);");
             sb.AppendLine("    std::abort();");
             sb.AppendLine("}");
+            if (cppBlocks.SelectMany(block => block.Declarations.OfType<FunctionDeclarationNode>()).Any(UsesFailureState))
+            {
+                // Fixed storage: recording a failure must not allocate while handling an exception.
+                sb.AppendLine("static thread_local bool sage_cpp_failed = false;");
+                sb.AppendLine("static thread_local char sage_cpp_failure[256] = \"\";");
+                sb.AppendLine("static void sage_cpp_reset() { sage_cpp_failed = false; sage_cpp_failure[0] = '\\0'; }");
+                sb.AppendLine("static void sage_cpp_record(const char* binding, const char* reason) {");
+                sb.AppendLine("    sage_cpp_failed = true;");
+                sb.AppendLine("    std::snprintf(sage_cpp_failure, sizeof sage_cpp_failure, \"%s: %s\", binding, reason);");
+                sb.AppendLine("}");
+            }
 
             var emitted = new HashSet<string>(StringComparer.Ordinal);
             foreach (var block in cppBlocks)
@@ -52,6 +64,9 @@ namespace Sage.Core
             return sb.ToString();
         }
 
+        private static bool UsesFailureState(FunctionDeclarationNode function) =>
+            function.CppBinding!.Recoverable || function.CppBinding.Kind is CppBindingKind.FailureStatus or CppBindingKind.FailureMessage;
+
         private static string Adapter(string alias, FunctionDeclarationNode function, string symbol, Dictionary<string, string> classes)
         {
             var binding = function.CppBinding!;
@@ -62,6 +77,18 @@ namespace Sage.Core
             string bindingName = $"{alias}::{function.Name}";
             bool returnsValue = function.ReturnType is not ("none" or "c_void");
 
+            string abiReturn = AbiType(alias, function.ReturnType, classes);
+            string abiSignature = signature.Length == 0 ? "void" : signature;
+            if (binding.Kind is CppBindingKind.FailureStatus or CppBindingKind.FailureMessage)
+            {
+                string state = binding.Kind == CppBindingKind.FailureStatus ? "sage_cpp_failed" : "sage_cpp_failure";
+                return $"\nextern \"C\" {abiReturn} {symbol}(void) {{ return {state}; }}\n";
+            }
+
+            // A recoverable binding reports a null handle like an exception: zero result, failure recorded.
+            string nullHandle = binding.Recoverable
+                ? $"{{ sage_cpp_record(\"{bindingName}\", \"null class handle\"); return{(returnsValue ? " {}" : "")}; }}"
+                : $"sage_cpp_fail(\"{bindingName}\", \"null class handle\");";
             var body = new StringBuilder();
             switch (binding.Kind)
             {
@@ -69,7 +96,7 @@ namespace Sage.Core
                     body.AppendLine(Return($"{binding.Target}({string.Join(", ", arguments)})"));
                     break;
                 case CppBindingKind.Method:
-                    body.AppendLine($"        if ({parameters[0].Name} == nullptr) sage_cpp_fail(\"{bindingName}\", \"null class handle\");");
+                    body.AppendLine($"        if ({parameters[0].Name} == nullptr) {nullHandle}");
                     body.AppendLine(Return($"{arguments[0]}->{binding.Target}({string.Join(", ", arguments.Skip(1))})"));
                     break;
                 case CppBindingKind.Constructor:
@@ -80,14 +107,19 @@ namespace Sage.Core
                     break;
             }
 
+            string reset = binding.Recoverable ? "    sage_cpp_reset();\n" : "";
+            string onStd = binding.Recoverable ? $"sage_cpp_record(\"{bindingName}\", error.what());" : $"sage_cpp_fail(\"{bindingName}\", error.what());";
+            string onAny = binding.Recoverable ? $"sage_cpp_record(\"{bindingName}\", \"unknown C++ exception\");" : $"sage_cpp_fail(\"{bindingName}\", \"unknown C++ exception\");";
+            string recover = binding.Recoverable ? (returnsValue ? "\n        return {};" : "\n        return;") : "";
+
             return $$"""
 
-                extern "C" {{AbiType(alias, function.ReturnType, classes)}} {{symbol}}({{(signature.Length == 0 ? "void" : signature)}}) {
-                    try {
+                extern "C" {{abiReturn}} {{symbol}}({{abiSignature}}) {
+                {{reset}}    try {
                 {{body}}    } catch (const std::exception& error) {
-                        sage_cpp_fail("{{bindingName}}", error.what());
+                        {{onStd}}{{recover}}
                     } catch (...) {
-                        sage_cpp_fail("{{bindingName}}", "unknown C++ exception");
+                        {{onAny}}{{recover}}
                     }
                 }
 

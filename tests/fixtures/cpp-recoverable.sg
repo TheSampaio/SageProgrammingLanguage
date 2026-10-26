@@ -1,0 +1,52 @@
+use console;
+
+extern cpp safe("cpp-recoverable.hpp") {
+    class Gate = safe::Gate;
+    func divide(a: c_int, b: c_int): c_int = safe::divide catch;
+    func check(value: c_int): none = safe::check catch;
+    func open(limit: c_int): Gate* = new catch;
+    func take(gate: Gate*, amount: c_int): c_int = .take catch;
+    func close(gate: Gate*): none = delete;
+    func failed(): b8 = catch;
+    func reason(): str = catch.message;
+    resource OwnedGate: Gate* drop close;
+}
+
+func report_failure(label: str): none
+{
+    unsafe
+    {
+        if (safe::failed()) { console::print_line("{label}: failed ({safe::reason()})"); }
+        else { console::print_line("{label}: ok"); }
+    }
+}
+
+func main(): none
+{
+    unsafe
+    {
+        var quotient: i32 = safe::divide(12, 4) as i32;
+        console::print_line("quotient={quotient}");
+        report_failure("divide ok");
+        var zero: i32 = safe::divide(1, 0) as i32;
+        console::print_line("recovered={zero}");
+        report_failure("divide zero");
+        safe::check(-1);
+        report_failure("check unknown");
+        safe::check(1);
+        report_failure("check ok");
+
+        var bad: OwnedGate = safe::open(-5) as OwnedGate;
+        report_failure("open bad");
+        if (bad == null) { console::print_line("no gate"); }
+        var gate: OwnedGate = safe::open(10) as OwnedGate;
+        report_failure("open good");
+        var left: i32 = safe::take(gate as Gate*, 4) as i32;
+        report_failure("take 4");
+        var over: i32 = safe::take(gate as Gate*, 99) as i32;
+        report_failure("take 99");
+        var none_handle: i32 = safe::take(0 as Gate*, 1) as i32;
+        report_failure("take null");
+        console::print_line("left={left} over={over} none={none_handle}");
+    }
+}

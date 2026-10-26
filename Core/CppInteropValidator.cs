@@ -59,6 +59,10 @@ namespace Sage.Core
                     throw new CompilerException(function, "S210", $"Destructor '{bindingName}' must take one class handle pointer and return none.");
                 case CppBindingKind.Method when !firstIsHandle:
                     throw new CompilerException(function, "S210", $"Member binding '{bindingName}' must take its class handle pointer as the first parameter.");
+                case CppBindingKind.FailureStatus when function.Parameters.Count != 0 || function.ReturnType != "b8":
+                    throw new CompilerException(function, "S210", $"Failure query '{bindingName}' (= catch) must take no parameters and return b8.");
+                case CppBindingKind.FailureMessage when function.Parameters.Count != 0 || function.ReturnType != "str":
+                    throw new CompilerException(function, "S210", $"Failure query '{bindingName}' (= catch.message) must take no parameters and return str.");
             }
         }
 

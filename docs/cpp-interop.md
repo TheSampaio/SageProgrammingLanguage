@@ -1,4 +1,4 @@
-# Bounded C++ interop (v0.31.0)
+# Bounded C++ interop (v0.31.1)
 
 Sage keeps its C backend. An `extern cpp` block declares the C++ API it needs;
 the compiler generates `extern "C"` adapters in `obj/sage_cpp_adapters.cpp`,
@@ -38,13 +38,47 @@ through automatic cleanup.
   shared by several modules produce one adapter (S152 rejects conflicts).
 - Class handles cross as incomplete C structs and are converted with
   `reinterpret_cast`; C++ object layout is never exposed to Sage.
-- No exception unwinds into C. An escaping exception, or a member call on a null
-  handle, prints `Sage C++ interop: <alias::name>: <reason>` to stderr and
-  aborts the process.
+- No exception unwinds into C. By default an escaping exception, or a member call
+  on a null handle, prints `Sage C++ interop: <alias::name>: <reason>` to stderr
+  and aborts the process. A binding can opt in to recoverable failures (below).
 - Headers resolve from the project source directory, the generated `obj/`
   directory, the compiler runtime includes, and directories of declared native
   sources. The optional second string links a prebuilt library (`-l`).
   Projects without C++ adapters or C++ sources never invoke `g++`.
+
+## Recoverable exceptions (v0.31.1)
+
+Abort stays the default. A binding opts in by ending with `catch`; the adapter
+then contains the exception, records it, and returns a zero result (`0`, `false`,
+or a null pointer; nothing for `none`). Two failure queries, declared in the same
+block, expose the outcome of the latest `catch` call on the calling thread:
+
+```sage
+extern cpp safe("safe.hpp") {
+    class Gate = safe::Gate;
+    func divide(a: c_int, b: c_int): c_int = safe::divide catch;
+    func open(limit: c_int): Gate* = new catch;             // null when the constructor throws
+    func take(gate: Gate*, n: c_int): c_int = .take catch;  // a null handle is a failure, not an abort
+    func close(gate: Gate*): none = delete;
+    func failed(): b8 = catch;                              // did the latest catch call fail?
+    func reason(): str = catch.message;                     // "alias::name: what()" or ""
+    resource OwnedGate: Gate* drop close;
+}
+```
+
+Every `catch` call resets the status first, so query it right after the call.
+A failure reports the Sage binding name and `what()` (`unknown C++ exception` for
+non-`std::exception` throws); the message is truncated to 255 bytes, lives in
+fixed thread-local storage, and is valid until the next `catch` call on that
+thread. `catch` is a reserved C++ word, so `= catch` and `= catch.message`
+cannot collide with a target name. `failed` takes no parameters and returns
+`b8`; `reason` takes none and returns `str` (S210 otherwise). Failure queries are
+native calls and require `unsafe` like the rest. Adapters without `catch`
+bindings carry no failure state. Declaring the same alias function once with and
+once without `catch` is a native contract conflict (S152). A failed constructor
+returns a null handle, which resource owners treat as absent (`owner == null`).
+Throwing destructors are contained like any other call; `catch` on `= delete`
+records the failure.
 
 ## Project native sources (v0.31.0)
 
@@ -85,7 +119,7 @@ blocks (S006).
 
 Not implemented: automatic header parsing (no Clang dependency is assumed;
 GCC is the supported toolchain), reference parameters, `std::string` and
-container mapping, recoverable exception results, operators,
+container mapping, operators,
 inheritance-aware casts, callbacks, thread-safety metadata, and per-source
 compiler flags. Declared types are trusted ABI contracts: a wrong
 declaration fails to compile in the adapter or, for conversions, behaves as

@@ -1,4 +1,4 @@
-﻿using Sage.Ast;
+using Sage.Ast;
 using Sage.Enums;
 using Sage.Interfaces;
 using Sage.Utilities;
@@ -249,8 +249,30 @@ namespace Sage.Core
             return CreateNode(new ExternBlockNode(alias, header, declarations, library, isCpp, sources), startToken);
         }
 
-        /// <summary>Parses the right-hand side of an extern cpp function: a target, <c>.member</c>, <c>new</c>, or <c>delete</c>.</summary>
+        /// <summary>
+        /// Parses the right-hand side of an extern cpp function: a target, <c>.member</c>, <c>new</c>, or <c>delete</c>,
+        /// optionally followed by <c>catch</c> to make exceptions recoverable. <c>catch</c> alone and <c>catch.message</c>
+        /// bind the failure queries; <c>catch</c> is a reserved C++ word, so it never names a target.
+        /// </summary>
         private CppBinding ParseCppBinding()
+        {
+            if (IsCatchWord())
+            {
+                _pos++;
+                if (!Match(TokenType.Dot)) return new CppBinding(CppBindingKind.FailureStatus);
+                var member = Consume(TokenType.Identifier, "Expected 'message' after 'catch.'.");
+                if (member.Value != "message") throw new CompilerException(member, "S001", "Expected 'message' after 'catch.'.");
+                return new CppBinding(CppBindingKind.FailureMessage);
+            }
+            var binding = ParseCppBindingTarget();
+            if (!IsCatchWord()) return binding;
+            _pos++;
+            return new CppBinding(binding.Kind, binding.Target, recoverable: true);
+        }
+
+        private bool IsCatchWord() => Current.Type == TokenType.Identifier && Current.Value == "catch";
+
+        private CppBinding ParseCppBindingTarget()
         {
             if (Match(TokenType.Keyword_New)) return new CppBinding(CppBindingKind.Constructor);
             if (Match(TokenType.Keyword_Delete)) return new CppBinding(CppBindingKind.Destructor);
