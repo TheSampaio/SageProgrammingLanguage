@@ -1,4 +1,5 @@
 using Sage.Core;
+using Sage.Graphify;
 using Sage.Utilities;
 
 namespace Sage
@@ -18,6 +19,8 @@ namespace Sage
             try
             {
                 args = DiagnosticOutput.ConfigureFromArgs(args);
+                if (args.Length > 0 && args[0].Equals("graphify", StringComparison.OrdinalIgnoreCase))
+                    return GraphifyCommand.Run(args[1..]);
                 if (HandleMetaCommands(args)) return 0;
                 return CompilationPipeline.Run(args);
             }

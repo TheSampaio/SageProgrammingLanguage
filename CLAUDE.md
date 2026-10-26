@@ -156,6 +156,15 @@ Add every new code to `Utilities/Diagnostics/DiagnosticCatalog.cs` and `docs/dia
 diagnostic on stdout; human output must stay unchanged. Attach related locations with
 `CompilerException.WithRelated`; see `docs/diagnostics.md`.
 
+## Graphify (semantic index)
+
+`Graphify/` implements `sage graphify` (see `docs/graphify.md`). It reuses the lexer, parser, and
+`SemanticAnalyzer` (never a second parser) and walks the analyzed AST by shape, so new AST nodes are
+indexed without touching it. The index is written to `obj/graphify` (deterministic, no timestamps);
+bump `GraphifyStore.SchemaVersion` when the persisted JSON changes incompatibly. Tests:
+`tests/graphify-index.ps1` with fixtures in `tests/fixtures/graphify`. It must never affect
+`run`/`build` behavior or output.
+
 ## VS Code extension (companion repo)
 
 The planned compiler-derived semantic navigation tool is named **Graphify**.

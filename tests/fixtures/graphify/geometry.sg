@@ -1,0 +1,6 @@
+struct Point { x: i32; y: i32; }
+module geometry {
+    func add(a: i32, b: i32): i32 { return a + b; }
+    func shift(p: &mut Point, dx: i32): none { p.x = add(p.x, dx); }
+    func norm(p: &Point): i32 { return p.x + p.y; }
+}

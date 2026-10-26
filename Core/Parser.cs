@@ -823,12 +823,13 @@ namespace Sage.Core
             var fields = new List<VariableDeclarationNode>();
             while (Current.Type != TokenType.CloseBrace && Current.Type != TokenType.EndOfFile)
             {
-                string fieldName = Consume(TokenType.Identifier).Value;
+                var fieldToken = Consume(TokenType.Identifier);
+                string fieldName = fieldToken.Value;
                 Consume(TokenType.Colon);
                 string fieldType = ConsumeType();
                 Consume(TokenType.Semicolon);
 
-                fields.Add(new VariableDeclarationNode(fieldName, fieldType, null!, false));
+                fields.Add(CreateNode(new VariableDeclarationNode(fieldName, fieldType, null!, false), fieldToken));
             }
             Consume(TokenType.CloseBrace);
 

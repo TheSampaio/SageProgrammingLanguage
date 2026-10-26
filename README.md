@@ -369,10 +369,13 @@ file directly with `sage <file>.test.sg` and read the `[PASS]`/`[FAIL]` output.
 
 ## Project Status
 
-The project is currently in **v0.35.0 (Alpha)**.
+The project is currently in **v0.35.1 (Alpha)**.
 
 Diagnostics are available as structured JSON with `--diagnostics json`; see
 [diagnostics](docs/diagnostics.md) for the stable code table and the JSON fields.
+
+`sage graphify build` persists a deterministic, incremental, compiler-derived semantic index
+under `obj/graphify`; see [Graphify](docs/graphify.md).
 
 Phase 2 now supports local fixed arrays of same-file structs containing native
 resources. Literal elements move named owners into fields; generated cleanup

@@ -1,0 +1,4 @@
+extern native("stdio.h") { type FILE; func fclose(value: FILE*): c_int; resource OwnedFile: FILE* drop fclose; }
+module files {
+    func release(f: OwnedFile): none {}
+}
