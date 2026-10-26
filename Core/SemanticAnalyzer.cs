@@ -935,6 +935,9 @@ namespace Sage.Core
 
         public string Visit(CastExpressionNode node)
         {
+            // A borrow must come from an explicit borrow of a live named owner; a cast would fabricate its source.
+            if (TypeSystem.IsBorrowType(node.TargetType))
+                throw new CompilerException(node, "S173", "A cast cannot create a borrow. Borrow a named owner with '&value' or '&mut value'.");
             RejectResourceAggregateType(node.TargetType, node);
             if (TypeSystem.IsArrayType(node.TargetType))
                 throw new CompilerException(node, "S188", "A cast cannot construct a fixed array. Use an array literal or a checked value copy.");
