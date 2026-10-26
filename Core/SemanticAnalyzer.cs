@@ -715,17 +715,28 @@ namespace Sage.Core
             RejectResourceAggregateType(targetType, node);
             if (TypeSystem.IsNativeResource(targetType))
             {
-                if (!ReferenceEquals(node, _standaloneAssignment) || node.Target is not IdentifierNode target ||
-                    node.Expression is not IdentifierNode source)
-                    throw new CompilerException(node, "S143", "Resource reassignment requires a standalone assignment between named local owners.");
-                var destination = _symbolTable.ResolveLocal(target.Name);
-                if (destination is not { IsOwningValue: true })
-                    throw new CompilerException(target, "S143", "A borrowed resource cannot be reassigned as an owner.");
+                if (!ReferenceEquals(node, _standaloneAssignment) || node.Expression is not IdentifierNode source)
+                    throw new CompilerException(node, "S143", "Resource reassignment requires a standalone assignment from a named local owner.");
+                SymbolMetadata? destination = null;
+                if (node.Target is IdentifierNode target)
+                {
+                    destination = _symbolTable.ResolveLocal(target.Name);
+                    if (destination is not { IsOwningValue: true })
+                        throw new CompilerException(target, "S143", "A borrowed resource cannot be reassigned as an owner.");
+                }
+                else if (node.Target is MemberAccessNode { Object: IdentifierNode container })
+                {
+                    var binding = _symbolTable.ResolveLocal(container.Name);
+                    if (binding is not { IsReference: false, Borrowing: BorrowKind.None } ||
+                        !_localStructs.Contains(binding.Type) || !IsResourceAggregate(binding.Type))
+                        throw new CompilerException(node.Target, "S143", "Resource field replacement requires a direct field of a local owning struct.");
+                }
+                else throw new CompilerException(node.Target, "S143", "Resource field replacement requires a direct field of a local owning struct.");
                 AnalyzeValue(source, targetType, "S108", "Assignment");
                 var origin = _symbolTable.ResolveLocal(source.Name);
                 if (origin is not { IsOwningValue: true })
                     throw new CompilerException(source, "S191", "A borrowed resource cannot be moved into an owner.");
-                if (ReferenceEquals(destination, origin))
+                if (destination != null && ReferenceEquals(destination, origin))
                     throw new CompilerException(node, "S143", "A resource owner cannot be assigned to itself.");
                 ConsumeReference(source, node, OwnershipKind.Moved);
                 node.VariableType = targetType;

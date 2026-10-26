@@ -16,7 +16,14 @@ $cases = @(
     @{ Name = 'duplicate_field_move'; Code = 'var owner: OwnedFile = make(); var pair: Pair = { first = owner, second = owner };'; Error = 'S140' },
     @{ Name = 'copy_struct'; Code = $box + 'var clone: Box = box;'; Error = 'S196' },
     @{ Name = 'assign_struct'; Code = $box + 'box = {};'; Error = 'S196' },
-    @{ Name = 'assign_resource_field'; Code = $box + 'var next: OwnedFile = make(); box.item = next;'; Error = 'S143' },
+    @{ Name = 'assign_resource_field'; Code = $box + 'var next: OwnedFile = make(); box.item = next;' },
+    @{ Name = 'replaced_source_unavailable'; Code = $box + 'var next: OwnedFile = make(); box.item = next; next;'; Error = 'S140' },
+    @{ Name = 'replaced_source_borrowed'; Code = $box + 'var next: OwnedFile = make(); var view: &OwnedFile = &next; box.item = view;'; Error = 'S191' },
+    @{ Name = 'replaced_source_live_loan'; Code = $box + 'var next: OwnedFile = make(); var view: &OwnedFile = &next; box.item = next;'; Error = 'S178' },
+    @{ Name = 'replace_const_struct_field'; Code = $owner + 'const box: Box = { item = owner }; var next: OwnedFile = make(); box.item = next;'; Error = 'S103' },
+    @{ Name = 'replace_with_anonymous_result'; Code = $box + 'box.item = make();'; Error = 'S143' },
+    @{ Name = 'replace_inside_expression'; Code = $box + 'var next: OwnedFile = make(); var result: i32 = (box.item = next);'; Error = 'S143' },
+    @{ Name = 'replace_from_outer_loop'; Code = $box + 'var next: OwnedFile = make(); for (var i: i32 = 0; i < 1; i++) { box.item = next; }'; Error = 'S145' },
     @{ Name = 'anonymous_field_result'; Code = 'var box: Box = { item = make() };'; Error = 'S196' },
     @{ Name = 'borrowed_field_source'; Code = $owner + 'var view: &OwnedFile = &owner; var box: Box = { item = view };'; Error = 'S191' },
     @{ Name = 'live_borrow_on_field_move'; Code = $owner + 'var view: &OwnedFile = &owner; var box: Box = { item = owner };'; Error = 'S178' },
@@ -40,8 +47,8 @@ try {
     $output = & dotnet $compilerPath $source 2>&1
     $text = $output -join "`n"
     $passes = @($output | Select-String '\[PASS\]').Count
-    if ($LASTEXITCODE -ne 0 -or $text -match '\[FAIL\]|error ' -or $passes -ne 10) {
-        throw "Resource struct runtime checks failed ($passes/10 PASS).`n$text"
+    if ($LASTEXITCODE -ne 0 -or $text -match '\[FAIL\]|error ' -or $passes -ne 19) {
+        throw "Resource struct runtime checks failed ($passes/19 PASS).`n$text"
     }
 
     foreach ($case in $cases) {

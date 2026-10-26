@@ -23,6 +23,7 @@ $cases = @(
     @{ Name = 'whole_array_copy'; Code = $array + 'var copy: Item[2] = items;'; Error = 'S196' },
     @{ Name = 'whole_array_assignment'; Code = $array + 'items = {};'; Error = 'S196' },
     @{ Name = 'element_replacement'; Code = $array + 'items[0] = {};'; Error = 'S196' },
+    @{ Name = 'array_field_replacement'; Code = $array + 'var next: OwnedFile = make(); items[0].tail = next;'; Error = 'S143' },
     @{ Name = 'array_borrow'; Code = $array + 'var view: &Item[2] = &items;'; Error = 'S196' },
     @{ Name = 'array_global'; Code = 'var items: Item[2];'; Error = 'S196'; Global = $true },
     @{ Name = 'array_parameter'; Code = 'func inspect(items: Item[2]): none {}'; Error = 'S196'; Global = $true },

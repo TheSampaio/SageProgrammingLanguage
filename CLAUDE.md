@@ -112,8 +112,9 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
   conflicting loans remain rejected; see `tests/native-resource-reassignment.ps1`.
 - Structs with direct or nested native resource fields support local literal
   initialization from named owners and recursive reverse-field cleanup. Empty
-  and omitted fields are zeroed. Whole-struct copies, calls, returns, and
-  resource-field assignment remain S196/S143 boundaries; see
+  and omitted fields are zeroed. Direct fields of mutable local structs support
+  standalone named-owner replacement. Whole-struct copies, calls, returns, and
+  nested or array-element field replacement remain S196/S143 boundaries; see
   `docs/resource-structs.md` and `tests/native-resource-nested-struct.ps1`.
 - Fixed local arrays of native resources or same-file resource structs accept
   direct literals or zero initialization. Cleanup drops elements in reverse

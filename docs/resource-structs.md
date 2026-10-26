@@ -1,4 +1,4 @@
-# Local structs with native resources (v0.25.0-v0.28.0)
+# Local structs with native resources (v0.25.0-v0.29.0)
 
 A struct may declare direct fields of a validated native resource type. A local
 literal may initialize each such field from a named owning local or parameter.
@@ -29,9 +29,23 @@ func example(): none
 This is a bounded contract. The struct must be declared in the same Sage source
 as the local binding. Whole-struct copies, assignments, borrowing, function
 parameters/returns, globals, pointers to these structs, and heap `new`
-are rejected with S196. Replacing or extracting a resource field is not yet
-supported. Copyable scalar fields remain accessible and mutable. Unsafe native
+are rejected with S196. Extracting a resource field is not yet supported.
+Copyable scalar fields remain accessible and mutable. Unsafe native
 calls and fabricated handles can still violate the declared destructor contract.
+
+Since v0.29.0, a standalone assignment may replace a direct native resource
+field of a mutable local resource struct from a named local owner. The old field
+is released once, the source becomes unavailable, and the replacement is cleaned
+up with the struct. An empty old field requires no destructor call. Anonymous
+producer results, borrowed or already moved sources, conflicting loans, and
+constant destinations are rejected. Nested fields and array element fields still
+need their own ownership contract.
+
+```sage
+var pair: Pair = {};
+var next: OwnedHandle = produce(3);
+pair.first = next; // next moves; the previous pair.first is released.
+```
 
 Since v0.28.0, local fixed arrays of these structs support direct element
 literals and recursive cleanup. See [resource arrays](resource-arrays.md).

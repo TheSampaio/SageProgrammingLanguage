@@ -116,9 +116,11 @@ func is_empty(value: &OwnedFile): b8
 
 Moving a resource out of a borrowed binding is rejected (S191), including from
 mutable parameters. Deleting a borrow is S174; upgrading shared/const access to
-mutable is S171. Whole resource replacement remains disabled, even through a
-mutable borrow. Borrowed returns and native ABI borrow signatures remain disabled
-(S173); resource arrays/fields are still unsupported.
+mutable is S171. Replacement through a mutable borrow remains disabled; only
+named-owner replacement of a direct local struct field is supported. Borrowed
+returns and native ABI borrow signatures remain disabled (S173). See the bounded
+[resource struct](resource-structs.md) and [resource array](resource-arrays.md)
+contracts.
 
 Raw handle exposure inside a borrowed wrapper is trusted unsafe code. Its author
 must respect shared versus mutable access, check required handle validity, and
@@ -227,8 +229,9 @@ may receive pure presence expressions directly.
 ## Remaining boundaries
 
 Resource globals and pointers
-to facade types remain rejected with S191. Direct resource fields are supported
-in the [local resource-struct subset](resource-structs.md). Local fixed arrays
+to facade types remain rejected with S191. Direct resource fields, including
+standalone replacement from named local owners, are supported in the
+[local resource-struct subset](resource-structs.md). Local fixed arrays
 of native resources and resource structs have a [bounded ownership subset](resource-arrays.md). Other resource comparisons,
 interpolation, and implicit native arguments are also disabled. A resource is
 not inferred Copy. The bounded [byte-file API](byte-files.md) now provides safe
