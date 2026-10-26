@@ -1,4 +1,5 @@
 ﻿using Sage.Ast;
+using Sage.Core.Build;
 using Sage.Utilities;
 using System.Diagnostics;
 
@@ -31,10 +32,12 @@ namespace Sage.Core
             var parsedModules = new Dictionary<string, ProgramNode>();
             var generatedCFiles = new List<string>();
             var analyzer = new SemanticAnalyzer();
+            var moduleGraph = new ModuleGraph();
 
             queue.Enqueue(config.InputPath);
 
-            ParseAndDiscover(queue, parsedModules, config, env, analyzer);
+            ParseAndDiscover(queue, parsedModules, moduleGraph, config, env, analyzer);
+            if (config.IsDebugMode) CompilerLogger.LogInfo($"Module graph: {moduleGraph.Describe()}");
             analyzer.ValidateNativeResourceContracts();
             GenerateCode(parsedModules, generatedCFiles, config, env, analyzer);
 
@@ -79,6 +82,7 @@ namespace Sage.Core
         private static void ParseAndDiscover(
             Queue<string> queue,
             Dictionary<string, ProgramNode> parsedModules,
+            ModuleGraph moduleGraph,
             CompilerConfig config,
             CompilationEnvironment env,
             SemanticAnalyzer analyzer)
@@ -114,10 +118,12 @@ namespace Sage.Core
                 var ast = new Parser(tokens, Path.GetFileName(path)).Parse();
                 analyzer.RegisterModuleSymbols(ast);
                 parsedModules.Add(moduleName, ast);
+                moduleGraph.AddModule(moduleName);
 
                 foreach (var use in ast.Statements.OfType<UseNode>())
                 {
                     ResolveDependency(use, env, queue);
+                    moduleGraph.AddDependency(moduleName, use.Module);
                 }
             }
         }

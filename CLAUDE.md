@@ -141,6 +141,11 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
   reject byte/block writes and flush before stdio, including zero-limit writes.
   Do not add input-only modes without keeping incompatible output guarded.
 
+## Incremental native builds
+
+- `Core/Build/ModuleGraph` holds the `use` dependency graph (discovery order,
+  cycles tolerated); `--verbose` prints it. See `docs/incremental-build.md`.
+
 ## Generated C
 
 - A single shared prelude `sage.h` holds the type aliases; every module header includes it (no
