@@ -338,6 +338,7 @@ The bundled standard library (`Sandbox/std/`) doubles as the reference for idiom
 | `file`    | File I/O over `<stdio.h>` (opaque `FILE`, `c_*` aliases).               |
 | `byte_file` | Owned binary byte/block I/O, bounded ASCII paths, existing read-only input, explicit outcomes and consuming close. |
 | `byte_buffer` | Owned fixed-capacity byte storage, checked initialized-prefix access and consuming release. |
+| `text`    | Owned fixed-capacity text: append, compare, print and bounded line input without `unsafe`. |
 | `http_client` | Legacy shell-based `curl` helpers (`unsafe`; caller must validate inputs). |
 | `http_server` | Minimal HTTP server on Winsock (links `ws2_32`).                        |
 | `test`    | Unit-testing assertions that emit `[PASS]`/`[FAIL]` lines.              |
@@ -348,6 +349,8 @@ compiler in `Runtime/include`. Since v0.19.0, import `http_client` and
 
 The [owned byte buffer](docs/byte-buffers.md) supports safe creation, shared reads,
 exclusive mutation, and automatic cleanup without exposing native storage.
+[Owned text](docs/text.md) adds safe strings and bounded `read_line`; the
+[std migration audit](docs/std-migration.md) tracks the remaining unsafe APIs.
 
 Direct native calls and legacy unbounded input helpers require an explicit
 `unsafe` context; see [migration and remaining contracts](docs/native-boundaries.md).
@@ -374,7 +377,7 @@ file directly with `sage <file>.test.sg` and read the `[PASS]`/`[FAIL]` output.
 
 ## Project Status
 
-The project is currently in **v0.37.1 (Alpha)**.
+The project is currently in **v0.33.0 (Alpha)**.
 
 Phase 5 resolves callables only through direct `use` imports and rejects
 callables whose generated C symbols would collide (S212); see [modules](docs/modules.md).

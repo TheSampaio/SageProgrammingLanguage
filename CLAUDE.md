@@ -149,6 +149,11 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
   Native mode fixes output capability: `can_write` reports it; read-only handles
   reject byte/block writes and flush before stdio, including zero-limit writes.
   Do not add input-only modes without keeping incompatible output guarded.
+- `text` (`Text`) is the safe owned string: fixed capacity, all-or-nothing
+  appends with `b8` outcomes, byte-wise compare, `print`/`print_line`, and
+  bounded `read_line` (replaces unsafe `console.read_line`). Read-only/mutating
+  operations are `method func` with `&`/`&mut` receivers; consuming `release`
+  stays qualified. New std containers follow this shape; see `docs/text.md`.
 - `extern cpp alias("header.hpp") { ... }` binds explicit C++ targets (`= ns::f`,
   `= "ns::f<int>"`, `= .member`, `= new`, `= delete`; `class H = ns::T;` handles)
   through generated `extern "C"` adapters (`CppAdapterGenerator`, validated by

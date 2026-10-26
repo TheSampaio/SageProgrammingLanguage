@@ -32,3 +32,9 @@ no raw pointers and use owned resources or plain values.
 | (none) | dynamic collections | no growable owned container | open |
 
 The rows below record each migration increment as it lands.
+
+## Migration log
+
+| Version | Change | Resulting status |
+| --- | --- | --- |
+| 0.33.0 | New `text` module: owned `Text` with fixed capacity, append/compare/print and bounded `read_line` ([text](text.md)) | owned strings: enforced; `console.read_line`: migrated to `Text.read_line` |

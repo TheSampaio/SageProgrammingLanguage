@@ -35,7 +35,8 @@ boundary explicitly; ownership, borrowing and bounds checks remain enabled there
   through a command shell; it is not an argument-escaping API.
 - The legacy `console.read_line(buffer: str)` is now `unsafe func`. It uses an
   unbounded token read and has no capacity contract. A string literal is not a
-  writable buffer. A bounded, ownership-aware replacement remains future work.
+  writable buffer. Since v0.33.0 the bounded, ownership-aware replacement is
+  `Text.read_line()` in the [`text` module](text.md).
 - Legacy `http_client.fetch`, `post`, and `download` are now `unsafe func`: they interpolate
   caller data into shell commands without escaping it. This increment does not
   harden that transport. `get_into`, file, memory, and http_server raw interfaces already
