@@ -229,7 +229,7 @@ may receive pure presence expressions directly.
 ## Remaining boundaries
 
 Resource globals and pointers
-to facade types remain rejected with S191. Direct resource fields, including
+to facade types remain rejected with S191. Resource fields, including nested
 standalone replacement from named local owners, are supported in the
 [local resource-struct subset](resource-structs.md). Local fixed arrays
 of native resources and resource structs have a [bounded ownership subset](resource-arrays.md). Other resource comparisons,

@@ -728,14 +728,24 @@ namespace Sage.Core
                     if (destination is not { IsOwningValue: true })
                         throw new CompilerException(target, "S143", "A borrowed resource cannot be reassigned as an owner.");
                 }
-                else if (node.Target is MemberAccessNode { Object: IdentifierNode container })
+                else if (node.Target is MemberAccessNode field)
                 {
-                    var binding = _symbolTable.ResolveLocal(container.Name);
+                    AstNode container = field.Object;
+                    while (container is MemberAccessNode nested)
+                    {
+                        if (nested.VariableType == null || !_localStructs.Contains(nested.VariableType) ||
+                            !IsResourceAggregate(nested.VariableType))
+                            throw new CompilerException(node.Target, "S143", "Resource field replacement requires a field path through local resource structs.");
+                        container = nested.Object;
+                    }
+                    if (container is not IdentifierNode root)
+                        throw new CompilerException(node.Target, "S143", "Resource field replacement requires a local resource struct root.");
+                    var binding = _symbolTable.ResolveLocal(root.Name);
                     if (binding is not { IsReference: false, Borrowing: BorrowKind.None } ||
                         !_localStructs.Contains(binding.Type) || !IsResourceAggregate(binding.Type))
-                        throw new CompilerException(node.Target, "S143", "Resource field replacement requires a direct field of a local owning struct.");
+                        throw new CompilerException(node.Target, "S143", "Resource field replacement requires a local owning struct.");
                 }
-                else throw new CompilerException(node.Target, "S143", "Resource field replacement requires a direct field of a local owning struct.");
+                else throw new CompilerException(node.Target, "S143", "Resource field replacement requires a local owning struct field.");
                 AnalyzeValue(source, targetType, "S108", "Assignment");
                 var origin = _symbolTable.ResolveLocal(source.Name);
                 if (origin is not { IsOwningValue: true })

@@ -1,4 +1,4 @@
-# Local structs with native resources (v0.25.0-v0.29.0)
+# Local structs with native resources (v0.25.0-v0.30.0)
 
 A struct may declare direct fields of a validated native resource type. A local
 literal may initialize each such field from a named owning local or parameter.
@@ -38,13 +38,19 @@ field of a mutable local resource struct from a named local owner. The old field
 is released once, the source becomes unavailable, and the replacement is cleaned
 up with the struct. An empty old field requires no destructor call. Anonymous
 producer results, borrowed or already moved sources, conflicting loans, and
-constant destinations are rejected. Nested fields and array element fields still
-need their own ownership contract.
+constant destinations are rejected. Since v0.30.0, the field may be reached
+through nested resource structs rooted at the same local binding. Cleanup still
+visits all fields recursively. Resource fields of array elements remain outside
+this replacement contract.
 
 ```sage
 var pair: Pair = {};
 var next: OwnedHandle = produce(3);
 pair.first = next; // next moves; the previous pair.first is released.
+
+var wrapped: Wrapped = {};
+var another: OwnedHandle = produce(4);
+wrapped.pair.first = another; // A nested field path also moves the owner.
 ```
 
 Since v0.28.0, local fixed arrays of these structs support direct element
