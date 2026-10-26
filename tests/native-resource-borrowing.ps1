@@ -22,7 +22,7 @@ $cases = @(
     @{ Name = 'move_from_shared'; Code = 'func steal(value: &OwnedFile): none { var next: OwnedFile = value; } func main(): none {}'; Error = 'S191' },
     @{ Name = 'move_from_mutable'; Code = 'func steal(value: &mut OwnedFile): none { var next: OwnedFile = value; } func main(): none {}'; Error = 'S191' },
     @{ Name = 'move_from_local_loan'; Code = 'unsafe func main(): none { ' + $owner + 'var view: &OwnedFile = &owner; var next: OwnedFile = view; }'; Error = 'S191' },
-    @{ Name = 'delete_borrowed_resource'; Code = 'func destroy(value: &mut OwnedFile): none { delete value; } func main(): none {}'; Error = 'S174' },
+    @{ Name = 'delete_borrowed_resource'; Code = 'unsafe func destroy(value: &mut OwnedFile): none { delete value; } unsafe func main(): none {}'; Error = 'S174' },
     @{ Name = 'const_mutable_borrow'; Code = 'unsafe func main(): none { const owner: OwnedFile = (0 as FILE*) as OwnedFile; var view: &mut OwnedFile = &mut owner; }'; Error = 'S171' },
     @{ Name = 'shared_upgrade'; Code = 'func upgrade(value: &OwnedFile): none { var view: &mut OwnedFile = &mut value; } func main(): none {}'; Error = 'S171' },
     @{ Name = 'same_call_alias'; Code = 'func both(a: &mut OwnedFile, b: &OwnedFile): none {} unsafe func main(): none { ' + $owner + 'both(&mut owner, &owner); }'; Error = 'S172' },

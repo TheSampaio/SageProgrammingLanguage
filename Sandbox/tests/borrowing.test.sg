@@ -17,7 +17,7 @@ func add_counter(counter: &mut BorrowedCounter, delta: i32): none { counter.valu
 
 func main(): none
 {
-    var owner: BorrowedCounter = new BorrowedCounter { value = 4 };
+    var owner: BorrowedCounter = { value = 4 };
     test::assert_eq_i32("shared_owner_read", read_counter(&owner), 4);
     increment_counter(&mut owner);
     test::assert_eq_i32("mutable_owner_write", owner.value, 5);
@@ -39,4 +39,12 @@ func main(): none
     var pair: BorrowedPair = { first = { value = 1 }, second = { value = 2 } };
     increment_pair(&mut pair);
     test::assert_eq_i32("nested_value_borrow", pair.first.value, 2);
+
+    // Legacy heap references remain a trusted unsafe boundary and still borrow safely.
+    unsafe
+    {
+        var heap: BorrowedCounter = new BorrowedCounter { value = 1 };
+        increment_counter(&mut heap);
+        test::assert_eq_i32("unsafe_heap_reference_borrow", read_counter(&heap), 2);
+    }
 }

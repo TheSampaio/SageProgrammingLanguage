@@ -363,7 +363,7 @@ namespace Sage.Core
 
             if (TypeSystem.IsRawPointer(node.Type) && !InUnsafe)
                 throw new CompilerException(node, "S121",
-                    $"Raw pointer type '{node.Type}' can only be used inside an 'unsafe' block. Use 'new' for safe heap allocation.");
+                    $"Raw pointer type '{node.Type}' can only be used inside an 'unsafe' block. Use a plain value or a borrow ('&T') in safe code.");
 
             if (node.Initializer != null)
             {
@@ -1010,6 +1010,7 @@ namespace Sage.Core
 
         public string Visit(NewExpressionNode node)
         {
+            RequireManualMemoryContext(node, "new");
             RejectResourceAggregateType(node.TypeName, node);
             if (_functionDepth == 0 || !ReferenceEquals(node, _owningInitializer))
                 throw new CompilerException(node, "S146", "An allocation must directly initialize a local owning binding before its value can be used.");
@@ -1027,6 +1028,7 @@ namespace Sage.Core
 
         public string Visit(DeleteNode node)
         {
+            RequireManualMemoryContext(node, "delete");
             if (node.Target is IdentifierNode borrowed && _symbolTable.Resolve(borrowed.Name) is { Borrowing: BorrowKind.Shared or BorrowKind.Mutable })
                 throw new CompilerException(node, "S174", $"Borrowed value '{borrowed.Name}' cannot be deleted.");
             node.Target.Accept(this);
@@ -1036,6 +1038,17 @@ namespace Sage.Core
             if (node.Target is IdentifierNode target)
                 ConsumeReference(target, node, OwnershipKind.Released);
             return "none";
+        }
+
+        /// <summary>
+        /// Manual heap management is a trusted boundary: safe Sage uses plain values, which the
+        /// compiler copies, moves, and cleans up automatically.
+        /// </summary>
+        private void RequireManualMemoryContext(AstNode node, string keyword)
+        {
+            if (!InUnsafe)
+                throw new CompilerException(node, "S133",
+                    $"'{keyword}' is manual memory management and requires an 'unsafe' block or 'unsafe func'. Use a plain struct value instead; it is cleaned up automatically.");
         }
 
         public string Visit(MemberAccessNode node)

@@ -10,7 +10,7 @@ func increment(counter: &mut Counter): none { counter.value++; }
 
 func main(): none
 {
-    var counter: Counter = new Counter { value = 1 };
+    var counter: Counter = { value = 1 };
     var before: i32 = read(&counter);
     increment(&mut counter);
     // counter is still owned here and has value 2.
@@ -40,7 +40,7 @@ values cannot be copied or returned through this rule.
 An explicit local binding retains a borrow until the end of its lexical scope:
 
 ```sage
-var owner: Counter = new Counter { value = 1 };
+var owner: Counter = { value = 1 };
 if (true)
 {
     var view: &mut Counter = &mut owner;

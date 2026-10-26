@@ -70,7 +70,9 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
 - Raw pointers (`T*`, incl. `none*`) are only allowed inside an `unsafe { }` block or an `unsafe func`.
   `extern` is implicitly unsafe. `str` is a safe string type, not a raw pointer. Gating lives in
   `SemanticAnalyzer` via an unsafe-context depth counter.
-- `new T { ... }` allocates on the heap and yields a **reference** (surface type `T`,
+- `new`/`delete` are unsafe-only since v0.32.2 (S133); safe code uses plain values,
+  borrows, and resource owners (migration in `docs/memory.md`).
+  `new T { ... }` allocates on the heap and yields a **reference** (surface type `T`,
   represented as `T*` in C with `->` access; no pointer arithmetic). Freed with `delete` (→ `free`).
   Reference-ness is carried by `AstNode.IsReference` and `SymbolMetadata.IsReference`.
   Local reference initialization now transfers ownership. Use after transfer or deletion

@@ -1,12 +1,44 @@
 # Implemented memory semantics
 
-## Local heap references (v0.8.2)
+## Breaking change: `new` / `delete` require `unsafe` (v0.32.2)
 
-`new` and `delete` remain transitional syntax. A local binding initialized from
+Safe Sage no longer exposes manual memory management. `new` and `delete` are
+rejected outside an `unsafe { }` block or `unsafe func` with **S133**:
+
+```text
+main.sg(5,24): error S133: 'new' is manual memory management and requires an
+'unsafe' block or 'unsafe func'. Use a plain struct value instead; it is
+cleaned up automatically.
+```
+
+Raw pointers were already unsafe-only (S120-S123). Inside `unsafe`, the legacy
+heap references below keep every existing check (moves S140, deletion S141,
+branch joins S142, direct owners S146, scope cleanup), so `unsafe` code that
+needs a stable address for C, such as `std/http_server.sg`, keeps working.
+
+### Migration
+
+| Before (safe code) | After |
+|--------------------|-------|
+| `var a: T = new T { f = 1 };` | `var a: T = { f = 1 };` (a plain value) |
+| `delete a;` | Remove it; values and owners are released at scope exit. |
+| Passing the reference to mutate it | Pass `&mut a` to a `&mut T` parameter. |
+| Reading through a shared reference | Pass `&a` to a `&T` parameter. |
+| Transferring a native handle | Use a `resource` owner or a resource struct; they move. |
+| Handing C a stable address | Keep `new` inside `unsafe` next to the native call. |
+
+Plain struct values copy when all fields are Copy, and move when they own
+native resources ([resource structs](resource-structs.md)). Programs that relied
+on a heap reference only to avoid a copy should use a borrow instead.
+
+## Local heap references (v0.8.2, unsafe-only since v0.32.2)
+
+`new` and `delete` are a trusted unsafe boundary. A local binding initialized from
 `new` owns that allocation. Initializing another binding from it transfers
 ownership instead of making an independently usable alias:
 
 ```sage
+// Inside unsafe { ... }:
 var first: Item = new Item { value = 7 };
 var second: Item = first;
 // first.value is now an S140 error.
@@ -40,6 +72,7 @@ more precise loop analysis remains future work.
 | S144 | Operation needs an owning or borrowing contract not yet implemented |
 | S145 | A loop might consume an outer reference repeatedly |
 | S146 | An allocation needs a local owning binding |
+| S133 | `new` or `delete` used outside an unsafe context |
 
 S140–S142 report the source location of the invalidating operation. Passing or
 returning heap references, and storing them inside arrays or struct fields, is
@@ -76,7 +109,7 @@ and array elements. A surrounding owning initializer does not adopt inner
 allocations. Bind the owner before reading its fields:
 
 ```sage
-// Rejected: var value: i32 = (new Item { value = 7 }).value;
+// Inside unsafe { ... }. Rejected: var value: i32 = (new Item { value = 7 }).value;
 var owner: Item = new Item { value = 7 };
 var value: i32 = owner.value;
 ```
