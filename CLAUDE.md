@@ -151,6 +151,10 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
 
 Format: `file(line,col): error CODE: message`. The real source file is tracked via
 `CompilerLogger.CurrentFile` (set per module by the pipeline) — never hardcode a filename.
+Add every new code to `Utilities/Diagnostics/DiagnosticCatalog.cs` and `docs/diagnostics.md`
+(`tests/diagnostics-json.ps1` enforces both). `--diagnostics json` emits one JSON object per
+diagnostic on stdout; human output must stay unchanged. Attach related locations with
+`CompilerException.WithRelated`; see `docs/diagnostics.md`.
 
 ## VS Code extension (companion repo)
 

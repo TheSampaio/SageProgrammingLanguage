@@ -102,6 +102,7 @@ namespace Sage.Core
                     throw new FileNotFoundException($"Source file not found: {path}");
                 }
 
+                DiagnosticOutput.RegisterSource(path);
                 var tokens = new Lexer(File.ReadAllText(path)).Tokenize();
 
                 if (config.IsDebugMode)

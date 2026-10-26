@@ -30,6 +30,28 @@ namespace Sage.Utilities
         /// </summary>
         public int Column { get; }
 
+        /// <summary>Related symbols and locations that explain the error, such as the operation that invalidated an owner.</summary>
+        public IReadOnlyList<DiagnosticRelated> Related => _related;
+
+        /// <summary>An actionable correction that is specific to this occurrence; falls back to the catalogued hint when null.</summary>
+        public string? Suggestion { get; private set; }
+
+        private readonly List<DiagnosticRelated> _related = [];
+
+        /// <summary>Attaches a related symbol or location to this error and returns it for fluent throwing.</summary>
+        public CompilerException WithRelated(string? symbol, string? note, string? file, int line, int column)
+        {
+            _related.Add(new DiagnosticRelated(symbol, note, file, line, column));
+            return this;
+        }
+
+        /// <summary>Attaches an occurrence-specific correction hint and returns this error for fluent throwing.</summary>
+        public CompilerException WithSuggestion(string suggestion)
+        {
+            Suggestion = suggestion;
+            return this;
+        }
+
         /// <summary>
         /// Initializes a new instance of the <see cref="CompilerException"/> class using a source token.
         /// Used primarily by the Lexer and Parser.

@@ -17,6 +17,7 @@ namespace Sage
 
             try
             {
+                args = DiagnosticOutput.ConfigureFromArgs(args);
                 if (HandleMetaCommands(args)) return 0;
                 return CompilationPipeline.Run(args);
             }
