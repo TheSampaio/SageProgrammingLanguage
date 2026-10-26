@@ -1,4 +1,5 @@
 use byte_file;
+use byte_buffer;
 use test;
 
 func open_existing(): ByteFile

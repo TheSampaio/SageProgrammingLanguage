@@ -208,6 +208,14 @@ namespace Sage.Core
             return "";
         }
 
+        public string Visit(MethodCallNode node)
+        {
+            if (node.Lowered != null) return node.Lowered.Accept(this);
+            node.Receiver.Accept(this);
+            foreach (var arg in node.Arguments) arg.Accept(this);
+            return "";
+        }
+
         public string Visit(InterpolatedStringNode node)
         {
             // String interpolation is transpiled to snprintf, requiring stdio.h

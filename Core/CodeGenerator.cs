@@ -172,6 +172,10 @@ namespace Sage.Core
             return $"{cName}({string.Join(", ", cArgs)})";
         }
 
+        /// <summary>An extension-method call emits the qualified call validated by semantic analysis.</summary>
+        public string Visit(MethodCallNode node) =>
+            (node.Lowered ?? throw new InvalidOperationException($"Method '{node.Name}' was not resolved.")).Accept(this);
+
         /// <summary>
         /// Transpiles a variable declaration, handling constants and arrays.
         /// </summary>
@@ -727,6 +731,7 @@ namespace Sage.Core
                 ExpressionStatementNode statement => new[] { statement.Expression },
                 DeleteNode deleted => new[] { deleted.Target },
                 FunctionCallNode call => call.Arguments,
+                MethodCallNode method => method.Lowered != null ? [method.Lowered] : [method.Receiver, .. method.Arguments],
                 MemberAccessNode member => new[] { member.Object },
                 ArrayAccessNode access => new[] { access.Array, access.Index },
                 ArrayInitializationNode array => array.Elements,

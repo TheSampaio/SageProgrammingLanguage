@@ -34,12 +34,8 @@ namespace Sage.Core
             _native.TryAdd(symbol, sageName);
         }
 
-        // The entry point is deliberately emitted as 'main' and follows the entry-point rules instead.
-        private static string? SymbolOf(FunctionDeclarationNode function)
-        {
-            string symbol = CNaming.ResolveFunctionName(function);
-            return symbol == "main" ? null : symbol;
-        }
+        // Every function named 'main' lowers to C 'main', so a module 'main' collides with the entry point.
+        private static string? SymbolOf(FunctionDeclarationNode function) => CNaming.ResolveFunctionName(function);
 
         private static CompilerException Collision(FunctionDeclarationNode function, string symbol, string sageName, string existing) =>
             new(function, "S212", $"Native symbol collision: '{sageName}' and '{existing}' both link as C symbol '{symbol}'. Rename one declaration.");
