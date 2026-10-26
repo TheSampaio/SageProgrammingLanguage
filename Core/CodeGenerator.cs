@@ -109,7 +109,7 @@ namespace Sage.Core
             var sb = new StringBuilder();
             var arrayParameters = node.Parameters.Where(parameter => TypeSystem.IsArrayType(parameter.Type) && !TypeSystem.IsBorrowType(parameter.Type))
                 .ToDictionary(parameter => parameter.Name, _ => MintName("_incoming"));
-            var resourceParameters = node.Parameters.Where(parameter => TypeSystem.IsNativeResource(parameter.Type))
+            var resourceParameters = node.Parameters.Where(parameter => IsOwnedValueType(parameter.Type))
                 .ToDictionary(parameter => parameter.Name, _ => MintName("_resource_incoming"));
             sb.Append($"{Indent}{cReturnType} {cName}(");
 
@@ -130,7 +130,7 @@ namespace Sage.Core
 
             foreach (var parameter in node.Parameters.Where(parameter => resourceParameters.ContainsKey(parameter.Name)))
             {
-                string helper = ResourceCleanupHelper(parameter.Type);
+                string helper = OwnedCleanupHelper(parameter.Type);
                 sb.AppendLine($"{Indent}{parameter.Type} {parameter.Name} __attribute__((cleanup({helper}))) = {resourceParameters[parameter.Name]};");
             }
 
@@ -168,7 +168,7 @@ namespace Sage.Core
             var cArgs = node.Arguments.Select(a =>
             {
                 string expression = a.Accept(this);
-                if (!node.IsExternCall && a.VariableType != null && TypeSystem.IsNativeResource(a.VariableType))
+                if (!node.IsExternCall && a is IdentifierNode && a.VariableType != null && IsOwnedValueType(a.VariableType))
                     return MoveResource(expression, a.VariableType);
                 return a is ArrayInitializationNode && a.VariableType != null && TypeSystem.IsArrayType(a.VariableType)
                     ? $"({TypeSystem.ToCType(TypeSystem.GetArrayBaseType(a.VariableType))}[{TypeSystem.GetArraySize(a.VariableType)}]){expression}"
@@ -189,6 +189,14 @@ namespace Sage.Core
             if (_structures.TryGetValue(node.Type, out var structure) && IsResourceAggregate(node.Type))
             {
                 string helper = AggregateCleanupHelper(node.Type, structure);
+                if (node.Initializer is IdentifierNode or FunctionCallNode)
+                {
+                    // Move or receive the whole value before introducing a possibly shadowing owner name.
+                    string carrier = MintName("_resource_move");
+                    string value = node.Initializer is IdentifierNode ? MoveResource(initialValue!, node.Type) : initialValue!;
+                    return $"{Indent}{node.Type} {carrier} = {value};\n" +
+                        $"{Indent}{node.Type} {node.Name} __attribute__((cleanup({helper}))) = {carrier};\n";
+                }
                 return $"{Indent}{node.Type} {node.Name} __attribute__((cleanup({helper}))){init};\n";
             }
 
@@ -335,14 +343,16 @@ namespace Sage.Core
         /// </summary>
         public string Visit(AssignmentNode node)
         {
-            if (node.VariableType != null && TypeSystem.IsNativeResource(node.VariableType))
+            if (node.VariableType != null && IsOwnedValueType(node.VariableType))
             {
-                string destination = node.Target.Accept(this);
+                string type = node.VariableType;
                 string origin = node.Expression.Accept(this);
+                if (node.Expression is IdentifierNode) origin = MoveResource(origin, type);
                 string incoming = MintName("_resource_replacement");
-                string helper = ResourceCleanupHelper(node.VariableType);
-                return $"({{ {node.VariableType} {incoming} = {origin}; {origin}._sage_handle = NULL; " +
-                    $"{helper}(&{destination}); {destination} = {incoming}; }})";
+                string place = MintName("_resource_place");
+                // Take the incoming value first, evaluate the destination place once, then drop its old value.
+                return $"({{ {type} {incoming} = {origin}; {type}* {place} = &({node.Target.Accept(this)}); " +
+                    $"{OwnedCleanupHelper(type)}({place}); *{place} = {incoming}; }})";
             }
             if (node.VariableType == null || !TypeSystem.IsArrayType(node.VariableType))
                 return $"{node.Target.Accept(this)} = {node.Expression.Accept(this)}";
@@ -363,7 +373,7 @@ namespace Sage.Core
         public string Visit(ReturnNode node)
         {
             string expression = node.Expression.Accept(this);
-            if (node.VariableType != null && TypeSystem.IsNativeResource(node.VariableType))
+            if (node.Expression is IdentifierNode && node.VariableType != null && IsOwnedValueType(node.VariableType))
             {
                 return $"{Indent}return {MoveResource(expression, node.VariableType)};\n";
             }
@@ -569,7 +579,7 @@ namespace Sage.Core
             foreach (var kvp in node.Fields)
             {
                 string value = kvp.Value.Accept(this);
-                if (kvp.Value.VariableType != null && TypeSystem.IsNativeResource(kvp.Value.VariableType))
+                if (kvp.Value is IdentifierNode && kvp.Value.VariableType != null && IsOwnedValueType(kvp.Value.VariableType))
                     value = MoveResource(value, kvp.Value.VariableType);
                 initList.Add($".{kvp.Key} = {value}");
             }
@@ -594,7 +604,7 @@ namespace Sage.Core
             var elements = node.Elements.Select(element =>
             {
                 string value = element.Accept(this);
-                return TypeSystem.IsNativeResourceArray(node.VariableType ?? "")
+                return element is IdentifierNode && (TypeSystem.IsNativeResourceArray(node.VariableType ?? "") || IsResourceAggregateArray(node.VariableType ?? ""))
                     ? MoveResource(value, TypeSystem.GetArrayBaseType(node.VariableType!)) : value;
             });
             return $"{{ {string.Join(", ", elements)} }}";
@@ -620,12 +630,22 @@ namespace Sage.Core
             return name;
         }
 
-        /// <summary>Moves a validated named resource place into an unowned C carrier.</summary>
+        /// <summary>
+        /// Moves a validated named owner into an unowned C carrier. A resource clears its handle; a resource
+        /// struct is zeroed so every nested handle is null and the source's scope cleanup becomes a no-op.
+        /// </summary>
         private string MoveResource(string expression, string type)
         {
             string result = MintName("_resource_transfer");
-            return $"({{ {type} {result} = {expression}; {expression}._sage_handle = NULL; {result}; }})";
+            string clear = IsResourceAggregate(type) ? $"{expression} = ({type}){{0}}" : $"{expression}._sage_handle = NULL";
+            return $"({{ {type} {result} = {expression}; {clear}; {result}; }})";
         }
+
+        /// <summary>True for values that carry a destructor obligation: native resources and resource structs.</summary>
+        private bool IsOwnedValueType(string type) => TypeSystem.IsNativeResource(type) || IsResourceAggregate(type);
+
+        private string OwnedCleanupHelper(string type) => TypeSystem.IsNativeResource(type)
+            ? ResourceCleanupHelper(type) : AggregateCleanupHelper(type, _structures[type]);
 
         private string ResourceCleanupHelper(string type)
         {

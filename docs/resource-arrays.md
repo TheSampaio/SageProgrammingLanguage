@@ -39,10 +39,17 @@ func example_struct_array(): none
 }
 ```
 
+Since v0.32.0, a named resource struct owner can be moved into an element
+literal, and a standalone assignment can replace an element or a resource field
+reached through an element: `handles[i] = next`, `items[i] = pair`,
+`items[i] = {}`, or `items[i].inner.owner = next`. The source must be a named
+local owner (or a literal for a struct element). The old value is released once
+after the incoming value is taken; the index is checked first.
+
 This is a bounded contract. Whole-array copies and assignments, array
-parameters/returns, globals, borrows, resource-array fields, and moving or
-replacing individual elements are rejected. A named resource struct cannot be
-copied into an element; use a direct literal. Unsafe native code can still
-violate the declared ownership contract. `tests/native-resource-array.ps1` and
-`tests/native-resource-struct-array.ps1` check cleanup, partial initialization,
-source invalidation, and rejected unsupported uses.
+parameters/returns, globals, borrows, resource-array fields, and moving an
+element out of an array are rejected. Unsafe native code can still violate the
+declared ownership contract. `tests/native-resource-array.ps1`,
+`tests/native-resource-struct-array.ps1`, and `tests/native-resource-struct-move.ps1`
+check cleanup, partial initialization, source invalidation, replacement, and
+rejected unsupported uses.

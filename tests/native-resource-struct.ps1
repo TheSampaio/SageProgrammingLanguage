@@ -14,8 +14,9 @@ $cases = @(
     @{ Name = 'empty_struct'; Code = 'var box: Box = {};' },
     @{ Name = 'use_after_field_move'; Code = $box + 'owner;'; Error = 'S140' },
     @{ Name = 'duplicate_field_move'; Code = 'var owner: OwnedFile = make(); var pair: Pair = { first = owner, second = owner };'; Error = 'S140' },
-    @{ Name = 'copy_struct'; Code = $box + 'var clone: Box = box;'; Error = 'S196' },
-    @{ Name = 'assign_struct'; Code = $box + 'box = {};'; Error = 'S196' },
+    @{ Name = 'move_struct'; Code = $box + 'var moved: Box = box;' },
+    @{ Name = 'use_after_struct_move'; Code = $box + 'var moved: Box = box; var value: i32 = box.value;'; Error = 'S140' },
+    @{ Name = 'reset_struct'; Code = $box + 'box = {};' },
     @{ Name = 'assign_resource_field'; Code = $box + 'var next: OwnedFile = make(); box.item = next;' },
     @{ Name = 'replaced_source_unavailable'; Code = $box + 'var next: OwnedFile = make(); box.item = next; next;'; Error = 'S140' },
     @{ Name = 'replaced_source_borrowed'; Code = $box + 'var next: OwnedFile = make(); var view: &OwnedFile = &next; box.item = view;'; Error = 'S191' },
@@ -31,8 +32,9 @@ $cases = @(
     @{ Name = 'declared_nested_resource_struct'; Code = 'struct Outer { box: Box; }' },
     @{ Name = 'resource_struct_pointer_field'; Code = 'struct Outer { box: Box*; }'; Error = 'S196' },
     @{ Name = 'global_resource_struct'; Code = 'var global: Box = {};'; Error = 'S196'; Global = $true },
-    @{ Name = 'resource_struct_parameter'; Code = 'func take(box: Box): none {}'; Error = 'S196'; Global = $true },
-    @{ Name = 'resource_struct_return'; Code = 'func create(): Box { return {}; }'; Error = 'S196'; Global = $true },
+    @{ Name = 'resource_struct_parameter'; Code = 'func take(box: Box): none {}'; Global = $true },
+    @{ Name = 'resource_struct_return'; Code = 'func create(): Box { return {}; }'; Global = $true },
+    @{ Name = 'resource_struct_borrow_parameter'; Code = 'func view(box: &Box): none {}'; Error = 'S196'; Global = $true },
     @{ Name = 'resource_struct_new'; Code = 'var box: Box = new Box {};'; Error = 'S196' },
     @{ Name = 'resource_struct_cast'; Code = $box + 'unsafe { var raw: Box* = box as Box*; }'; Error = 'S196' }
 )

@@ -202,6 +202,12 @@ namespace Sage.Core
             return ownsResource;
         }
 
+        /// <summary>
+        /// True for a resource struct declared in the current source file. Only these layouts have
+        /// generated cleanup helpers, so only they can move by value between owners.
+        /// </summary>
+        private bool IsMovableResourceAggregate(string type) => _localStructs.Contains(type) && IsResourceAggregate(type);
+
         private void RejectResourceAggregateType(string type, AstNode operation)
         {
             string valueType = TypeSystem.GetBorrowedType(type);
@@ -245,13 +251,16 @@ namespace Sage.Core
         public string Visit(FunctionDeclarationNode node)
         {
             RegisterFunction(node, node.ModuleOwner);
-            RejectResourceAggregateType(node.ReturnType, node);
-            foreach (var parameter in node.Parameters) RejectResourceAggregateType(parameter.Type, node);
+            bool isEntryPoint = node.Name.Equals("main", StringComparison.OrdinalIgnoreCase);
+            bool returnsAggregate = !node.IsExtern && IsMovableResourceAggregate(node.ReturnType);
+            if (!returnsAggregate) RejectResourceAggregateType(node.ReturnType, node);
+            foreach (var parameter in node.Parameters)
+                if (node.IsExtern || isEntryPoint || !IsMovableResourceAggregate(parameter.Type)) RejectResourceAggregateType(parameter.Type, node);
             bool returnsResource = TypeSystem.IsNativeResource(node.ReturnType);
             if (!returnsResource || node.IsExtern) RejectResourceValueType(node.ReturnType, node);
-            if (returnsResource && node.Name.Equals("main", StringComparison.OrdinalIgnoreCase))
+            if ((returnsResource || returnsAggregate) && isEntryPoint)
                 throw new CompilerException(node, "S191", "The entry point cannot return an owning native resource.");
-            if (node.Name.Equals("main", StringComparison.OrdinalIgnoreCase))
+            if (isEntryPoint)
                 foreach (var parameter in node.Parameters) RejectResourceValueType(parameter.Type, node);
             foreach (var parameter in node.Parameters)
                 if (!IsResourceBorrow(parameter.Type) && !TypeSystem.IsNativeResource(parameter.Type)) RejectResourceValueType(parameter.Type, node);
@@ -291,7 +300,8 @@ namespace Sage.Core
             try
             {
                 foreach (var param in node.Parameters)
-                    _symbolTable.Define(param.Name, TypeSystem.GetBorrowedType(param.Type), borrowing: TypeSystem.GetBorrowKind(param.Type));
+                    _symbolTable.Define(param.Name, TypeSystem.GetBorrowedType(param.Type), borrowing: TypeSystem.GetBorrowKind(param.Type),
+                        ownsResources: IsMovableResourceAggregate(param.Type));
 
                 if (!node.IsExtern && node.Body != null)
                 {
@@ -328,8 +338,8 @@ namespace Sage.Core
             if (isResourceAggregate)
             {
                 if (_functionDepth == 0 || !_localStructs.Contains(node.Type) ||
-                    node.Initializer is not (StructInitializationNode or ArrayInitializationNode))
-                    throw new CompilerException(node, "S196", "A resource-containing struct requires direct local initialization with a struct literal.");
+                    node.Initializer is not (StructInitializationNode or ArrayInitializationNode or IdentifierNode or FunctionCallNode))
+                    throw new CompilerException(node, "S196", "A resource-containing struct requires local initialization from a struct literal, a named owner move, or a direct owning call.");
             }
             else if (isResourceAggregateArray)
             {
@@ -372,15 +382,15 @@ namespace Sage.Core
                 node.IsReference = node.Initializer.IsReference;
             }
 
-            if (node.Initializer is IdentifierNode source && (node.IsReference || isResource))
+            if (node.Initializer is IdentifierNode source && (node.IsReference || isResource || isResourceAggregate))
             {
-                if (isResource && _symbolTable.Resolve(source.Name) is not { IsOwningValue: true })
+                if ((isResource || isResourceAggregate) && _symbolTable.Resolve(source.Name) is not { IsOwningValue: true })
                     throw new CompilerException(source, "S191", "A borrowed resource cannot initialize an owning value. Ownership stays with its source.");
                 ConsumeReference(source, node, OwnershipKind.Moved);
             }
 
             _symbolTable.Define(node.Name, node.Type, isConstant: node.IsConstant,
-                isReference: node.IsReference, declarationLoopDepth: _loopDepth);
+                isReference: node.IsReference, declarationLoopDepth: _loopDepth, ownsResources: isResourceAggregate);
             return node.Type;
         }
 
@@ -443,9 +453,11 @@ namespace Sage.Core
             node.ResolvedName = name;
             node.IsExternCall = symbol.IsExtern;
             var signature = symbol.Signature ?? throw new InvalidOperationException($"Callable '{name}' has no signature.");
-            RejectResourceAggregateType(signature.ReturnType, node);
-            foreach (var parameterType in signature.ParameterTypes) RejectResourceAggregateType(parameterType, node);
-            bool returnsResource = TypeSystem.IsNativeResource(signature.ReturnType);
+            bool returnsAggregate = !symbol.IsExtern && IsMovableResourceAggregate(signature.ReturnType);
+            if (!returnsAggregate) RejectResourceAggregateType(signature.ReturnType, node);
+            foreach (var parameterType in signature.ParameterTypes)
+                if (symbol.IsExtern || !IsMovableResourceAggregate(parameterType)) RejectResourceAggregateType(parameterType, node);
+            bool returnsResource = TypeSystem.IsNativeResource(signature.ReturnType) || returnsAggregate;
             if (!returnsResource || symbol.IsExtern) RejectResourceValueType(signature.ReturnType, node);
             if (symbol.IsExtern)
                 foreach (string parameter in signature.ParameterTypes) RejectResourceValueType(parameter, node);
@@ -458,7 +470,7 @@ namespace Sage.Core
                     $"Function '{name}' expects {signature.ParameterTypes.Count} arguments, but received {node.Arguments.Count}.");
 
             bool hasBorrowedParameters = signature.ParameterTypes.Any(TypeSystem.IsBorrowType);
-            bool hasOwningParameters = signature.ParameterTypes.Any(TypeSystem.IsNativeResource);
+            bool hasOwningParameters = signature.ParameterTypes.Any(IsOwningParameter);
             var borrowed = new Dictionary<SymbolMetadata, (BorrowKind Kind, BorrowExpressionNode Expression)>();
             var transferred = new HashSet<SymbolMetadata>();
             for (int index = 0; index < node.Arguments.Count; index++)
@@ -488,7 +500,7 @@ namespace Sage.Core
                 }
                 if (arg is BorrowExpressionNode)
                     throw new CompilerException(arg, "S170", $"Argument {index + 1} of '{name}' expects a value, not a borrow.");
-                if (TypeSystem.IsNativeResource(parameterType))
+                if (IsOwningParameter(parameterType))
                 {
                     if (arg is not IdentifierNode owner)
                         throw new CompilerException(arg, "S194", "A consuming resource argument must name a local owner. Bind producer results before the call.");
@@ -517,6 +529,9 @@ namespace Sage.Core
 
             return symbol.Type;
         }
+
+        /// <summary>A by-value parameter that adopts a native resource or a movable resource struct.</summary>
+        private bool IsOwningParameter(string type) => TypeSystem.IsNativeResource(type) || IsMovableResourceAggregate(type);
 
         public string Visit(BorrowExpressionNode node)
         {
@@ -595,9 +610,7 @@ namespace Sage.Core
                     {
                         if (IsResourceAggregateArray(targetType))
                         {
-                            if (element is not (StructInitializationNode or ArrayInitializationNode))
-                                throw new CompilerException(element, "S196", "An array of resource structs requires a literal for each initialized element.");
-                            AnalyzeValue(element, elementType, "S181", "Array element");
+                            AnalyzeAggregateOwnerValue(element, elementType, array, "Array element");
                             continue;
                         }
                         if (TypeSystem.IsNativeResourceArray(targetType))
@@ -651,14 +664,31 @@ namespace Sage.Core
                 }
                 if (IsResourceAggregate(field.Type))
                 {
-                    if (value is not (StructInitializationNode or ArrayInitializationNode))
-                        throw new CompilerException(value, "S196", "A nested resource struct requires a literal; copying a named struct would duplicate its owners.");
-                    AnalyzeValue(value, field.Type, "S181", $"Field '{type}.{name}'");
+                    AnalyzeAggregateOwnerValue(value, field.Type, initializer, $"Field '{type}.{name}'");
                     continue;
                 }
                 AnalyzeValue(value, field.Type, "S181", $"Field '{type}.{name}'");
                 RequireValueContract(value);
             }
+        }
+
+        /// <summary>
+        /// Checks a value stored into an owning resource-struct place: a literal builds it in place,
+        /// while a named owner moves its whole value and becomes unavailable.
+        /// </summary>
+        private void AnalyzeAggregateOwnerValue(AstNode value, string type, AstNode operation, string description)
+        {
+            if (value is IdentifierNode owner)
+            {
+                AnalyzeValue(owner, type, "S181", description);
+                if (_symbolTable.ResolveLocal(owner.Name) is not { IsOwningValue: true })
+                    throw new CompilerException(owner, "S191", "Only a named local owner can move into a resource struct place.");
+                ConsumeReference(owner, operation, OwnershipKind.Moved);
+                return;
+            }
+            if (value is not (StructInitializationNode or ArrayInitializationNode))
+                throw new CompilerException(value, "S196", "A resource struct place requires a struct literal or a named local owner move.");
+            AnalyzeValue(value, type, "S181", description);
         }
 
         // --- Standard Visitor Implementations ---
@@ -712,10 +742,12 @@ namespace Sage.Core
             }
 
             string targetType = node.Target.Accept(this);
-            RejectResourceAggregateType(targetType, node);
-            if (TypeSystem.IsNativeResource(targetType))
+            bool replacesAggregate = IsMovableResourceAggregate(targetType);
+            if (!replacesAggregate) RejectResourceAggregateType(targetType, node);
+            if (TypeSystem.IsNativeResource(targetType) || replacesAggregate)
             {
-                if (!ReferenceEquals(node, _standaloneAssignment) || node.Expression is not IdentifierNode source)
+                bool literalAggregate = replacesAggregate && node.Expression is StructInitializationNode or ArrayInitializationNode;
+                if (!ReferenceEquals(node, _standaloneAssignment) || (node.Expression is not IdentifierNode && !literalAggregate))
                     throw new CompilerException(node, "S143", "Resource reassignment requires a standalone assignment from a named local owner.");
                 SymbolMetadata? destination = null;
                 if (node.Target is IdentifierNode target)
@@ -724,31 +756,19 @@ namespace Sage.Core
                     if (destination is not { IsOwningValue: true })
                         throw new CompilerException(target, "S143", "A borrowed resource cannot be reassigned as an owner.");
                 }
-                else if (node.Target is MemberAccessNode field)
-                {
-                    AstNode container = field.Object;
-                    while (container is MemberAccessNode nested)
-                    {
-                        if (nested.VariableType == null || !_localStructs.Contains(nested.VariableType) ||
-                            !IsResourceAggregate(nested.VariableType))
-                            throw new CompilerException(node.Target, "S143", "Resource field replacement requires a field path through local resource structs.");
-                        container = nested.Object;
-                    }
-                    if (container is not IdentifierNode root)
-                        throw new CompilerException(node.Target, "S143", "Resource field replacement requires a local resource struct root.");
-                    var binding = _symbolTable.ResolveLocal(root.Name);
-                    if (binding is not { IsReference: false, Borrowing: BorrowKind.None } ||
-                        !_localStructs.Contains(binding.Type) || !IsResourceAggregate(binding.Type))
-                        throw new CompilerException(node.Target, "S143", "Resource field replacement requires a local owning struct.");
-                }
-                else throw new CompilerException(node.Target, "S143", "Resource field replacement requires a local owning struct field.");
-                AnalyzeValue(source, targetType, "S108", "Assignment");
-                var origin = _symbolTable.ResolveLocal(source.Name);
-                if (origin is not { IsOwningValue: true })
-                    throw new CompilerException(source, "S191", "A borrowed resource cannot be moved into an owner.");
-                if (destination != null && ReferenceEquals(destination, origin))
+                else RequireOwningResourcePlace(node.Target);
+                if (node.Expression is IdentifierNode source && destination != null &&
+                    ReferenceEquals(destination, _symbolTable.ResolveLocal(source.Name)))
                     throw new CompilerException(node, "S143", "A resource owner cannot be assigned to itself.");
-                ConsumeReference(source, node, OwnershipKind.Moved);
+                if (replacesAggregate) AnalyzeAggregateOwnerValue(node.Expression, targetType, node, "Assignment");
+                else
+                {
+                    var owner = (IdentifierNode)node.Expression;
+                    AnalyzeValue(owner, targetType, "S108", "Assignment");
+                    if (_symbolTable.ResolveLocal(owner.Name) is not { IsOwningValue: true })
+                        throw new CompilerException(owner, "S191", "A borrowed resource cannot be moved into an owner.");
+                    ConsumeReference(owner, node, OwnershipKind.Moved);
+                }
                 node.VariableType = targetType;
                 return targetType;
             }
@@ -767,6 +787,34 @@ namespace Sage.Core
             node.IsReference = node.Target.IsReference;
 
             return targetType;
+        }
+
+        /// <summary>
+        /// Validates a replaced owning place: a field or element path through local resource structs
+        /// and local resource arrays, rooted at a local owner rather than a borrow or legacy reference.
+        /// </summary>
+        private void RequireOwningResourcePlace(AstNode place)
+        {
+            AstNode container = place switch
+            {
+                MemberAccessNode field => field.Object,
+                ArrayAccessNode element => element.Array,
+                _ => throw new CompilerException(place, "S143", "Resource replacement requires a local owner, field, or array element.")
+            };
+            while (container is MemberAccessNode or ArrayAccessNode)
+            {
+                if (container.VariableType == null || !IsMovableResourceAggregate(container.VariableType))
+                    throw new CompilerException(place, "S143", "Resource replacement requires a path through local resource structs and arrays.");
+                container = container is MemberAccessNode nested ? nested.Object : ((ArrayAccessNode)container).Array;
+            }
+            if (container is not IdentifierNode root)
+                throw new CompilerException(place, "S143", "Resource replacement requires a local owning root.");
+            var binding = _symbolTable.ResolveLocal(root.Name);
+            string rootType = binding?.Type ?? "";
+            bool ownedRoot = IsMovableResourceAggregate(rootType) || TypeSystem.IsNativeResourceArray(rootType) ||
+                (IsResourceAggregateArray(rootType) && _localStructs.Contains(TypeSystem.GetArrayBaseType(rootType)));
+            if (binding is not { IsReference: false, Borrowing: BorrowKind.None } || !ownedRoot)
+                throw new CompilerException(place, "S143", "Resource replacement requires a local owning struct or array root.");
         }
 
         public string Visit(ExternBlockNode node)
@@ -845,6 +893,14 @@ namespace Sage.Core
         {
             if (_currentReturnType == null)
                 throw new CompilerException(node, "S162", "A return statement must be inside a function.");
+            if (IsMovableResourceAggregate(_currentReturnType))
+            {
+                if (node.Expression is not (IdentifierNode or StructInitializationNode or ArrayInitializationNode))
+                    throw new CompilerException(node, "S193", "Return a named local resource struct owner or a struct literal. Bind a producer result before returning it.");
+                AnalyzeAggregateOwnerValue(node.Expression, _currentReturnType, node, "Return expression");
+                node.VariableType = _currentReturnType;
+                return _currentReturnType;
+            }
             RejectResourceAggregateType(_currentReturnType, node);
             if (TypeSystem.IsNativeResource(_currentReturnType))
             {
