@@ -145,6 +145,9 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
 
 - `Core/Build/ModuleGraph` holds the `use` dependency graph (discovery order,
   cycles tolerated); `--verbose` prints it. See `docs/incremental-build.md`.
+- `Core/Build/NativeBuilder` compiles each `NativeTranslationUnit` (source + compiler +
+  flags + include dirs) with `-c` into `obj/<name>.o`, then links. New native sources
+  (e.g. C++ adapters) plug in as extra units in `CompilationPipeline.LinkNativeBinary`.
 
 ## Generated C
 

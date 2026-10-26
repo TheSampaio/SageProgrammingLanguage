@@ -195,7 +195,7 @@ namespace Sage.Core
         }
 
         /// <summary>
-        /// Invokes the native toolchain to link generated C files into an executable binary.
+        /// Compiles each generated C file into its own object file and links the objects into an executable binary.
         /// </summary>
         private static int LinkNativeBinary(List<string> cFiles, HashSet<string> libraries, CompilerConfig config, CompilationEnvironment env)
         {
@@ -206,16 +206,17 @@ namespace Sage.Core
                 exeName = new DirectoryInfo(env.ProjectRoot).Name;
 
             string exePath = Path.Combine(env.BinDir, $"{exeName}.exe");
-            string sources = string.Join(" ", cFiles.Select(f => $"\"{Path.GetFullPath(f)}\""));
-            string libFlags = libraries.Count > 0
-                ? " " + string.Join(" ", libraries.OrderBy(l => l, StringComparer.Ordinal).Select(l => $"-l{l}"))
-                : "";
             string runtimeIncludes = Path.Combine(AppContext.BaseDirectory, "Runtime", "include");
-            string args = $"{sources} -o \"{exePath}\" -std=c11 -I\"{env.ObjDir}\" -I\"{runtimeIncludes}\"{libFlags}";
+            string[] includeDirectories = [env.ObjDir, runtimeIncludes];
+
+            // Native build integration point: every native source (generated C modules today,
+            // other C/C++ sources later) becomes one translation unit compiled to obj/<name>.o.
+            var units = cFiles.Select(file => NativeTranslationUnit.ForC(file, includeDirectories)).ToList();
+            var link = new NativeLinkRequest(exePath, libraries);
 
             if (config.IsDebugMode) CompilerLogger.LogInfo("Invoking native toolchain: gcc");
 
-            ProcessExecutor.Run("gcc", args);
+            new NativeBuilder(config.IsDebugMode).Build(units, link);
 
             if (config.RunOnSuccess)
             {
