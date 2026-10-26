@@ -319,6 +319,7 @@ namespace Sage.Core
         public string Visit(VariableDeclarationNode node)
         {
             bool isResource = TypeSystem.IsNativeResource(node.Type);
+            bool isResourceArray = TypeSystem.IsNativeResourceArray(node.Type);
             bool isResourceAggregate = IsResourceAggregate(node.Type);
             if (isResourceAggregate)
             {
@@ -327,7 +328,9 @@ namespace Sage.Core
                     throw new CompilerException(node, "S196", "A resource-containing struct requires direct local initialization with a struct literal.");
             }
             else RejectResourceAggregateType(node.Type, node);
-            if (_functionDepth == 0 || (!isResource && !IsResourceBorrow(node.Type))) RejectResourceValueType(node.Type, node);
+            if (isResourceArray && (_functionDepth == 0 || node.Initializer is not (null or ArrayInitializationNode)))
+                throw new CompilerException(node, "S197", "A resource array requires local zero initialization or a direct array literal.");
+            if (_functionDepth == 0 || (!isResource && !isResourceArray && !IsResourceBorrow(node.Type))) RejectResourceValueType(node.Type, node);
             RejectResourceBindingName(node.Name, node);
             ValidateArrayLength(node.Type, node);
             if (_symbolTable.IsDefinedInCurrentScope(node.Name))
@@ -580,6 +583,16 @@ namespace Sage.Core
                     string elementType = TypeSystem.GetArrayBaseType(targetType);
                     foreach (var element in array.Elements)
                     {
+                        if (TypeSystem.IsNativeResourceArray(targetType))
+                        {
+                            if (element is not IdentifierNode owner)
+                                throw new CompilerException(element, "S197", "A resource array element must move a named local owner.");
+                            AnalyzeValue(owner, elementType, "S181", "Array element");
+                            if (_symbolTable.ResolveLocal(owner.Name) is not { IsOwningValue: true })
+                                throw new CompilerException(owner, "S191", "A borrowed resource cannot initialize an owning array element.");
+                            ConsumeReference(owner, array, OwnershipKind.Moved);
+                            continue;
+                        }
                         AnalyzeValue(element, elementType, "S181", "Array element");
                         RequireValueContract(element);
                     }
@@ -1047,6 +1060,8 @@ namespace Sage.Core
 
         private void RequireValueContract(AstNode expression)
         {
+            if (expression.VariableType != null && TypeSystem.IsNativeResourceArray(expression.VariableType))
+                throw new CompilerException(expression, "S197", "A resource array cannot be copied or passed as an ordinary value.");
             if (expression.VariableType != null) RejectResourceAggregateType(expression.VariableType, expression);
             if (expression.VariableType != null && TypeSystem.IsNativeResource(expression.VariableType))
                 throw new CompilerException(expression, "S191", "A native resource cannot be copied or passed as an ordinary value. Move it into a local owning binding.");

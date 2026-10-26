@@ -214,7 +214,7 @@ namespace Sage.Core
         public string Visit(BlockNode node) { foreach (var s in node.Statements) s.Accept(this); return ""; }
         public string Visit(VariableDeclarationNode node)
         {
-            if (TypeSystem.IsNativeResource(node.Type)) AddHeader("stddef.h");
+            if (TypeSystem.IsNativeResource(node.Type) || TypeSystem.IsNativeResourceArray(node.Type)) AddHeader("stddef.h");
             if (TypeSystem.IsArrayType(node.Type) && node.Initializer != null && node.Initializer is not ArrayInitializationNode) AddHeader("string.h");
             node.Initializer?.Accept(this); return "";
         }

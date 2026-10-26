@@ -28,7 +28,7 @@ func example(): none
 
 This is a bounded contract. The struct must be declared in the same Sage source
 as the local binding. Whole-struct copies, assignments, borrowing, function
-parameters/returns, globals, arrays, pointers to these structs, and heap `new`
+parameters/returns, globals, arrays of these structs, pointers to these structs, and heap `new`
 are rejected with S196. Replacing or extracting a resource field is not yet
 supported. Copyable scalar fields remain accessible and mutable. Unsafe native
 calls and fabricated handles can still violate the declared destructor contract.

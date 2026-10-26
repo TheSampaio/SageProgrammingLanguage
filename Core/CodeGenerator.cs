@@ -17,6 +17,7 @@ namespace Sage.Core
         private int _tempCounter = 0;
         private readonly Dictionary<string, string> _cleanupHelpers = new();
         private readonly Dictionary<string, string> _resourceCleanupHelpers = new();
+        private readonly Dictionary<string, string> _resourceArrayCleanupHelpers = new();
         private readonly Dictionary<string, string> _aggregateCleanupHelpers = new();
         private readonly List<string> _aggregateCleanupOrder = [];
         private readonly Dictionary<string, StructDeclarationNode> _structures = new(StringComparer.Ordinal);
@@ -37,6 +38,7 @@ namespace Sage.Core
         {
             _cleanupHelpers.Clear();
             _resourceCleanupHelpers.Clear();
+            _resourceArrayCleanupHelpers.Clear();
             _aggregateCleanupHelpers.Clear();
             _aggregateCleanupOrder.Clear();
             _structures.Clear();
@@ -61,6 +63,13 @@ namespace Sage.Core
                 var contract = TypeSystem.GetNativeResource(type)!;
                 sb.AppendLine($"static void {helper}({type}* owner) {{ if (owner->_sage_handle != NULL) {{ " +
                     $"(void){contract.DestructorName}(owner->_sage_handle); owner->_sage_handle = NULL; }} }}");
+            }
+            foreach (var (type, helper) in _resourceArrayCleanupHelpers)
+            {
+                string elementType = TypeSystem.GetArrayBaseType(type);
+                int length = TypeSystem.GetArraySize(type);
+                sb.AppendLine($"static void {helper}({elementType} (*owner)[{length}]) {{ " +
+                    $"for (int i = {length}; i > 0; --i) {_resourceCleanupHelpers[elementType]}(&(*owner)[i - 1]); }}");
             }
             foreach (var type in _aggregateCleanupOrder)
             {
@@ -172,6 +181,15 @@ namespace Sage.Core
             {
                 string helper = AggregateCleanupHelper(node.Type, structure);
                 return $"{Indent}{node.Type} {node.Name} __attribute__((cleanup({helper}))){init};\n";
+            }
+
+            if (TypeSystem.IsNativeResourceArray(node.Type))
+            {
+                string elementType = TypeSystem.GetArrayBaseType(node.Type);
+                int length = TypeSystem.GetArraySize(node.Type);
+                string helper = ResourceArrayCleanupHelper(node.Type);
+                if (string.IsNullOrEmpty(init)) init = " = {0}";
+                return $"{Indent}{elementType} {node.Name}[{length}] __attribute__((cleanup({helper}))){init};\n";
             }
 
             if (TypeSystem.IsBorrowType(node.Type))
@@ -555,7 +573,12 @@ namespace Sage.Core
             if (node.Elements.Count == 0)
                 return !string.IsNullOrEmpty(node.VariableType) && !TypeSystem.IsArrayType(node.VariableType)
                     ? $"({TypeSystem.ToCType(node.VariableType)}){{0}}" : "{0}";
-            var elements = node.Elements.Select(e => e.Accept(this));
+            var elements = node.Elements.Select(element =>
+            {
+                string value = element.Accept(this);
+                return TypeSystem.IsNativeResourceArray(node.VariableType ?? "")
+                    ? MoveResource(value, TypeSystem.GetArrayBaseType(node.VariableType!)) : value;
+            });
             return $"{{ {string.Join(", ", elements)} }}";
         }
 
@@ -591,6 +614,15 @@ namespace Sage.Core
             if (_resourceCleanupHelpers.TryGetValue(type, out string? helper)) return helper;
             helper = MintName("_sage_resource_drop_");
             _resourceCleanupHelpers.Add(type, helper);
+            return helper;
+        }
+
+        private string ResourceArrayCleanupHelper(string type)
+        {
+            if (_resourceArrayCleanupHelpers.TryGetValue(type, out string? helper)) return helper;
+            ResourceCleanupHelper(TypeSystem.GetArrayBaseType(type));
+            helper = MintName("_sage_resource_array_drop_");
+            _resourceArrayCleanupHelpers.Add(type, helper);
             return helper;
         }
 

@@ -114,6 +114,10 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
   and omitted fields are zeroed. Whole-struct copy, arrays, calls, returns,
   and resource-field assignment remain S196/S143 boundaries; see
   `docs/resource-structs.md` and `tests/native-resource-nested-struct.ps1`.
+- Fixed local arrays of native resources accept named-owner literal elements or
+  empty initialization. Cleanup drops elements in reverse index order. Array
+  copies, resource-struct arrays, field storage, and extraction remain rejected;
+  see `docs/resource-arrays.md` and `tests/native-resource-array.ps1`.
 - `byte_file` provides bounded owned byte I/O and consuming close with explicit
   outcomes. `create_bytes(u8[260], u16)` safely accepts 1..259 printable ASCII
   bytes; `create(str)` remains unsafe. Retain the legacy `file` module. The std
