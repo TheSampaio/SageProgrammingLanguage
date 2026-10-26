@@ -162,7 +162,7 @@ diagnostic on stdout; human output must stay unchanged. Attach related locations
 `SemanticAnalyzer` (never a second parser) and walks the analyzed AST by shape, so new AST nodes are
 indexed without touching it. The index is written to `obj/graphify` (deterministic, no timestamps);
 bump `GraphifyStore.SchemaVersion` when the persisted JSON changes incompatibly. Tests:
-`tests/graphify-index.ps1` with fixtures in `tests/fixtures/graphify`. It must never affect
+`tests/graphify-index.ps1` and `tests/graphify-query.ps1` with fixtures in `tests/fixtures/graphify`. It must never affect
 `run`/`build` behavior or output.
 
 ## VS Code extension (companion repo)

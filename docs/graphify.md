@@ -1,4 +1,4 @@
-# Graphify: compiler-derived semantic index (v0.35.1)
+# Graphify: compiler-derived semantic index (v0.35.2)
 
 Graphify is the Sage developer tool for navigating a project without reading whole files. It
 runs the existing lexer, parser, and semantic analyzer (no second parser) and persists what the
@@ -20,6 +20,39 @@ A project that does not compile reports the usual diagnostics (also as JSON with
 `--diagnostics json`, see [diagnostics](diagnostics.md)), exits with status 1, and leaves the
 previous index untouched. Indexing never generates C, links, or runs anything, and it does not change
 `sage run`, `sage build`, or any other command.
+
+```powershell
+sage graphify query <symbol|refs|callers|callees|deps|contract|module> <name> [--project <path>] [--human] [--no-refresh]
+```
+
+Queries answer one focused question from the index and never return whole files. The default
+output is a single compact JSON line; `--human` prints plain text. `--project` selects the project
+(default: the current directory). Each query first refreshes the index (an incremental build), so
+answers match the sources. If the project does not compile, the last good index answers with
+`"stale":true` and the diagnostic goes to standard error; `--no-refresh` skips the refresh and
+reads the persisted index as is (exit 1 when none exists).
+
+Names match exactly or, when unqualified, by the last part of a namespaced name (`add` finds
+`geometry::add`). Fields are written `Struct.field`. An unknown name yields `"count":0`, exit
+status 0. Usage errors print to standard error and exit with 1.
+
+| Query | Answers | Result objects |
+| --- | --- | --- |
+| `symbol <name>` | Where a module, namespace, function, struct, field, resource, variable, extern alias, or opaque type is declared | `kind`, `name`, `module`, `file`, `line`, `column`, `detail` (signature, field type, `copy`/`move`/`resource`, destructor) |
+| `refs <name>` | Calls, type uses, and field uses of a symbol | `kind`, `name`, `module`, `file`, `line`, `column`, `in` |
+| `callers <fn>` | Call sites of a function | `caller`, `callee`, `module`, `file`, `line`, `column` |
+| `callees <fn>` | Functions a function calls, grouped | `callee`, `origin`, `native`, `sites[{file,line,column}]` |
+| `deps <module>` | Dependencies | `module`, `uses`, `transitive`, `usedBy` |
+| `contract <fn>` | Ownership/borrow contract | `function`, location, `signature`, `unsafe`, `extern`, `parameters[{name,type,contract}]`, `returns`, `returnContract`, `resources[{name,destructor}]` |
+| `module <name>` | Compact module summary | `module`, `file`, `origin`, `uses`, `namespaces`, `externs`, `structs`, `resources`, `variables`, `functions[{name,signature,line}]` |
+
+Envelope: `{"query":"callers","name":"geometry::shift","count":1,"results":[...]}` plus `"stale":true`
+when applicable.
+
+```powershell
+sage graphify query callers geometry::shift --project .
+{"query":"callers","name":"geometry::shift","count":1,"results":[{"caller":"main","callee":"geometry::shift","module":"main","file":"src/main.sg","line":6,"column":5}]}
+```
 
 ## Index layout and incremental updates
 
