@@ -15,6 +15,7 @@ namespace Sage.Core
     {
         private readonly SymbolTable _symbolTable = sharedTable ?? new SymbolTable();
         private readonly Dictionary<string, StructDeclarationNode> _structDeclarations = new();
+        private readonly HashSet<string> _localStructs = new(StringComparer.Ordinal);
         private readonly Dictionary<string, FunctionDeclarationNode> _functionDeclarations = new(StringComparer.Ordinal);
         private readonly Dictionary<string, (NativeResourceDeclarationNode Node, ExternBlockNode Origin, string? File)> _nativeResources = new(StringComparer.Ordinal);
         private string _currentModule = "";
@@ -32,7 +33,12 @@ namespace Sage.Core
         /// <summary>True when analysis is currently inside an unsafe context.</summary>
         private bool InUnsafe => _unsafeDepth > 0;
 
-        public void Analyze(ProgramNode ast) => ast.Accept(this);
+        public void Analyze(ProgramNode ast)
+        {
+            _localStructs.Clear();
+            foreach (var structure in ast.Statements.OfType<StructDeclarationNode>()) _localStructs.Add(structure.Name);
+            ast.Accept(this);
+        }
 
         /// <summary>
         /// Pre-registers module-level symbols to allow forward references and out-of-order calls.
@@ -180,6 +186,19 @@ namespace Sage.Core
         private static bool IsResourceBorrow(string type) => TypeSystem.IsBorrowType(type) &&
             TypeSystem.IsNativeResource(TypeSystem.GetBorrowedType(type));
 
+        private bool IsResourceAggregate(string type) =>
+            _structDeclarations.TryGetValue(type, out var structure) &&
+            structure.Fields.Any(field => TypeSystem.IsNativeResource(field.Type));
+
+        private void RejectResourceAggregateType(string type, AstNode operation)
+        {
+            string valueType = TypeSystem.GetBorrowedType(type);
+            if (TypeSystem.IsArrayType(valueType)) valueType = TypeSystem.GetArrayBaseType(valueType);
+            valueType = valueType.TrimEnd('*');
+            if (IsResourceAggregate(valueType))
+                throw new CompilerException(operation, "S196", "Structs containing native resources currently support only direct local initialization and cleanup; copying, nesting, arrays, calls, and returns need ownership contracts.");
+        }
+
         private void RejectResourceBindingName(string name, AstNode operation)
         {
             if (_nativeResources.ContainsKey(name))
@@ -214,6 +233,8 @@ namespace Sage.Core
         public string Visit(FunctionDeclarationNode node)
         {
             RegisterFunction(node, node.ModuleOwner);
+            RejectResourceAggregateType(node.ReturnType, node);
+            foreach (var parameter in node.Parameters) RejectResourceAggregateType(parameter.Type, node);
             bool returnsResource = TypeSystem.IsNativeResource(node.ReturnType);
             if (!returnsResource || node.IsExtern) RejectResourceValueType(node.ReturnType, node);
             if (returnsResource && node.Name.Equals("main", StringComparison.OrdinalIgnoreCase))
@@ -289,6 +310,14 @@ namespace Sage.Core
         public string Visit(VariableDeclarationNode node)
         {
             bool isResource = TypeSystem.IsNativeResource(node.Type);
+            bool isResourceAggregate = IsResourceAggregate(node.Type);
+            if (isResourceAggregate)
+            {
+                if (_functionDepth == 0 || !_localStructs.Contains(node.Type) ||
+                    node.Initializer is not (StructInitializationNode or ArrayInitializationNode))
+                    throw new CompilerException(node, "S196", "A resource-containing struct requires direct local initialization with a struct literal.");
+            }
+            else RejectResourceAggregateType(node.Type, node);
             if (_functionDepth == 0 || (!isResource && !IsResourceBorrow(node.Type))) RejectResourceValueType(node.Type, node);
             RejectResourceBindingName(node.Name, node);
             ValidateArrayLength(node.Type, node);
@@ -392,6 +421,8 @@ namespace Sage.Core
             node.ResolvedName = name;
             node.IsExternCall = symbol.IsExtern;
             var signature = symbol.Signature ?? throw new InvalidOperationException($"Callable '{name}' has no signature.");
+            RejectResourceAggregateType(signature.ReturnType, node);
+            foreach (var parameterType in signature.ParameterTypes) RejectResourceAggregateType(parameterType, node);
             bool returnsResource = TypeSystem.IsNativeResource(signature.ReturnType);
             if (!returnsResource || symbol.IsExtern) RejectResourceValueType(signature.ReturnType, node);
             if (symbol.IsExtern)
@@ -569,6 +600,16 @@ namespace Sage.Core
                     ?? throw new CompilerException(value, "S131", $"Struct '{type}' does not contain field '{name}'.");
                 if (TypeSystem.IsArrayType(field.Type) && value is not ArrayInitializationNode)
                     throw new CompilerException(value, "S188", "Initialize an array field with a literal, then copy into it by assignment.");
+                if (TypeSystem.IsNativeResource(field.Type))
+                {
+                    if (value is not IdentifierNode owner)
+                        throw new CompilerException(value, "S196", "A resource field must be initialized from a named local owner.");
+                    AnalyzeValue(owner, field.Type, "S181", $"Field '{type}.{name}'");
+                    if (_symbolTable.ResolveLocal(owner.Name) is not { IsOwningValue: true })
+                        throw new CompilerException(owner, "S191", "A borrowed resource cannot initialize an owning field.");
+                    ConsumeReference(owner, initializer, OwnershipKind.Moved);
+                    continue;
+                }
                 AnalyzeValue(value, field.Type, "S181", $"Field '{type}.{name}'");
                 RequireValueContract(value);
             }
@@ -625,6 +666,7 @@ namespace Sage.Core
             }
 
             string targetType = node.Target.Accept(this);
+            RejectResourceAggregateType(targetType, node);
             if (TypeSystem.IsNativeResource(targetType))
             {
                 if (!ReferenceEquals(node, _standaloneAssignment) || node.Target is not IdentifierNode target ||
@@ -736,6 +778,7 @@ namespace Sage.Core
         {
             if (_currentReturnType == null)
                 throw new CompilerException(node, "S162", "A return statement must be inside a function.");
+            RejectResourceAggregateType(_currentReturnType, node);
             if (TypeSystem.IsNativeResource(_currentReturnType))
             {
                 if (node.Expression is not IdentifierNode owner)
@@ -769,6 +812,7 @@ namespace Sage.Core
 
         public string Visit(CastExpressionNode node)
         {
+            RejectResourceAggregateType(node.TargetType, node);
             if (TypeSystem.IsArrayType(node.TargetType))
                 throw new CompilerException(node, "S188", "A cast cannot construct a fixed array. Use an array literal or a checked value copy.");
             if (TypeSystem.GetNativeResource(node.TargetType) is { } resource)
@@ -783,6 +827,7 @@ namespace Sage.Core
             }
             RejectResourceValueType(node.TargetType, node);
             string expressionType = node.Expression.Accept(this);
+            RejectResourceAggregateType(expressionType, node);
             if (TypeSystem.IsArrayType(expressionType) && !TypeSystem.IsRawPointer(node.TargetType))
                 throw new CompilerException(node, "S188", "A fixed array may only be cast to a raw pointer at an explicit unsafe native boundary.");
             if (TypeSystem.GetNativeResource(expressionType) is { } sourceResource)
@@ -815,7 +860,9 @@ namespace Sage.Core
 
         public string Visit(StructDeclarationNode node)
         {
-            foreach (var field in node.Fields) RejectResourceValueType(field.Type, node);
+            foreach (var field in node.Fields)
+                if (!TypeSystem.IsNativeResource(field.Type)) RejectResourceValueType(field.Type, node);
+            foreach (var field in node.Fields) RejectResourceAggregateType(field.Type, node);
             if (node.Fields.Any(field => TypeSystem.IsBorrowType(field.Type)))
                 throw new CompilerException(node, "S173", "Struct fields cannot store borrowed references yet.");
             RegisterStructDefinition(node);
@@ -828,6 +875,7 @@ namespace Sage.Core
 
         public string Visit(NewExpressionNode node)
         {
+            RejectResourceAggregateType(node.TypeName, node);
             if (_functionDepth == 0 || !ReferenceEquals(node, _owningInitializer))
                 throw new CompilerException(node, "S146", "An allocation must directly initialize a local owning binding before its value can be used.");
             if (!_structDeclarations.ContainsKey(node.TypeName))
@@ -972,8 +1020,9 @@ namespace Sage.Core
             _ => false
         };
 
-        private static void RequireValueContract(AstNode expression)
+        private void RequireValueContract(AstNode expression)
         {
+            if (expression.VariableType != null) RejectResourceAggregateType(expression.VariableType, expression);
             if (expression.VariableType != null && TypeSystem.IsNativeResource(expression.VariableType))
                 throw new CompilerException(expression, "S191", "A native resource cannot be copied or passed as an ordinary value. Move it into a local owning binding.");
             if (expression.IsReference)

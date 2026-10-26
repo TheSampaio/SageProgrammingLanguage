@@ -226,8 +226,9 @@ may receive pure presence expressions directly.
 
 ## Remaining boundaries
 
-Resource globals, fields, arrays, and pointers
-to facade types remain rejected with S191. Other resource comparisons,
+Resource globals, arrays, and pointers
+to facade types remain rejected with S191. Direct resource fields are supported
+in the [local resource-struct subset](resource-structs.md). Other resource comparisons,
 interpolation, and implicit native arguments are also disabled. A resource is
 not inferred Copy. The bounded [byte-file API](byte-files.md) now provides safe
 borrowed byte operations and consuming close after valid acquisition. General
@@ -249,8 +250,8 @@ Implementation order:
 5. Implemented: safe contextual null comparisons on named owners and borrows.
 6. In progress: the bounded byte-file interface provides borrowed byte I/O and
    consuming fallible close. Safe general paths/strings and broader std migration
-   remain unfinished. Fixed-capacity byte buffers are available; nested resource
-   fields, arrays, general collections, and C++ adapters
+   remain unfinished. Fixed-capacity byte buffers and direct resource fields in
+   local structs are available; nested resource structs, arrays, general collections, and C++ adapters
    need their own subsequent contracts.
 
 Invalid native contracts use S190. Acceptance tests are in

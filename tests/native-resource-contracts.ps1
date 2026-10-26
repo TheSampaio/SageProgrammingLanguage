@@ -32,7 +32,7 @@ $cases = @(
     @{ Name = 'invalid_return_value'; Code = $fileContract + 'func make(): OwnedFile { return 0; } func main(): none {}'; Error = 'S193' },
     @{ Name = 'borrowed_parameter'; Code = $fileContract + 'func use_value(value: &OwnedFile): none {} func main(): none {}' },
     @{ Name = 'unsupported_array'; Code = $fileContract + 'func main(): none { var values: OwnedFile[2]; }'; Error = 'S191' },
-    @{ Name = 'unsupported_field'; Code = $fileContract + 'struct Box { value: OwnedFile; } func main(): none {}'; Error = 'S191' },
+    @{ Name = 'declared_resource_field'; Code = $fileContract + 'struct Box { value: OwnedFile; } func main(): none {}' },
     @{ Name = 'unsupported_native_signature'; Code = $fileContract + 'extern other("stdio.h") { func invalid(value: OwnedFile): none; } func main(): none {}'; Error = 'S191' },
     @{ Name = 'imported_contract'; Code = 'use resource_module; func main(): none {}' },
     @{ Name = 'transitive_destructor'; Code = 'use resource_spec; func main(): none {}' },

@@ -17,6 +17,8 @@ namespace Sage.Core
         private int _tempCounter = 0;
         private readonly Dictionary<string, string> _cleanupHelpers = new();
         private readonly Dictionary<string, string> _resourceCleanupHelpers = new();
+        private readonly Dictionary<string, string> _aggregateCleanupHelpers = new();
+        private readonly Dictionary<string, StructDeclarationNode> _structures = new(StringComparer.Ordinal);
         private readonly HashSet<string> _usedNames = new(StringComparer.Ordinal);
 
         /// <summary>
@@ -34,6 +36,9 @@ namespace Sage.Core
         {
             _cleanupHelpers.Clear();
             _resourceCleanupHelpers.Clear();
+            _aggregateCleanupHelpers.Clear();
+            _structures.Clear();
+            foreach (var structure in ast.Statements.OfType<StructDeclarationNode>()) _structures.Add(structure.Name, structure);
             _tempCounter = 0;
             _usedNames.Clear();
             ReserveNames(ast);
@@ -54,6 +59,12 @@ namespace Sage.Core
                 var contract = TypeSystem.GetNativeResource(type)!;
                 sb.AppendLine($"static void {helper}({type}* owner) {{ if (owner->_sage_handle != NULL) {{ " +
                     $"(void){contract.DestructorName}(owner->_sage_handle); owner->_sage_handle = NULL; }} }}");
+            }
+            foreach (var (type, helper) in _aggregateCleanupHelpers)
+            {
+                var fields = _structures[type].Fields.Where(field => TypeSystem.IsNativeResource(field.Type)).Reverse();
+                sb.AppendLine($"static void {helper}({type}* owner) {{ " +
+                    string.Join(" ", fields.Select(field => $"{_resourceCleanupHelpers[field.Type]}(&owner->{field.Name});")) + " }");
             }
 
             sb.AppendLine("\n/* --- Generated Logic --- */");
@@ -152,6 +163,13 @@ namespace Sage.Core
             string prefix = node.IsConstant ? "const " : "";
             string? initialValue = node.Initializer?.Accept(this);
             string init = initialValue != null ? $" = {initialValue}" : "";
+
+            if (_structures.TryGetValue(node.Type, out var structure) &&
+                structure.Fields.Any(field => TypeSystem.IsNativeResource(field.Type)))
+            {
+                string helper = AggregateCleanupHelper(node.Type, structure);
+                return $"{Indent}{node.Type} {node.Name} __attribute__((cleanup({helper}))){init};\n";
+            }
 
             if (TypeSystem.IsBorrowType(node.Type))
             {
@@ -510,7 +528,12 @@ namespace Sage.Core
             sb.Append("{ ");
             var initList = new List<string>();
             foreach (var kvp in node.Fields)
-                initList.Add($".{kvp.Key} = {kvp.Value.Accept(this)}");
+            {
+                string value = kvp.Value.Accept(this);
+                if (kvp.Value.VariableType != null && TypeSystem.IsNativeResource(kvp.Value.VariableType))
+                    value = MoveResource(value, kvp.Value.VariableType);
+                initList.Add($".{kvp.Key} = {value}");
+            }
 
             sb.Append(string.Join(", ", initList));
             sb.Append(" }");
@@ -565,6 +588,16 @@ namespace Sage.Core
             if (_resourceCleanupHelpers.TryGetValue(type, out string? helper)) return helper;
             helper = MintName("_sage_resource_drop_");
             _resourceCleanupHelpers.Add(type, helper);
+            return helper;
+        }
+
+        private string AggregateCleanupHelper(string type, StructDeclarationNode structure)
+        {
+            if (_aggregateCleanupHelpers.TryGetValue(type, out string? helper)) return helper;
+            foreach (var field in structure.Fields.Where(field => TypeSystem.IsNativeResource(field.Type)))
+                ResourceCleanupHelper(field.Type);
+            helper = MintName("_sage_aggregate_drop_");
+            _aggregateCleanupHelpers.Add(type, helper);
             return helper;
         }
 

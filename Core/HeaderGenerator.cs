@@ -139,6 +139,7 @@ namespace Sage.Core
 
         public string Visit(StructDeclarationNode node)
         {
+            if (node.Fields.Any(field => TypeSystem.IsNativeResource(field.Type))) AddHeader("stddef.h");
             var sb = new StringBuilder();
             sb.AppendLine($"typedef struct {node.Name} {{");
             foreach (var field in node.Fields)
