@@ -142,6 +142,11 @@ namespace Sage.Core
             var startToken = Current;
             Consume(TokenType.Keyword_Extern);
 
+            // 'cpp' is contextual: 'extern cpp alias(...)' versus a C block whose alias is 'cpp'.
+            bool isCpp = Current.Type == TokenType.Identifier && Current.Value == "cpp" &&
+                _pos + 1 < _tokens.Count && _tokens[_pos + 1].Type == TokenType.Identifier;
+            if (isCpp) _pos++;
+
             // 1. Alias (namespace local)
             string alias = Consume(TokenType.Identifier).Value;
 
@@ -178,7 +183,7 @@ namespace Sage.Core
                 }
                 // Opaque C type: 'type FILE;' — introduces a named C type without a Sage-side layout.
                 // 'type' is a contextual keyword recognized only inside extern blocks.
-                if (Current.Type == TokenType.Identifier && Current.Value == "type")
+                if (!isCpp && Current.Type == TokenType.Identifier && Current.Value == "type")
                 {
                     _pos++; // consume 'type'
                     string typeName = Consume(TokenType.Identifier, "Expected an opaque type name after 'type'.").Value;
@@ -186,7 +191,20 @@ namespace Sage.Core
                     declarations.Add(CreateNode(new ExternTypeNode(typeName), startToken));
                     continue;
                 }
+                // C++ class handle: 'class Counter = demo::Counter;' — an opaque handle the adapters convert.
+                if (isCpp && Current.Type == TokenType.Identifier && Current.Value == "class")
+                {
+                    var classToken = Current;
+                    _pos++; // consume 'class'
+                    string typeName = Consume(TokenType.Identifier, "Expected a Sage handle name after 'class'.").Value;
+                    Consume(TokenType.Equals, "A C++ class handle requires '= qualified::Type'.");
+                    string cppClass = ParseCppTarget();
+                    Consume(TokenType.Semicolon, "C++ class handle declarations end with ';'.");
+                    declarations.Add(CreateNode(new ExternTypeNode(typeName, cppClass), classToken));
+                    continue;
+                }
 
+                var funcToken = Current;
                 if (Match(TokenType.Keyword_Func))
                 {
                     // The extern function is registered by the SemanticAnalyzer as alias::funcName.
@@ -194,22 +212,55 @@ namespace Sage.Core
                     var parameters = ParseParameterList();
                     Consume(TokenType.Colon);
                     string retType = ConsumeType();
+                    // C++ targets are never inferred from the Sage name: each declaration names its binding.
+                    CppBinding? binding = null;
+                    if (isCpp)
+                    {
+                        Consume(TokenType.Equals, "An extern cpp function requires '= target', '= .member', '= new', or '= delete'.");
+                        binding = ParseCppBinding();
+                    }
                     Consume(TokenType.Semicolon); // Externs have no body.
 
                     var funcNode = new FunctionDeclarationNode(funcName, retType, parameters, null!, alias)
                     {
-                        IsExtern = true
+                        IsExtern = true,
+                        CppBinding = binding
                     };
-                    declarations.Add(CreateNode(funcNode, startToken));
+                    declarations.Add(CreateNode(funcNode, isCpp ? funcToken : startToken));
                 }
                 else
                 {
-                    throw new CompilerException(Current, "S006", "Only 'func', 'type', and 'resource' declarations are allowed inside extern blocks.");
+                    throw new CompilerException(Current, "S006", isCpp
+                        ? "Only 'func', 'class', and 'resource' declarations are allowed inside extern cpp blocks."
+                        : "Only 'func', 'type', and 'resource' declarations are allowed inside extern blocks.");
                 }
             }
 
             Consume(TokenType.CloseBrace);
-            return CreateNode(new ExternBlockNode(alias, header, declarations, library), startToken);
+            return CreateNode(new ExternBlockNode(alias, header, declarations, library, isCpp), startToken);
+        }
+
+        /// <summary>Parses the right-hand side of an extern cpp function: a target, <c>.member</c>, <c>new</c>, or <c>delete</c>.</summary>
+        private CppBinding ParseCppBinding()
+        {
+            if (Match(TokenType.Keyword_New)) return new CppBinding(CppBindingKind.Constructor);
+            if (Match(TokenType.Keyword_Delete)) return new CppBinding(CppBindingKind.Destructor);
+            if (Match(TokenType.Dot))
+                return new CppBinding(CppBindingKind.Method, Consume(TokenType.Identifier, "Expected a member function name after '.'.").Value);
+            return new CppBinding(CppBindingKind.Function, ParseCppTarget());
+        }
+
+        /// <summary>
+        /// Parses a qualified C++ name (<c>demo::add</c>) or a string literal for names the Sage lexer
+        /// cannot express, such as explicit template instances (<c>"demo::max&lt;int&gt;"</c>).
+        /// The string form is validated semantically before it reaches generated C++.
+        /// </summary>
+        private string ParseCppTarget()
+        {
+            if (Current.Type == TokenType.String) return Consume(TokenType.String).Value;
+            string target = Consume(TokenType.Identifier, "Expected a qualified C++ name.").Value;
+            while (Match(TokenType.DoubleColon)) target += "::" + Consume(TokenType.Identifier, "Expected a name after '::'.").Value;
+            return target;
         }
 
         /// <summary>Parses a single statement or declaration.</summary>

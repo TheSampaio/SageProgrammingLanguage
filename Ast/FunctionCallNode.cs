@@ -25,6 +25,9 @@ namespace Sage.Ast
         /// <summary>Exact callable origin selected by semantic analysis.</summary>
         public string? ResolvedName { get; set; }
 
+        /// <summary>C symbol to emit when it differs from the declared native name (C++ adapters).</summary>
+        public string? NativeSymbol { get; set; }
+
         /// <summary>
         /// Dispatches the visitor to the appropriate visit method for this function call.
         /// </summary>

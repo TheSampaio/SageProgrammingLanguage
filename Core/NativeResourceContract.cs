@@ -8,7 +8,11 @@ public sealed record NativeResourceContract(
     string DestructorName,
     string DestructorReturnType,
     string NativeHeader,
-    string? NativeLibrary)
+    string? NativeLibrary,
+    string? DestructorSymbol = null)
 {
     public string DestructorBinding => $"{NativeAlias}::{DestructorName}";
+
+    /// <summary>The C symbol cleanup calls: the declared name, or a generated C++ adapter.</summary>
+    public string DestructorCSymbol => DestructorSymbol ?? DestructorName;
 }

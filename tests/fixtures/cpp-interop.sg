@@ -1,0 +1,41 @@
+use cpp_interop_helper;
+
+extern cpp geo("cpp-interop.hpp") {
+    class Counter = demo::Counter;
+    func add(a: c_int, b: c_int): c_int = demo::add;
+    func add_real(a: c_double, b: c_double): c_double = demo::add;
+    func biggest(a: c_int, b: c_int): c_int = "demo::biggest<int>";
+    func report(a: c_int, b: c_double, c: c_int): none = demo::report;
+    func create(start: c_int): Counter* = new;
+    func destroy(counter: Counter*): none = delete;
+    func increment(counter: Counter*, by: c_int): c_int = .increment;
+    func value(counter: Counter*): c_int = .value;
+    resource OwnedCounter: Counter* drop destroy;
+}
+
+/// Safe wrappers: the only unsafe step is the explicit ABI call through a borrowed owner.
+func make_counter(start: i32): OwnedCounter
+{
+    unsafe
+    {
+        var owner: OwnedCounter = geo::create(start as c_int) as OwnedCounter;
+        return owner;
+    }
+}
+
+func bump(counter: &mut OwnedCounter, by: i32): i32 { unsafe { return geo::increment(counter as Counter*, by as c_int) as i32; } }
+func current(counter: &OwnedCounter): i32 { unsafe { return geo::value(counter as Counter*) as i32; } }
+
+func main(): none
+{
+    var counter: OwnedCounter = make_counter(10);
+    var bumped: i32 = bump(&mut counter, 5);
+    unsafe
+    {
+        var sum: i32 = geo::add(2, 3) as i32;
+        var real: f64 = geo::add_real(1.5, 2.0) as f64;
+        var top: i32 = geo::biggest(4, 9) as i32;
+        geo::report(sum as c_int, real as c_double, top as c_int);
+        geo::report(cpp_interop_helper::twice(21) as c_int, 0.5, current(&counter) as c_int);
+    }
+}

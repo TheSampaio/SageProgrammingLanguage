@@ -49,6 +49,9 @@ namespace Sage.Ast
         /// </summary>
         public bool IsExtern { get; set; } = false;
 
+        /// <summary>The explicit C++ target when declared in an <c>extern cpp</c> block; otherwise null.</summary>
+        public CppBinding? CppBinding { get; set; }
+
         /// <summary>
         /// Gets a value indicating whether the function is marked <c>unsafe</c>.
         /// The body runs in an unsafe context (raw pointers allowed) and callers must invoke it

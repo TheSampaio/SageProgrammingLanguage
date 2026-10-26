@@ -12,6 +12,7 @@ namespace Sage.Core
     {
         private readonly HashSet<string> _requiredHeaders = [];
         private readonly List<string> _resourceDeclarations = [];
+        private readonly List<string> _handleDeclarations = [];
 
         /// <summary>
         /// Generates the full content of a C header file based on the provided AST.
@@ -22,6 +23,7 @@ namespace Sage.Core
         {
             _requiredHeaders.Clear();
             _resourceDeclarations.Clear();
+            _handleDeclarations.Clear();
 
             // Collect all declarations and dependencies by visiting the AST
             string declarations = ast.Accept(this);
@@ -42,6 +44,7 @@ namespace Sage.Core
 
             sb.AppendLine();
             sb.AppendLine("/* --- Declarations --- */");
+            foreach (var handle in _handleDeclarations) sb.Append(handle);
             foreach (var resource in _resourceDeclarations) sb.Append(resource);
             sb.Append(declarations);
 
@@ -82,13 +85,12 @@ namespace Sage.Core
         private void AddHeader(string header)
         {
             if (string.IsNullOrWhiteSpace(header)) return;
-
-            string normalized = (header.StartsWith('<') || header.StartsWith('"'))
-                ? header
-                : $"<{header}>";
-
-            _requiredHeaders.Add(normalized);
+            _requiredHeaders.Add(IncludeTarget(header));
         }
+
+        /// <summary>The <c>#include</c> operand for a declared header: quoted/angled forms are kept, bare names become <c>&lt;name&gt;</c>.</summary>
+        public static string IncludeTarget(string header) =>
+            (header.StartsWith('<') || header.StartsWith('"')) ? header : $"<{header}>";
 
         public string Visit(ProgramNode node)
         {
@@ -152,12 +154,16 @@ namespace Sage.Core
 
         public string Visit(ExternBlockNode node)
         {
-            AddHeader(node.Header);
+            // A C++ header is only visible to the generated adapters; C sees handles and adapter prototypes.
+            // stddef.h supplies size_t/ptrdiff_t that the C++ header would otherwise have provided.
+            AddHeader(node.IsCpp ? "stddef.h" : node.Header);
             var declarations = new StringBuilder();
             foreach (var decl in node.Declarations)
             {
                 string result = decl.Accept(this);
-                if (decl is NativeResourceDeclarationNode) declarations.Append(result);
+                if (decl is NativeResourceDeclarationNode || (node.IsCpp && decl is FunctionDeclarationNode)) declarations.Append(result);
+                if (decl is ExternTypeNode { CppClass: not null } handle)
+                    _handleDeclarations.Add($"typedef struct {CNaming.CppHandleTag(node.Alias, handle.Name)} {handle.Name};\n");
             }
             return declarations.ToString();
         }

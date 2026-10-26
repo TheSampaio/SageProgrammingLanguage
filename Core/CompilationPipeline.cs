@@ -37,11 +37,12 @@ namespace Sage.Core
             ParseAndDiscover(queue, parsedModules, config, env, analyzer);
             analyzer.ValidateNativeResourceContracts();
             GenerateCode(parsedModules, generatedCFiles, config, env, analyzer);
+            string? cppAdapters = GenerateCppAdapters(parsedModules, env);
 
             if (config.BuildNative)
             {
                 var libraries = CollectLinkLibraries(parsedModules);
-                return LinkNativeBinary(generatedCFiles, libraries, config, env);
+                return LinkNativeBinary(generatedCFiles, cppAdapters, libraries, config, env);
             }
             return 0;
         }
@@ -61,6 +62,19 @@ namespace Sage.Core
                 }
             }
             return libs;
+        }
+
+        /// <summary>
+        /// Writes the C++ adapter translation unit when any module declares an <c>extern cpp</c> block.
+        /// Returns its path, or null so C-only projects never depend on a C++ toolchain.
+        /// </summary>
+        private static string? GenerateCppAdapters(Dictionary<string, ProgramNode> modules, CompilationEnvironment env)
+        {
+            var blocks = modules.Values.SelectMany(EnumerateExternBlocks).Where(block => block.IsCpp).ToList();
+            if (blocks.Count == 0) return null;
+            string path = Path.Combine(env.ObjDir, CppAdapterGenerator.FileName);
+            File.WriteAllText(path, CppAdapterGenerator.Generate(blocks));
+            return path;
         }
 
         private static IEnumerable<ExternBlockNode> EnumerateExternBlocks(ProgramNode ast)
@@ -191,7 +205,7 @@ namespace Sage.Core
         /// <summary>
         /// Invokes the native toolchain to link generated C files into an executable binary.
         /// </summary>
-        private static int LinkNativeBinary(List<string> cFiles, HashSet<string> libraries, CompilerConfig config, CompilationEnvironment env)
+        private static int LinkNativeBinary(List<string> cFiles, string? cppAdapters, HashSet<string> libraries, CompilerConfig config, CompilationEnvironment env)
         {
             if (config.IsDebugMode) CompilerLogger.LogStep("\nLinking binaries...");
 
@@ -205,7 +219,8 @@ namespace Sage.Core
                 ? " " + string.Join(" ", libraries.OrderBy(l => l, StringComparer.Ordinal).Select(l => $"-l{l}"))
                 : "";
             string runtimeIncludes = Path.Combine(AppContext.BaseDirectory, "Runtime", "include");
-            string args = $"{sources} -o \"{exePath}\" -std=c11 -I\"{env.ObjDir}\" -I\"{runtimeIncludes}\"{libFlags}";
+            string cppLink = cppAdapters == null ? "" : CompileCppAdapters(cppAdapters, runtimeIncludes, config, env);
+            string args = $"{sources} -o \"{exePath}\" -std=c11 -I\"{env.ObjDir}\" -I\"{runtimeIncludes}\"{libFlags}{cppLink}";
 
             if (config.IsDebugMode) CompilerLogger.LogInfo("Invoking native toolchain: gcc");
 
@@ -220,6 +235,19 @@ namespace Sage.Core
                 CompilerLogger.LogSuccess($"Build complete: {exePath}");
                 return 0;
             }
+        }
+
+        /// <summary>
+        /// Compiles the adapter unit with g++ (C++ headers resolve from the project source directory)
+        /// and returns the extra link arguments: its object file, then the C++ runtime after user libraries.
+        /// </summary>
+        private static string CompileCppAdapters(string cppAdapters, string runtimeIncludes, CompilerConfig config, CompilationEnvironment env)
+        {
+            string adapterObject = Path.ChangeExtension(cppAdapters, ".o");
+            if (config.IsDebugMode) CompilerLogger.LogInfo("Invoking native toolchain: g++");
+            ProcessExecutor.Run("g++", $"-c \"{Path.GetFullPath(cppAdapters)}\" -o \"{Path.GetFullPath(adapterObject)}\" -std=c++17 " +
+                $"-I\"{env.ObjDir}\" -I\"{env.SourceDir}\" -I\"{runtimeIncludes}\"");
+            return $" \"{Path.GetFullPath(adapterObject)}\" -lstdc++";
         }
 
         /// <summary>

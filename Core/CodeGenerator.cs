@@ -62,7 +62,7 @@ namespace Sage.Core
             {
                 var contract = TypeSystem.GetNativeResource(type)!;
                 sb.AppendLine($"static void {helper}({type}* owner) {{ if (owner->_sage_handle != NULL) {{ " +
-                    $"(void){contract.DestructorName}(owner->_sage_handle); owner->_sage_handle = NULL; }} }}");
+                    $"(void){contract.DestructorCSymbol}(owner->_sage_handle); owner->_sage_handle = NULL; }} }}");
             }
             foreach (var (type, helper) in _resourceArrayCleanupHelpers)
             {
@@ -150,12 +150,7 @@ namespace Sage.Core
         /// </summary>
         public string Visit(FunctionCallNode node)
         {
-            string cName = node.ResolvedName ?? node.Name;
-            if (cName.Contains("::"))
-            {
-                // Handle external namespace calls or internal module scoping
-                cName = node.IsExternCall ? cName.Split("::")[1] : cName.Replace("::", "_");
-            }
+            string cName = CallSymbol(node);
             var cArgs = node.Arguments.Select(a =>
             {
                 string expression = a.Accept(this);
@@ -651,6 +646,17 @@ namespace Sage.Core
             return ownsResource;
         }
 
+        /// <summary>
+        /// The C symbol a call targets: a generated C++ adapter, the bare native name for extern
+        /// calls (<c>alias::name</c> → <c>name</c>), or the flattened module name (<c>module_name</c>).
+        /// </summary>
+        private static string CallSymbol(FunctionCallNode call)
+        {
+            if (call.NativeSymbol != null) return call.NativeSymbol;
+            string resolved = call.ResolvedName ?? call.Name;
+            return call.IsExternCall ? resolved.Split("::")[^1] : resolved.Replace("::", "_");
+        }
+
         /// <summary>Reserve source identifiers before introducing backend cleanup helpers or temporaries.</summary>
         private void ReserveNames(AstNode node)
         {
@@ -662,10 +668,7 @@ namespace Sage.Core
                     _usedNames.Add(CNaming.ResolveFunctionName(function));
                     foreach (var parameter in function.Parameters) _usedNames.Add(parameter.Name);
                     break;
-                case FunctionCallNode call:
-                    string resolved = call.ResolvedName ?? call.Name;
-                    _usedNames.Add(call.IsExternCall ? resolved.Split("::")[^1] : resolved.Replace("::", "_"));
-                    break;
+                case FunctionCallNode call: _usedNames.Add(CallSymbol(call)); break;
                 case StructDeclarationNode structure: _usedNames.Add(structure.Name); break;
                 case ExternTypeNode opaque: _usedNames.Add(opaque.Name); break;
                 case NativeResourceDeclarationNode resource: _usedNames.Add(resource.Name); break;

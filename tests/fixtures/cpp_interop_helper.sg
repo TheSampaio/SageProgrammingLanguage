@@ -1,0 +1,13 @@
+module cpp_interop_helper
+{
+    // The same binding in another module must reuse one generated adapter.
+    extern cpp geo("cpp-interop.hpp")
+    {
+        func add(a: c_int, b: c_int): c_int = demo::add;
+    }
+
+    func twice(value: i32): i32
+    {
+        unsafe { return geo::add(value as c_int, value as c_int) as i32; }
+    }
+}

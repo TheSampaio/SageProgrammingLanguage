@@ -95,6 +95,7 @@ namespace Sage.Core
 
         private void RegisterExternBlock(ExternBlockNode node)
         {
+            if (node.IsCpp) CppInteropValidator.Validate(node);
             foreach (var opaque in node.Declarations.OfType<ExternTypeNode>())
             {
                 if (_nativeResources.ContainsKey(opaque.Name))
@@ -118,7 +119,9 @@ namespace Sage.Core
                                 $"Native alias '{node.Alias}::{func.Name}' conflicts with a Sage callable.");
                         string name = $"{node.Alias}::{func.Name}";
                         var signature = new CallableSignature(func.ReturnType, func.Parameters.Select(parameter => parameter.Type),
-                            isUnsafe: true, nativeHeader: node.Header, nativeLibrary: node.Library);
+                            isUnsafe: true, nativeHeader: node.Header, nativeLibrary: node.Library,
+                            nativeSymbol: func.CppBinding == null ? null : CNaming.ResolveFunctionName(func),
+                            nativeTarget: func.CppBinding == null ? null : $"{func.CppBinding.Kind}:{func.CppBinding.Target}");
                         var existing = _symbolTable.Resolve(name);
                         if (existing != null)
                         {
@@ -170,7 +173,7 @@ namespace Sage.Core
                     signature.NativeHeader != origin.Header || signature.NativeLibrary != origin.Library)
                     throw new CompilerException(node, "S190", $"Destructor '{binding}' must have one '{nativeType}' parameter, return none/c_void/c_int, and share the resource's native origin.");
                 validated.Add(new NativeResourceContract(node.Name, nativeType, origin.Alias, node.DestructorName,
-                    signature.ReturnType, origin.Header, origin.Library));
+                    signature.ReturnType, origin.Header, origin.Library, signature.NativeSymbol));
             }
             foreach (var contract in validated) TypeSystem.RegisterNativeResource(contract);
             CompilerLogger.CurrentFile = previousFile;
@@ -433,6 +436,7 @@ namespace Sage.Core
             node.ResolvedName = name;
             node.IsExternCall = symbol.IsExtern;
             var signature = symbol.Signature ?? throw new InvalidOperationException($"Callable '{name}' has no signature.");
+            node.NativeSymbol = signature.NativeSymbol;
             RejectResourceAggregateType(signature.ReturnType, node);
             foreach (var parameterType in signature.ParameterTypes) RejectResourceAggregateType(parameterType, node);
             bool returnsResource = TypeSystem.IsNativeResource(signature.ReturnType);
