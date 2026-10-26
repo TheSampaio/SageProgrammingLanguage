@@ -95,6 +95,9 @@ Its native helper header ships in the compiler's `Runtime/include` directory,
 resolved relative to the executable. Standard-library directories contain only `.sg`.
 Bounded printable ASCII paths use `create_bytes(u8[260], u16)` with prefix
 validation and native termination; legacy `create(str)` remains unsafe.
+`open_read_bytes` uses the same bounded path contract for existing input files
+without truncation. The native handle retains a write capability fixed by its
+constructor; incompatible byte/block writes and flush are rejected before stdio.
 The [byte-buffer API](docs/byte-buffers.md) uses the same resource/borrow contracts
 for exclusive fixed-capacity storage. Native bounds checks expose only the
 initialized prefix; push initializes before extending length, and clear hides

@@ -13,39 +13,58 @@ typedef struct SageByteFileState
     FILE* stream;
     int transfer_eof;
     int transfer_failed;
+    int writable;
 } SageByteFileState;
 
-static SageByteFileState* sage_byte_file_create(const char* path)
+/* Internal constructors fix the native mode and its allowed operations together. */
+static SageByteFileState* sage_byte_file_open(const char* path, const char* mode, int writable)
 {
     if (!path) return NULL;
-    FILE* stream = fopen(path, "w+b");
+    FILE* stream = fopen(path, mode);
     if (!stream) return NULL;
     SageByteFileState* state = malloc(sizeof(*state));
     if (!state) { (void)fclose(stream); return NULL; }
     state->stream = stream;
     state->transfer_eof = 0;
     state->transfer_failed = 0;
+    state->writable = writable != 0;
     return state;
 }
 
-/* Caller supplies 260 readable bytes. Validate the selected prefix before I/O. */
-static SageByteFileState* sage_byte_file_create_bytes(const unsigned char path[260], size_t length)
+static SageByteFileState* sage_byte_file_create(const char* path)
 {
-    if (!path || length == 0 || length >= 260) return NULL;
-    char native_path[260];
+    return sage_byte_file_open(path, "w+b", 1);
+}
+
+/* Caller supplies 260 readable bytes. Validate the selected prefix before I/O. */
+static int sage_byte_file_copy_path(const unsigned char path[260], size_t length, char native_path[260])
+{
+    if (!path || length == 0 || length >= 260) return 0;
     for (size_t index = 0; index < length; ++index)
     {
         unsigned char byte = path[index];
-        if (byte < 32 || byte > 126) return NULL;
+        if (byte < 32 || byte > 126) return 0;
         native_path[index] = (char)byte;
     }
     native_path[length] = '\0';
+    return 1;
+}
+
+static SageByteFileState* sage_byte_file_create_bytes(const unsigned char path[260], size_t length)
+{
+    char native_path[260];
+    if (!sage_byte_file_copy_path(path, length, native_path)) return NULL;
     return sage_byte_file_create(native_path);
 }
 
 static int sage_byte_file_is_open(const SageByteFileState* state)
 {
     return state && state->stream;
+}
+
+static int sage_byte_file_can_write(const SageByteFileState* state)
+{
+    return sage_byte_file_is_open(state) && state->writable;
 }
 
 /* Positioning separates C update-stream input/output, including input -> flush. */
@@ -67,7 +86,7 @@ static int sage_byte_file_read(SageByteFileState* state)
 
 static int sage_byte_file_write(SageByteFileState* state, unsigned char value)
 {
-    if (!sage_byte_file_prepare(state)) return 0;
+    if (!sage_byte_file_can_write(state) || !sage_byte_file_prepare(state)) return 0;
     return fputc((int)value, state->stream) != EOF;
 }
 
@@ -80,7 +99,7 @@ static int sage_byte_file_seek_start(SageByteFileState* state)
 
 static int sage_byte_file_flush(SageByteFileState* state)
 {
-    if (!sage_byte_file_prepare(state)) return 0;
+    if (!sage_byte_file_can_write(state) || !sage_byte_file_prepare(state)) return 0;
     return fflush(state->stream) == 0;
 }
 

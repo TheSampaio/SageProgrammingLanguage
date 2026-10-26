@@ -26,7 +26,7 @@ static size_t sage_byte_file_write_buffer(SageByteFileState* file, const SageByt
     if (!file) return 0;
     file->transfer_eof = 0;
     file->transfer_failed = 1;
-    if (!sage_byte_file_is_open(file) || !buffer || limit > buffer->length) return 0;
+    if (!sage_byte_file_can_write(file) || !buffer || limit > buffer->length) return 0;
     if (limit == 0) { file->transfer_failed = 0; return 0; }
     if (!sage_byte_file_prepare(file)) return 0;
     size_t count = fwrite(buffer->data, 1, limit, file->stream);

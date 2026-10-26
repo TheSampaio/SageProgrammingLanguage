@@ -118,8 +118,12 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
 - `byte_file.read_buffer` replaces the initialized prefix after native input;
   `write_buffer` reads only an initialized shared prefix. Both borrow the file
   exclusively and return `ByteTransfer { count, eof, failed }`, preserving partial
-  counts on error. Validate limits before I/O; zero-limit valid calls are no-ops.
+  counts on error. Validate limits before I/O; zero-limit permitted calls are no-ops.
   Native status is captured immediately within the wrapper's exclusive borrow.
+- `byte_file.open_read_bytes` opens existing binary input without truncation.
+  Native mode fixes output capability: `can_write` reports it; read-only handles
+  reject byte/block writes and flush before stdio, including zero-limit writes.
+  Do not add input-only modes without keeping incompatible output guarded.
 
 ## Generated C
 

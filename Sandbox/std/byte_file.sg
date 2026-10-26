@@ -1,5 +1,5 @@
-/// Owned, seekable binary update files. Byte paths support bounded printable ASCII;
-/// acquisition from a legacy str remains unsafe.
+/// Owned, seekable binary files with explicit write capability.
+/// Byte paths support bounded printable ASCII; legacy str acquisition is unsafe.
 use byte_buffer;
 
 struct ByteRead { value: u8; has_value: b8; failed: b8; }
@@ -13,6 +13,7 @@ module byte_file
         func sage_byte_file_create(path: c_char*): SageByteFileState*;
         func sage_byte_file_create_bytes(path: u8[260], length: c_size_t): SageByteFileState*;
         func sage_byte_file_is_open(value: SageByteFileState*): c_int;
+        func sage_byte_file_can_write(value: SageByteFileState*): c_int;
         func sage_byte_file_read(value: SageByteFileState*): c_int;
         func sage_byte_file_write(value: SageByteFileState*, byte: c_uchar): c_int;
         func sage_byte_file_seek_start(value: SageByteFileState*): c_int;
@@ -20,6 +21,11 @@ module byte_file
         func sage_byte_file_close(value: SageByteFileState*): c_int;
         func sage_byte_file_drop(value: SageByteFileState*): none;
         resource ByteFile: SageByteFileState* drop sage_byte_file_drop;
+    }
+
+    extern byte_file_read_only_native("sage_byte_file_read_only.h")
+    {
+        func sage_byte_file_open_read_bytes(path: u8[260], length: c_size_t): SageByteFileState*;
     }
 
     extern byte_file_buffer_native("sage_byte_file_buffer.h")
@@ -59,10 +65,28 @@ module byte_file
         }
     }
 
+    /// Opens an existing binary file for reading without creating/truncating it.
+    /// Same bounded printable ASCII path contract as create_bytes. Empty on failure.
+    func open_read_bytes(path: u8[260], length: u16): ByteFile
+    {
+        unsafe
+        {
+            var owner: ByteFile = byte_file_read_only_native::sage_byte_file_open_read_bytes(path, length as c_size_t) as ByteFile;
+            return owner;
+        }
+    }
+
     func is_open(value: &ByteFile): b8
     {
         if (value == null) { return false; }
         unsafe { return byte_file_native::sage_byte_file_is_open(value as SageByteFileState*) != 0; }
+    }
+
+    /// Whether this open handle's mode permits output; not a promise of I/O success.
+    func can_write(value: &ByteFile): b8
+    {
+        if (value == null) { return false; }
+        unsafe { return byte_file_native::sage_byte_file_can_write(value as SageByteFileState*) != 0; }
     }
 
     /// EOF: has_value=false, failed=false. Failure: has_value=false, failed=true.

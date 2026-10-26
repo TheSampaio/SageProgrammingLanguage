@@ -1,0 +1,70 @@
+use byte_file;
+use test;
+
+func open_existing(): ByteFile
+{
+    var path: u8[260] = { 101, 120, 105, 115, 116, 105, 110, 103, 46, 98, 105, 110 };
+    var length: u16 = 12;
+    var owner: ByteFile = byte_file::open_read_bytes(path, length);
+    return owner;
+}
+
+func early_return(): i32
+{
+    var owner: ByteFile = open_existing();
+    var read: ByteRead = byte_file::read_byte(&mut owner);
+    if (read.has_value && !read.failed) { return read.value as i32; }
+    return -1;
+}
+
+func main(): none
+{
+    var file: ByteFile = open_existing();
+    test::assert_true("read_only_existing_file_opened", byte_file::is_open(&file));
+    test::assert_false("read_only_capability_denies_output", byte_file::can_write(&file));
+    var first: ByteRead = byte_file::read_byte(&mut file);
+    test::assert_true("read_only_byte_input", first.has_value && first.value == 0 && !first.failed);
+    test::assert_true("read_only_rewind", byte_file::seek_start(&mut file));
+    var capacity: u32 = 300;
+    var buffer: ByteBuffer = byte_buffer::create(capacity);
+    var limit: u32 = 300;
+    var read: ByteTransfer = byte_file::read_buffer(&mut file, &mut buffer, limit);
+    test::assert_true("read_only_block_input_count_eof", read.count == 256 && read.eof && !read.failed);
+    var matched: b8 = true;
+    for (var index: u32 = 0; index < 256; index++)
+    {
+        var byte: BufferRead = byte_buffer::read(&buffer, index);
+        if (!byte.has_value || byte.value != (index as u8)) { matched = false; }
+    }
+    test::assert_true("read_only_all_bytes_preserved", matched);
+    var byte: u8 = 99;
+    test::assert_false("read_only_byte_write_denied", byte_file::write_byte(&mut file, byte));
+    limit = 1;
+    var denied: ByteTransfer = byte_file::write_buffer(&mut file, &buffer, limit);
+    test::assert_true("read_only_block_write_denied", denied.count == 0 && !denied.eof && denied.failed);
+    limit = 0;
+    var denied_zero: ByteTransfer = byte_file::write_buffer(&mut file, &buffer, limit);
+    test::assert_true("read_only_zero_write_denied", denied_zero.count == 0 && denied_zero.failed);
+    test::assert_false("read_only_flush_denied", byte_file::flush(&mut file));
+    test::assert_true("read_only_seek_after_denied_output", byte_file::seek_start(&mut file));
+    var again: ByteRead = byte_file::read_byte(&mut file);
+    test::assert_true("read_only_input_after_denied_output", again.has_value && again.value == 0 && !again.failed);
+    var closed: b8 = byte_file::close(file);
+    test::assert_true("read_only_consuming_close", closed);
+    var output_path: u8[260] = { 119, 114, 105, 116, 97, 98, 108, 101, 46, 98, 105, 110 };
+    var output_length: u16 = 12;
+    var output: ByteFile = byte_file::create_bytes(output_path, output_length);
+    test::assert_true("read_only_update_constructor_retains_output", byte_file::can_write(&output));
+    var output_closed: b8 = byte_file::close(output);
+    test::assert_true("read_only_update_owner_closed", output_closed);
+    test::assert_true("read_only_early_return_cleanup", early_return() == 0);
+    var next: ByteFile = open_existing();
+    var moved: ByteFile = next;
+    test::assert_false("read_only_mode_survives_move", byte_file::can_write(&moved));
+    var moved_closed: b8 = byte_file::close(moved);
+    test::assert_true("read_only_moved_owner_closed", moved_closed);
+    var missing_path: u8[260] = { 109, 105, 115, 115, 105, 110, 103, 46, 98, 105, 110 };
+    var missing_length: u16 = 11;
+    var absent: ByteFile = byte_file::open_read_bytes(missing_path, missing_length);
+    test::assert_true("read_only_missing_file_returns_empty", absent == null);
+}

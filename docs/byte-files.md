@@ -1,4 +1,4 @@
-# Owned byte files (v0.22.0)
+# Owned byte files (v0.23.0)
 
 `use byte_file;` imports a bounded file API. `ByteFile` owns an opaque native state
 and follows normal move, borrow, return, and cleanup contracts. Existing unsafe
@@ -9,13 +9,15 @@ and follows normal move, borrow, return, and cleanup contracts. Existing unsafe
 | `empty()` | Returns a local owner | Empty handle; no file is opened |
 | `create(path: str)` | **unsafe**, returns an owner | Creates/truncates a binary `w+b` file; empty on failure |
 | `create_bytes(path: u8[260], length: u16)` | Safe fixed-array value parameter, returns an owner | Creates/truncates using 1..259 printable ASCII bytes; empty on failure |
+| `open_read_bytes(path: u8[260], length: u16)` | Safe fixed-array value parameter, returns an owner | Opens an existing binary file for reading (`rb`), without creating/truncating it |
 | `is_open(value: &ByteFile)` | Shared borrow | Whether its native stream is open |
+| `can_write(value: &ByteFile)` | Shared borrow | Whether the open handle's mode permits output |
 | `read_byte(value: &mut ByteFile)` | Mutable borrow | A `ByteRead` value |
 | `write_byte(value: &mut ByteFile, byte: u8)` | Mutable borrow | `true` on successful byte output |
 | `read_buffer(value: &mut ByteFile, buffer: &mut ByteBuffer, limit: u32)` | Exclusive file and target borrows | `ByteTransfer`; replaces the target with received bytes |
 | `write_buffer(value: &mut ByteFile, buffer: &ByteBuffer, limit: u32)` | Exclusive file and shared source borrows | `ByteTransfer`; writes an initialized source prefix |
 | `seek_start(value: &mut ByteFile)` | Mutable borrow | `true` on successful positioning |
-| `flush(value: &mut ByteFile)` | Mutable borrow | `true` on successful buffer flushing |
+| `flush(value: &mut ByteFile)` | Mutable borrow; output-capable mode | `true` on successful buffer flushing; false in read-only mode |
 | `close(value: ByteFile)` | **Consumes** the owner | Reports native close success; consumes even on failure |
 
 `ByteRead` contains `value: u8`, `has_value: b8`, and `failed: b8`:
@@ -28,6 +30,44 @@ and follows normal move, borrow, return, and cleanup contracts. Existing unsafe
 seek, flush, and close without invoking native I/O. False write/flush status does
 not promise that no earlier buffered data reached the file. Errors are per
 operation; the adapter clears native stream indicators before positioning.
+
+## Existing files in read-only mode
+
+Since v0.23.0, `open_read_bytes` accepts the same 1..259 printable ASCII prefix of
+a `u8[260]` value parameter as `create_bytes`. It uses binary read mode `rb`.
+Missing/unreadable files, invalid prefixes and allocation failure return an empty
+owner. Existing contents are not truncated and missing files are not created.
+The read mode also supports sources marked read-only by the current Windows
+filesystem; native open can still fail for ordinary platform reasons.
+
+These constructors produce the same non-Copy `ByteFile` owner. Read-only mode
+permits byte/block reads, positioning and consuming close. `write_byte` and
+`flush` return false; `write_buffer` returns count=0, eof=false, failed=true,
+including for limit zero. The runtime rejects these operations before native
+output or positioning, preserving the input position and source buffer.
+Restrictions are runtime mode checks, not distinct Sage types.
+
+`can_write(&file)` reports a capability fixed by acquisition and preserved through
+moves/returns: true for open `create`/`create_bytes` handles, false for read-only
+and empty owners. It does not test OS permissions or guarantee future output
+success. Borrow, move, and close rules remain unchanged; a consumed owner cannot
+be queried again (S140).
+
+```sage
+func open_existing(): ByteFile
+{
+    var path: u8[260] = { 100, 97, 116, 97, 46, 98, 105, 110 }; // data.bin
+    var length: u16 = 8;
+    var owner: ByteFile = byte_file::open_read_bytes(path, length);
+    return owner;
+}
+```
+
+This separation avoids incompatible `fflush` calls on input-only streams. Modes
+follow C11 draft N1570 [§§7.21.5.2–3](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf).
+`tests/byte-file-read-only.ps1` verifies actual read-only source preservation,
+native output-call counters, allocation/close failures and exact cleanup across
+generated translation units.
 
 ## Block transfers
 
@@ -42,7 +82,7 @@ dependency. The public surface exposes no data pointers.
 | Read error after partial progress | Count remains meaningful, `failed=true`; EOF flag remains independent | Only the received prefix is accessible |
 | Invalid/empty owner or excessive limit | Zero, `eof=false`, `failed=true` | Previous contents/length preserved |
 | Positioning failure before native transfer | Zero, `eof=false`, `failed=true` | Previous contents/length preserved |
-| Zero limit with valid owners | Zero, both flags false; no native I/O or EOF probe | Previous contents/length preserved |
+| Zero limit with valid owners and a permitted operation | Zero, both flags false; no native I/O or EOF probe | Previous contents/length preserved |
 
 `read_buffer` requires `limit <= capacity`. After native input starts it replaces
 length with the actual byte count even on EOF/error; it never appends or exposes
@@ -123,9 +163,11 @@ func example_bytes(): b8
 
 This is a bounded ASCII byte-path interface, not Unicode/text ownership or a
 portable OS path model. Printable bytes can still form invalid platform paths;
-native open failure returns an empty owner. Both constructors create/truncate;
-allocation failure after a successful open can leave a truncated file. Only
-prefix validation failure guarantees no native open. Scalar/pointer-to-array
+native open failure returns an empty owner. `create`/`create_bytes` create or
+truncate; allocation failure after a successful create can leave a truncated
+file. `open_read_bytes` preserves contents even on state-allocation failure and
+closes its already-opened input stream. Prefix validation failure guarantees no
+native open. Scalar/pointer-to-array
 casts cannot fabricate the fixed array: unsupported array casts report S188.
 
 The adapter uses a positioning barrier before read, write, and flush, preventing
@@ -151,7 +193,7 @@ separate `Runtime/include` directory.
 The adapter requires 8-bit C bytes and has been validated with the current Windows
 GCC toolchain; broader platform behavior has not been operationally demonstrated.
 
-The interface intentionally omits text encoding, append/open modes, arbitrary
+The interface intentionally omits text encoding, append/general update modes, arbitrary
 seeks, buffer slices, detailed OS error codes, and safe general path acquisition.
 Tests are `Sandbox/tests/byte_file.test.sg` (safe empty-owner and rejected paths) and
 `tests/byte-file.ps1` (native failure injection, all-byte roundtrip, persisted
