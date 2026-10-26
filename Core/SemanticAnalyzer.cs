@@ -193,6 +193,9 @@ namespace Sage.Core
 
         private bool IsResourceAggregate(string type) => IsResourceAggregate(type, new HashSet<string>(StringComparer.Ordinal));
 
+        private bool IsResourceAggregateArray(string type) =>
+            TypeSystem.IsArrayType(type) && IsResourceAggregate(TypeSystem.GetArrayBaseType(type));
+
         private bool IsResourceAggregate(string type, HashSet<string> path)
         {
             if (!_structDeclarations.TryGetValue(type, out var structure) || !path.Add(type)) return false;
@@ -208,7 +211,7 @@ namespace Sage.Core
             if (TypeSystem.IsArrayType(valueType)) valueType = TypeSystem.GetArrayBaseType(valueType);
             valueType = valueType.TrimEnd('*');
             if (IsResourceAggregate(valueType))
-                throw new CompilerException(operation, "S196", "Structs containing native resources require local literal initialization; copying, arrays, pointers, calls, and returns need ownership contracts.");
+                throw new CompilerException(operation, "S196", "Structs containing native resources require direct local literals; copies, nonlocal arrays, pointers, calls, and returns need ownership contracts.");
         }
 
         private void RejectResourceBindingName(string name, AstNode operation)
@@ -324,11 +327,18 @@ namespace Sage.Core
             bool isResource = TypeSystem.IsNativeResource(node.Type);
             bool isResourceArray = TypeSystem.IsNativeResourceArray(node.Type);
             bool isResourceAggregate = IsResourceAggregate(node.Type);
+            bool isResourceAggregateArray = IsResourceAggregateArray(node.Type);
             if (isResourceAggregate)
             {
                 if (_functionDepth == 0 || !_localStructs.Contains(node.Type) ||
                     node.Initializer is not (StructInitializationNode or ArrayInitializationNode))
                     throw new CompilerException(node, "S196", "A resource-containing struct requires direct local initialization with a struct literal.");
+            }
+            else if (isResourceAggregateArray)
+            {
+                if (_functionDepth == 0 || !_localStructs.Contains(TypeSystem.GetArrayBaseType(node.Type)) ||
+                    node.Initializer is not (null or ArrayInitializationNode))
+                    throw new CompilerException(node, "S196", "An array of resource structs requires local zero initialization or a direct array literal.");
             }
             else RejectResourceAggregateType(node.Type, node);
             if (isResourceArray && (_functionDepth == 0 || node.Initializer is not (null or ArrayInitializationNode)))
@@ -587,6 +597,13 @@ namespace Sage.Core
                     string elementType = TypeSystem.GetArrayBaseType(targetType);
                     foreach (var element in array.Elements)
                     {
+                        if (IsResourceAggregateArray(targetType))
+                        {
+                            if (element is not (StructInitializationNode or ArrayInitializationNode))
+                                throw new CompilerException(element, "S196", "An array of resource structs requires a literal for each initialized element.");
+                            AnalyzeValue(element, elementType, "S181", "Array element");
+                            continue;
+                        }
                         if (TypeSystem.IsNativeResourceArray(targetType))
                         {
                             if (element is not IdentifierNode owner)
@@ -702,17 +719,28 @@ namespace Sage.Core
             RejectResourceAggregateType(targetType, node);
             if (TypeSystem.IsNativeResource(targetType))
             {
-                if (!ReferenceEquals(node, _standaloneAssignment) || node.Target is not IdentifierNode target ||
-                    node.Expression is not IdentifierNode source)
-                    throw new CompilerException(node, "S143", "Resource reassignment requires a standalone assignment between named local owners.");
-                var destination = _symbolTable.ResolveLocal(target.Name);
-                if (destination is not { IsOwningValue: true })
-                    throw new CompilerException(target, "S143", "A borrowed resource cannot be reassigned as an owner.");
+                if (!ReferenceEquals(node, _standaloneAssignment) || node.Expression is not IdentifierNode source)
+                    throw new CompilerException(node, "S143", "Resource reassignment requires a standalone assignment from a named local owner.");
+                SymbolMetadata? destination = null;
+                if (node.Target is IdentifierNode target)
+                {
+                    destination = _symbolTable.ResolveLocal(target.Name);
+                    if (destination is not { IsOwningValue: true })
+                        throw new CompilerException(target, "S143", "A borrowed resource cannot be reassigned as an owner.");
+                }
+                else if (node.Target is MemberAccessNode { Object: IdentifierNode container })
+                {
+                    var binding = _symbolTable.ResolveLocal(container.Name);
+                    if (binding is not { IsReference: false, Borrowing: BorrowKind.None } ||
+                        !_localStructs.Contains(binding.Type) || !IsResourceAggregate(binding.Type))
+                        throw new CompilerException(node.Target, "S143", "Resource field replacement requires a direct field of a local owning struct.");
+                }
+                else throw new CompilerException(node.Target, "S143", "Resource field replacement requires a direct field of a local owning struct.");
                 AnalyzeValue(source, targetType, "S108", "Assignment");
                 var origin = _symbolTable.ResolveLocal(source.Name);
                 if (origin is not { IsOwningValue: true })
                     throw new CompilerException(source, "S191", "A borrowed resource cannot be moved into an owner.");
-                if (ReferenceEquals(destination, origin))
+                if (destination != null && ReferenceEquals(destination, origin))
                     throw new CompilerException(node, "S143", "A resource owner cannot be assigned to itself.");
                 ConsumeReference(source, node, OwnershipKind.Moved);
                 node.VariableType = targetType;

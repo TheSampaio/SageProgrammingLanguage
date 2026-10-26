@@ -16,8 +16,8 @@ The project strictly follows **SOLID principles** and **Clean Code** architectur
 * **Local Ownership and Borrowing:** Heap-reference initialization transfers ownership, and scope exit releases owned allocations automatically. Explicit borrowed parameters and lexical local bindings provide shared or mutable access for supported scalar/struct values; see [borrowing semantics](docs/borrowing.md) and [memory semantics](docs/memory.md).
 * **Explicit FFI Boundaries:** `extern` blocks use C interop aliases (`c_int`, `c_size_t`, `c_char`, …) and opaque types (`type FILE;`). Direct calls require `unsafe`; see [native boundaries](docs/native-boundaries.md).
 * **Native Resource Ownership:** Explicit native representation/destructor metadata is validated across imports. Owners support moves, replacement assignment, borrows, consuming parameters, factory returns, safe null checks, and automatic scope cleanup; native adoption remains unsafe. See [resource contracts and boundaries](docs/native-resource-contracts.md).
-* **Local Resource Structs:** Local struct literals may move named native resource owners into direct or nested fields. Cleanup runs recursively in reverse field order; copying, arrays of these structs, calls, and returns remain unsupported. See [resource struct contracts](docs/resource-structs.md).
-* **Local Resource Arrays:** Fixed arrays of native resource owners accept named-owner literals or empty initialization and clean up in reverse index order. Array copying and element extraction remain unsupported; see [resource array contracts](docs/resource-arrays.md).
+* **Local Resource Structs:** Local struct literals may move named native resource owners into direct or nested fields. Cleanup runs recursively in reverse field order; direct resource fields can be replaced from named owners. Copying, calls, and returns remain unsupported. See [resource struct contracts](docs/resource-structs.md).
+* **Local Resource Arrays:** Fixed local arrays of native resources or resource-containing structs accept direct literals or empty initialization and clean up in reverse index order. Array copying and element extraction remain unsupported; see [resource array contracts](docs/resource-arrays.md).
 * **Bounded C++ Interop:** `extern cpp` blocks bind declared free functions, overloads, explicit template instances, and class handles (constructor, destructor, member functions) through generated `extern "C"` adapters. Exceptions abort instead of unwinding into C; C-only projects need no C++ toolchain. See [C++ interop](docs/cpp-interop.md).
 * **Owned Byte Files:** Bounded ASCII paths support creation and existing read-only input. Borrowed byte/block I/O, mode checks, positioning and consuming close expose explicit outcomes; see [byte files](docs/byte-files.md).
 * **Tree-Shaking Code Gen:** Smart header management that only includes necessary C headers (`stdio.h`, `stdint.h`, etc.) based on actual code usage.
@@ -370,7 +370,14 @@ file directly with `sage <file>.test.sg` and read the `[PASS]`/`[FAIL]` output.
 
 ## Project Status
 
-The project is currently in **v0.29.0 (Alpha)**.
+The project is currently in **v0.30.0 (Alpha)**.
+
+Phase 2 now supports local fixed arrays of same-file structs containing native
+resources. Literal elements move named owners into fields; generated cleanup
+releases elements in reverse index order and fields in reverse declaration
+order. See [resource arrays](docs/resource-arrays.md) for the supported subset.
+Direct resource fields of local structs also support standalone replacement from
+a named owner, releasing the old field before scope cleanup.
 
 * [x] **CLI & Project System** (`new`, `build`, `run`, `--version`)
 * [x] **Variable Declarations** (`var`) & **Constants** (`const`)

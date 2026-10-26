@@ -101,8 +101,9 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
   nullable-handle cleanup; see `docs/native-resource-contracts.md`. Explicit shared/
   mutable borrows reuse lexical loan checks. Named resource owners may be returned
   into direct local owning call initializers. Resource value parameters consume
-  named owners and adopt cleanup in the callee. Resource arrays and fields are
-  not enabled yet. See S193/S194 producer and call restrictions in the contract.
+  named owners and adopt cleanup in the callee. Local resource arrays and
+  direct or nested struct fields have bounded contracts; see S193/S194 producer
+  and call restrictions in the contract.
 - `owner == null` / `owner != null` checks a named resource or borrow in safe
   Sage. `null` is contextual and existing bindings keep their meaning. Bind a
   presence query before passing it alongside consumed arguments; see S195/S194.
@@ -111,13 +112,15 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
   conflicting loans remain rejected; see `tests/native-resource-reassignment.ps1`.
 - Structs with direct or nested native resource fields support local literal
   initialization from named owners and recursive reverse-field cleanup. Empty
-  and omitted fields are zeroed. Whole-struct copy, arrays, calls, returns,
-  and resource-field assignment remain S196/S143 boundaries; see
+  and omitted fields are zeroed. Direct fields of mutable local structs support
+  standalone named-owner replacement. Whole-struct copies, calls, returns, and
+  nested or array-element field replacement remain S196/S143 boundaries; see
   `docs/resource-structs.md` and `tests/native-resource-nested-struct.ps1`.
-- Fixed local arrays of native resources accept named-owner literal elements or
-  empty initialization. Cleanup drops elements in reverse index order. Array
-  copies, resource-struct arrays, field storage, and extraction remain rejected;
-  see `docs/resource-arrays.md` and `tests/native-resource-array.ps1`.
+- Fixed local arrays of native resources or same-file resource structs accept
+  direct literals or zero initialization. Cleanup drops elements in reverse
+  index order and recursively drops struct fields. Array copies, field storage,
+  and element extraction remain rejected; see `docs/resource-arrays.md` and
+  `tests/native-resource-struct-array.ps1`.
 - `byte_file` provides bounded owned byte I/O and consuming close with explicit
   outcomes. `create_bytes(u8[260], u16)` safely accepts 1..259 printable ASCII
   bytes; `create(str)` remains unsafe. Retain the legacy `file` module. The std

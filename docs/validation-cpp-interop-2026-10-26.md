@@ -1,12 +1,12 @@
-# Bounded C++ interop — 2026-10-26
+﻿# Bounded C++ interop â€” 2026-10-26
 
-Sage 0.29.0 adds `extern cpp` blocks with generated `extern "C"` adapters for
+Sage 0.30.0 adds `extern cpp` blocks with generated `extern "C"` adapters for
 declared free functions, overloads, explicit template instances, and class
 handles (constructor, destructor, member functions). Exceptions and null member
 handles abort with a diagnostic instead of unwinding into C. Only builds that
 declare `extern cpp` generate adapters and invoke `g++` (GCC 15.2.0 here).
 
-Debug and Release builds completed with zero warnings/errors. All 29 PowerShell
+Debug and Release builds completed with zero warnings/errors. All 30 PowerShell
 scripts passed in both configurations; Sandbox passed 26 files and 203
 assertions in each configuration. `tests/cpp-interop.ps1` checks six runtime
 behaviors (C alias compatibility without adapters, overload/template/class

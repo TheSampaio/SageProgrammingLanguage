@@ -63,4 +63,30 @@ unsafe func main(): none
         trace::resource_check(empty.value == 0, "empty_struct_zero_initialized");
     }
     trace::resource_check(trace::resource_drop_calls() == 0, "empty_struct_skips_destructors");
+
+    trace::resource_reset();
+    if (true)
+    {
+        var first: OwnedHandle = produce(1);
+        var pair: Pair = { first = first };
+        var replacement: OwnedHandle = produce(2);
+        pair.first = replacement;
+        trace::resource_check(trace::resource_outstanding() == 1, "old_field_released_on_replacement");
+        trace::resource_check(trace::resource_release_order() == 1, "old_field_released_first");
+        trace::resource_check(trace::resource_drop_calls() == 1, "old_field_released_once");
+    }
+    trace::resource_check(trace::resource_outstanding() == 0, "replacement_released_at_scope_exit");
+    trace::resource_check(trace::resource_release_order() == 12, "field_replacement_cleanup_order");
+    trace::resource_check(trace::resource_drop_calls() == 2, "field_replacement_total_drops");
+
+    trace::resource_reset();
+    if (true)
+    {
+        var pair: Pair = {};
+        var replacement: OwnedHandle = produce(3);
+        pair.first = replacement;
+        trace::resource_check(trace::resource_drop_calls() == 0, "empty_field_replacement_skips_drop");
+    }
+    trace::resource_check(trace::resource_release_order() == 3, "empty_field_replacement_cleanup");
+    trace::resource_check(trace::resource_drop_calls() == 1, "empty_field_replacement_drops_once");
 }

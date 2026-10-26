@@ -1,4 +1,4 @@
-# Bounded C++ interop (v0.29.0)
+# Bounded C++ interop (v0.30.0)
 
 Sage keeps its C backend. An `extern cpp` block declares the C++ API it needs;
 the compiler generates `extern "C"` adapters in `obj/sage_cpp_adapters.cpp`,

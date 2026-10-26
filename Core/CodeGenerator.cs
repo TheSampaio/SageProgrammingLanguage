@@ -18,6 +18,7 @@ namespace Sage.Core
         private readonly Dictionary<string, string> _cleanupHelpers = new();
         private readonly Dictionary<string, string> _resourceCleanupHelpers = new();
         private readonly Dictionary<string, string> _resourceArrayCleanupHelpers = new();
+        private readonly Dictionary<string, string> _aggregateArrayCleanupHelpers = new();
         private readonly Dictionary<string, string> _aggregateCleanupHelpers = new();
         private readonly List<string> _aggregateCleanupOrder = [];
         private readonly Dictionary<string, StructDeclarationNode> _structures = new(StringComparer.Ordinal);
@@ -39,6 +40,7 @@ namespace Sage.Core
             _cleanupHelpers.Clear();
             _resourceCleanupHelpers.Clear();
             _resourceArrayCleanupHelpers.Clear();
+            _aggregateArrayCleanupHelpers.Clear();
             _aggregateCleanupHelpers.Clear();
             _aggregateCleanupOrder.Clear();
             _structures.Clear();
@@ -78,6 +80,13 @@ namespace Sage.Core
                 sb.AppendLine($"static void {helper}({type}* owner) {{ " +
                     string.Join(" ", fields.Select(field =>
                         $"{(TypeSystem.IsNativeResource(field.Type) ? _resourceCleanupHelpers[field.Type] : _aggregateCleanupHelpers[field.Type])}(&owner->{field.Name});")) + " }");
+            }
+            foreach (var (type, helper) in _aggregateArrayCleanupHelpers)
+            {
+                string elementType = TypeSystem.GetArrayBaseType(type);
+                int length = TypeSystem.GetArraySize(type);
+                sb.AppendLine($"static void {helper}({elementType} (*owner)[{length}]) {{ " +
+                    $"for (int i = {length}; i > 0; --i) {_aggregateCleanupHelpers[elementType]}(&(*owner)[i - 1]); }}");
             }
 
             sb.AppendLine("\n/* --- Generated Logic --- */");
@@ -183,6 +192,15 @@ namespace Sage.Core
                 string elementType = TypeSystem.GetArrayBaseType(node.Type);
                 int length = TypeSystem.GetArraySize(node.Type);
                 string helper = ResourceArrayCleanupHelper(node.Type);
+                if (string.IsNullOrEmpty(init)) init = " = {0}";
+                return $"{Indent}{elementType} {node.Name}[{length}] __attribute__((cleanup({helper}))){init};\n";
+            }
+
+            if (IsResourceAggregateArray(node.Type))
+            {
+                string elementType = TypeSystem.GetArrayBaseType(node.Type);
+                int length = TypeSystem.GetArraySize(node.Type);
+                string helper = AggregateArrayCleanupHelper(node.Type);
                 if (string.IsNullOrEmpty(init)) init = " = {0}";
                 return $"{Indent}{elementType} {node.Name}[{length}] __attribute__((cleanup({helper}))){init};\n";
             }
@@ -634,6 +652,19 @@ namespace Sage.Core
             _aggregateCleanupOrder.Add(type);
             return helper;
         }
+
+        private string AggregateArrayCleanupHelper(string type)
+        {
+            if (_aggregateArrayCleanupHelpers.TryGetValue(type, out string? helper)) return helper;
+            string elementType = TypeSystem.GetArrayBaseType(type);
+            AggregateCleanupHelper(elementType, _structures[elementType]);
+            helper = MintName("_sage_aggregate_array_drop_");
+            _aggregateArrayCleanupHelpers.Add(type, helper);
+            return helper;
+        }
+
+        private bool IsResourceAggregateArray(string type) =>
+            TypeSystem.IsArrayType(type) && IsResourceAggregate(TypeSystem.GetArrayBaseType(type));
 
         private bool IsResourceAggregate(string type) => IsResourceAggregate(type, new HashSet<string>(StringComparer.Ordinal));
 
