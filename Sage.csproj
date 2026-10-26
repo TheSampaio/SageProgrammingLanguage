@@ -8,6 +8,17 @@
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 	</PropertyGroup>
 	
+	<!-- Development instrumentation: `dotnet build -c Instrumented` (or -p:SageInstrumentation=true)
+	     defines SAGE_INSTRUMENTATION, which prints phase timings, cache counts and memory to stderr. -->
+	<PropertyGroup Condition="'$(Configuration)' == 'Instrumented'">
+		<Optimize>true</Optimize>
+		<SageInstrumentation>true</SageInstrumentation>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(SageInstrumentation)' == 'true'">
+		<DefineConstants>$(DefineConstants);SAGE_INSTRUMENTATION</DefineConstants>
+	</PropertyGroup>
+	
 	<ItemGroup>
 	  <Folder Include="Assets\Images\" />
 	  <Content Include="Runtime\include\**\*.h" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

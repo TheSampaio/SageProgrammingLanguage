@@ -127,3 +127,32 @@ Native compile: 1 compiled [util], 4 reused [main, alpha, beta, probe]; link: re
 - A changed toolchain is detected through `gcc -v`; replacing system headers in
   place without changing the toolchain installation is not detected (delete
   `obj/` or use `--clean`).
+
+## Development instrumentation
+
+Phase timings, cache counts and memory statistics are compiled only into a
+dedicated development configuration. Every recording call in
+`Utilities/CompilerInstrumentation` is `[Conditional("SAGE_INSTRUMENTATION")]`,
+so Debug and Release compilers contain no instrumentation calls, stay quiet,
+and write no report files.
+
+```powershell
+dotnet build Sage.csproj -c Instrumented        # bin/Instrumented/net8.0/Sage.dll
+# or: dotnet build Sage.csproj -c Release -p:SageInstrumentation=true
+```
+
+An instrumented compiler prints one `name=value` line per metric to standard
+error after every run:
+
+| Metric | Meaning |
+| --- | --- |
+| `lex_ms`, `parse_ms` | Lexing and parsing, summed over modules |
+| `semantic_ms` | Symbol registration, native contract validation and analysis; ownership and borrow checking run inside the analyzer and are not separable |
+| `codegen_ms` | Header and C generation, including writing the files |
+| `cache_ms` | Include-closure hashing, cache keys and object validation |
+| `native_compile_ms`, `link_ms` | Wall time of the parallel `gcc -c` step and of the link check/link |
+| `toolchain_probe_ms` | `gcc -v` probe; it starts with the front end and overlaps it |
+| `run_ms` | Running the application (`run` and explicit-file builds) |
+| `units_compiled`, `units_reused`, `relinked` | Cache outcome |
+| `process_ms` | Wall time since process start, including .NET startup |
+| `peak_working_set_bytes`, `allocated_bytes`, `gc_collections` | Peak memory, managed allocation and GC counts (gen0/gen1/gen2) |

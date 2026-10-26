@@ -151,6 +151,8 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
 - Objects/links are cached in `obj/sage-build-cache.json` (content-addressed: generated C +
   transitive headers + `SageInfo.Version` + compiler/flags + `gcc -v` identity). `--clean`
   forces a rebuild. Anything new that affects object code must enter the unit's key.
+- Development metrics: `dotnet build -c Instrumented` defines `SAGE_INSTRUMENTATION`;
+  `CompilerInstrumentation` calls are `[Conditional]`, so Debug/Release stay quiet.
 
 ## Generated C
 

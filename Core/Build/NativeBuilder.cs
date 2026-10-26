@@ -36,24 +36,33 @@ namespace Sage.Core.Build
 
             try
             {
+                long cacheStart = CompilerInstrumentation.Start();
                 var hasher = new IncludeClosureHasher();
                 var keys = units.Select(unit => ObjectKey(unit, hasher)).ToList();
                 var stale = Enumerable.Range(0, units.Count)
                     .Where(i => !IsCurrent(manifest.Objects.GetValueOrDefault(units[i].Name), keys[i], units[i].ObjectPath))
                     .ToList();
+                CompilerInstrumentation.Stop("cache", cacheStart);
 
                 // Forget stale entries before compiling, so a failed or interrupted compile never looks valid.
                 foreach (int i in stale) manifest.Objects.Remove(units[i].Name);
+                long compileStart = CompilerInstrumentation.Start();
                 CompileUnits(units, stale, i =>
                     manifest.Objects[units[i].Name] = new CacheEntry(keys[i], ContentHash.OfFile(units[i].ObjectPath)));
+                CompilerInstrumentation.Stop("native_compile", compileStart);
 
+                long linkStart = CompilerInstrumentation.Start();
                 bool linked = LinkIfNeeded(units, link, manifest);
+                CompilerInstrumentation.Stop("link", linkStart);
 
                 var result = new NativeBuildResult(
                     stale.Select(i => units[i].Name).ToList(),
                     Enumerable.Range(0, units.Count).Except(stale).Select(i => units[i].Name).ToList(),
                     linked);
                 if (verbose) CompilerLogger.LogInfo(result.Describe());
+                CompilerInstrumentation.Record("units_compiled", result.Compiled.Count);
+                CompilerInstrumentation.Record("units_reused", result.Reused.Count);
+                CompilerInstrumentation.Record("relinked", result.Linked);
                 return result;
             }
             finally

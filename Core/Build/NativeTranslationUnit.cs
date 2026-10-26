@@ -20,6 +20,9 @@ namespace Sage.Core.Build
         IReadOnlyList<string> Flags,
         IReadOnlyList<string> IncludeDirectories)
     {
+        /// <summary>Compiler driver for generated C modules.</summary>
+        public const string CCompiler = "gcc";
+
         /// <summary>Flags used for every generated C module (the language standard Sage targets).</summary>
         public static readonly IReadOnlyList<string> CFlags = ["-std=c11"];
 
@@ -31,7 +34,7 @@ namespace Sage.Core.Build
                 Path.GetFileNameWithoutExtension(fullPath),
                 fullPath,
                 Path.ChangeExtension(fullPath, ".o"),
-                "gcc",
+                CCompiler,
                 CFlags,
                 includeDirectories);
         }

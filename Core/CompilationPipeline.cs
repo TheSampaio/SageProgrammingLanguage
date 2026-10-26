@@ -21,6 +21,9 @@ namespace Sage.Core
             var config = ConfigurationResolver.Resolve(args);
             var env = EnvironmentFactory.Create(config);
 
+            // Identify the native toolchain while the front end runs (used by the build cache key).
+            if (config.BuildNative) NativeToolchainIdentity.Prefetch(NativeTranslationUnit.CCompiler);
+
             if (config.IsDebugMode)
             {
                 CompilerLogger.LogInfo($"Root: {env.ProjectRoot}");
@@ -38,7 +41,9 @@ namespace Sage.Core
 
             ParseAndDiscover(queue, parsedModules, moduleGraph, config, env, analyzer);
             if (config.IsDebugMode) CompilerLogger.LogInfo($"Module graph: {moduleGraph.Describe()}");
+            long semanticStart = CompilerInstrumentation.Start();
             analyzer.ValidateNativeResourceContracts();
+            CompilerInstrumentation.Stop("semantic", semanticStart);
             GenerateCode(parsedModules, generatedCFiles, config, env, analyzer);
 
             if (config.BuildNative)
@@ -106,7 +111,9 @@ namespace Sage.Core
                     throw new FileNotFoundException($"Source file not found: {path}");
                 }
 
+                long lexStart = CompilerInstrumentation.Start();
                 var tokens = new Lexer(File.ReadAllText(path)).Tokenize();
+                CompilerInstrumentation.Stop("lex", lexStart);
 
                 if (config.IsDebugMode)
                 {
@@ -115,8 +122,12 @@ namespace Sage.Core
                     CompilerLogger.LogStep("2. Parsing...");
                 }
 
+                long parseStart = CompilerInstrumentation.Start();
                 var ast = new Parser(tokens, Path.GetFileName(path)).Parse();
+                CompilerInstrumentation.Stop("parse", parseStart);
+                long registerStart = CompilerInstrumentation.Start();
                 analyzer.RegisterModuleSymbols(ast);
+                CompilerInstrumentation.Stop("semantic", registerStart);
                 parsedModules.Add(moduleName, ast);
                 moduleGraph.AddModule(moduleName);
 
@@ -175,7 +186,9 @@ namespace Sage.Core
                     CompilerLogger.LogStep("3. Semantic Analysis...");
                 }
 
+                long analyzeStart = CompilerInstrumentation.Start();
                 analyzer.Analyze(ast);
+                CompilerInstrumentation.Stop("semantic", analyzeStart);
 
                 if (config.IsDebugMode)
                 {
@@ -183,12 +196,14 @@ namespace Sage.Core
                     CompilerLogger.LogStep("4. Generating C Code...");
                 }
 
+                long codegenStart = CompilerInstrumentation.Start();
                 File.WriteAllText(Path.Combine(env.ObjDir, name + ".h"), new HeaderGenerator().Generate(ast));
 
                 string cCode = new CodeGenerator().Generate(ast, name); 
                 string cPath = Path.Combine(env.ObjDir, name + ".c");
 
                 File.WriteAllText(cPath, cCode);
+                CompilerInstrumentation.Stop("codegen", codegenStart);
 
                 cFiles.Add(cPath);
             }
@@ -221,7 +236,10 @@ namespace Sage.Core
 
             if (config.RunOnSuccess)
             {
-                return RunApplication(exePath);
+                long runStart = CompilerInstrumentation.Start();
+                int exitCode = RunApplication(exePath);
+                CompilerInstrumentation.Stop("run", runStart);
+                return exitCode;
             }
             else
             {
