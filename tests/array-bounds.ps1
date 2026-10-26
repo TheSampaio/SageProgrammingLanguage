@@ -30,7 +30,10 @@ try {
     foreach ($case in $cases) {
         $source = Join-Path $probeDir ($case.Name + '.sg')
         Set-Content -LiteralPath $source -Value $case.Code
-        $output = & dotnet $compilerPath $source 2>&1
+        $previousErrorAction = $ErrorActionPreference
+        if ($case.Runtime) { $ErrorActionPreference = 'Continue' }
+        try { $output = & dotnet $compilerPath $source 2>&1 }
+        finally { $ErrorActionPreference = $previousErrorAction }
         $exitCode = $LASTEXITCODE
         $text = $output -join "`n"
         if ($case.Error) {
