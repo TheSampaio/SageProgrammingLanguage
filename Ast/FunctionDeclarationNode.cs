@@ -57,6 +57,12 @@ namespace Sage.Ast
         public bool IsUnsafe { get; set; } = false;
 
         /// <summary>
+        /// Gets a value indicating whether the function opted in to extension-method calls with
+        /// <c>method func</c>; its first parameter receives the value before the dot.
+        /// </summary>
+        public bool IsMethod { get; set; } = false;
+
+        /// <summary>
         /// Dispatches the visitor to the appropriate visit method for this function declaration.
         /// </summary>
         /// <typeparam name="T">The return type of the visitor's operation.</typeparam>

@@ -57,6 +57,9 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
 - Callables are visible only in their declaring file and files that directly `use` it (S153);
   native aliases are file-private; distinct callables lowering to one C symbol are S155.
   See `docs/modules.md`.
+- `method func` (contextual `method`, modules only) opts a function into `value.f(args)`;
+  `MethodCallNode.Lowered` holds the resolved `Module::f(receiver, args)` call that analysis and
+  codegen reuse (S156-S159). See `docs/extension-methods.md`.
 
 ### Adding a language feature (the standard workflow)
 

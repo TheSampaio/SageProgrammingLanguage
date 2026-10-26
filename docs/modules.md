@@ -54,6 +54,9 @@ same C library function.
 | S153 | Callable not visible: its file is not directly imported, or a native alias belongs to another file |
 | S155 | Two callables lower to the same C symbol |
 
+[Extension methods](extension-methods.md) (v0.34.1) reuse these rules: a method
+is a candidate only when its module is visible to the calling file.
+
 Run `tests/module-resolution.ps1 -CompilerDll <Sage.dll>` to validate runtime
 origins, forward calls, duplicate declarations, and non-callable bindings, and
 `tests/module-visibility.ps1` for direct-import visibility and C symbol collisions.

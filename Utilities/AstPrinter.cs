@@ -59,6 +59,7 @@ namespace Sage.Utilities
             Type = "FunctionDeclaration",
             node.Name,
             node.IsExtern,
+            node.IsMethod,
             node.ReturnType,
             Parameters = node.Parameters.Select(p => new { p.Name, p.Type }),
             Body = node.Body?.Accept(this)
@@ -169,6 +170,16 @@ namespace Sage.Utilities
             Type = "FunctionCall",
             FunctionName = node.Name,
             node.ResolvedName,
+            Arguments = node.Arguments.Select(a => a.Accept(this))
+        };
+
+        /// <summary>Visits an extension-method call and the module function it resolved to.</summary>
+        public object Visit(MethodCallNode node) => new
+        {
+            Type = "MethodCall",
+            MethodName = node.Name,
+            ResolvedName = node.Lowered?.ResolvedName,
+            Receiver = node.Receiver.Accept(this),
             Arguments = node.Arguments.Select(a => a.Accept(this))
         };
 

@@ -25,6 +25,7 @@ The project strictly follows **SOLID principles** and **Clean Code** architectur
 * **Checked Fixed Arrays:** Invalid literal indices fail at compile time; other out-of-bounds accesses terminate with an error before accessing the element. See [array bounds](docs/array-bounds.md).
 * **Value Copies:** Fixed-array bindings, assignments, and Sage parameters copy supported values into independent storage. Copyability is inferred from struct/array composition; see [value-copy semantics](docs/value-copy.md).
 * **Modularity:** First-class support for `module` blocks and namespaced calls (`math::sum`). Callables are visible only through direct `use` imports, and C symbol collisions are rejected; see [callable resolution](docs/modules.md).
+* **Extension Methods:** Module functions declared `method func` can be called as `value.func(args)`, resolved statically with ambiguity detection and the receiver contract (`T`, `&T`, `&mut T`) of the first parameter; see [extension methods](docs/extension-methods.md).
 * **Developer Tooling:** Standardized **JSON** debug outputs for Tokens (`.tok.json`) and Abstract Syntax Trees (`.ast.json`).
 
 
@@ -369,10 +370,12 @@ file directly with `sage <file>.test.sg` and read the `[PASS]`/`[FAIL]` output.
 
 ## Project Status
 
-The project is currently in **v0.34.0 (Alpha)**.
+The project is currently in **v0.34.1 (Alpha)**.
 
 Phase 5 resolves callables only through direct `use` imports and rejects
 callables whose generated C symbols would collide; see [modules](docs/modules.md).
+Opt-in `method func` declarations add statically resolved extension methods
+(`value.read()` for `counter::read(&value)`); see [extension methods](docs/extension-methods.md).
 
 Phase 2 now supports local fixed arrays of same-file structs containing native
 resources. Literal elements move named owners into fields; generated cleanup

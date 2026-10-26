@@ -116,7 +116,7 @@ namespace Sage.Core
             while (Current.Type != TokenType.CloseBrace && Current.Type != TokenType.EndOfFile)
             {
                 // 'unsafe' inside a module always introduces an unsafe function (modules hold no statements).
-                if (Current.Type == TokenType.Keyword_Func || Current.Type == TokenType.Keyword_Unsafe)
+                if (Current.Type == TokenType.Keyword_Func || Current.Type == TokenType.Keyword_Unsafe || IsMethodModifier(0))
                 {
                     module.Members.Add(ParseFunction(module.Name));
                 }
@@ -226,6 +226,8 @@ namespace Sage.Core
             }
 
             // 2. Function definition / top-level FFI block
+            if (IsMethodModifier(0) || (Current.Type == TokenType.Keyword_Unsafe && IsMethodModifier(1)))
+                throw new CompilerException(Current, "S157", "A 'method func' must be declared inside a module.");
             if (Current.Type == TokenType.Keyword_Func) return ParseFunction("");
             if (Current.Type == TokenType.Keyword_Extern) return ParseExternBlock();
 
@@ -437,6 +439,8 @@ namespace Sage.Core
         {
             var startToken = Current;
             bool isUnsafe = Match(TokenType.Keyword_Unsafe);
+            bool isMethod = IsMethodModifier(0);
+            if (isMethod) _pos++;
             bool isExtern = Match(TokenType.Keyword_Extern);
             Consume(TokenType.Keyword_Func);
 
@@ -449,11 +453,35 @@ namespace Sage.Core
             {
                 Consume(TokenType.Semicolon);
                 return CreateNode(new FunctionDeclarationNode(name, retType, parameters, null!, moduleOwner)
-                { IsExtern = true, IsUnsafe = isUnsafe }, startToken);
+                { IsExtern = true, IsUnsafe = isUnsafe, IsMethod = isMethod }, startToken);
             }
 
             return CreateNode(new FunctionDeclarationNode(name, retType, parameters, ParseBlock(), moduleOwner)
-            { IsUnsafe = isUnsafe }, startToken);
+            { IsUnsafe = isUnsafe, IsMethod = isMethod }, startToken);
+        }
+
+        /// <summary>
+        /// True when the token at <paramref name="offset"/> is the contextual <c>method</c> modifier,
+        /// which is recognized only directly before <c>func</c>.
+        /// </summary>
+        private bool IsMethodModifier(int offset)
+        {
+            int index = Math.Min(_pos + offset, _tokens.Count - 1);
+            var next = _tokens[Math.Min(index + 1, _tokens.Count - 1)];
+            return _tokens[index] is { Type: TokenType.Identifier, Value: "method" } && next.Type == TokenType.Keyword_Func;
+        }
+
+        /// <summary>Parses a parenthesized call argument list: (expr, expr, ...).</summary>
+        private List<AstNode> ParseCallArguments()
+        {
+            Consume(TokenType.OpenParen);
+            var args = new List<AstNode>();
+            if (Current.Type != TokenType.CloseParen)
+            {
+                do { args.Add(ParseExpression()); } while (Match(TokenType.Comma));
+            }
+            Consume(TokenType.CloseParen);
+            return args;
         }
 
         /// <summary>Parses a scoped block of code enclosed in braces.</summary>
@@ -720,16 +748,8 @@ namespace Sage.Core
                 string name = Consume(TokenType.Identifier).Value;
                 while (Match(TokenType.DoubleColon)) name += "::" + Consume(TokenType.Identifier).Value;
 
-                if (Match(TokenType.OpenParen))
-                {
-                    var args = new List<AstNode>();
-                    if (Current.Type != TokenType.CloseParen)
-                    {
-                        do { args.Add(ParseExpression()); } while (Match(TokenType.Comma));
-                    }
-                    Consume(TokenType.CloseParen);
-                    return CreateNode(new FunctionCallNode(name, args), startToken);
-                }
+                if (Current.Type == TokenType.OpenParen)
+                    return CreateNode(new FunctionCallNode(name, ParseCallArguments()), startToken);
                 return CreateNode(new IdentifierNode(name), startToken);
             }
 
@@ -844,7 +864,10 @@ namespace Sage.Core
                 {
                     var opToken = Current;
                     string propertyName = Consume(TokenType.Identifier, "Expected property name.").Value;
-                    left = CreateNode(new MemberAccessNode(left, propertyName), opToken);
+                    // 'value.name(...)' is always an extension-method call; 'value.name' is always a field.
+                    left = Current.Type == TokenType.OpenParen
+                        ? CreateNode(new MethodCallNode(left, propertyName, ParseCallArguments()), opToken)
+                        : CreateNode(new MemberAccessNode(left, propertyName), opToken);
                 }
                 else if (Match(TokenType.OpenBracket))
                 {

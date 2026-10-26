@@ -25,6 +25,7 @@ namespace Sage.Core
         private readonly Dictionary<string, (string Callable, bool IsNative)> _cSymbols = new(StringComparer.Ordinal);
         private string _currentUnit = "";
         private HashSet<string> _importedUnits = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, List<string>> _methodsByName = new(StringComparer.Ordinal);
         private string? _currentReturnType;
 
         /// <summary>Depth of nested unsafe contexts (unsafe blocks, unsafe functions, extern signatures).</summary>
@@ -92,6 +93,11 @@ namespace Sage.Core
             RegisterCSymbol(CNaming.ResolveFunctionName(func), name, func.IsExtern, func);
             RecordCallableOrigin(name);
             _functionDeclarations.Add(name, func);
+            if (func.IsMethod)
+            {
+                if (!_methodsByName.TryGetValue(func.Name, out var methods)) _methodsByName.Add(func.Name, methods = []);
+                methods.Add(name);
+            }
             _symbolTable.Define(name, func.ReturnType, isFunction: true, isExtern: func.IsExtern,
                 signature: new CallableSignature(func.ReturnType, func.Parameters.Select(parameter => parameter.Type), func.IsUnsafe));
         }
@@ -176,14 +182,70 @@ namespace Sage.Core
         /// </summary>
         private void EnsureCallableVisible(AstNode call, string name, SymbolMetadata symbol)
         {
-            if (!_callableUnits.TryGetValue(name, out var units) || units.Contains(_currentUnit)) return;
+            if (IsCallableVisible(name, symbol.IsExtern)) return;
             if (symbol.IsExtern)
                 throw new CompilerException(call, "S153",
                     $"Native alias '{name}' is declared in another file. Declare the extern binding in this file to call it.");
-            if (units.Overlaps(_importedUnits)) return;
-            string origin = units.Order(StringComparer.Ordinal).First();
+            string origin = CallableOrigin(name);
             throw new CompilerException(call, "S153",
                 $"Callable '{name}' is declared in '{origin}.sg', which this file does not import. Add 'use {origin};'.");
+        }
+
+        private bool IsCallableVisible(string name, bool isNative = false) =>
+            !_callableUnits.TryGetValue(name, out var units) || units.Contains(_currentUnit) ||
+            (!isNative && units.Overlaps(_importedUnits));
+
+        private string CallableOrigin(string name) => _callableUnits[name].Order(StringComparer.Ordinal).First();
+
+        /// <summary>
+        /// A method's receiver contract must keep ownership visible: borrows are explicit in the
+        /// declaration, Copy values are copied, and consuming a resource receiver is rejected.
+        /// </summary>
+        private static void ValidateMethodDeclaration(FunctionDeclarationNode node)
+        {
+            if (string.IsNullOrEmpty(node.ModuleOwner) || node.IsExtern)
+                throw new CompilerException(node, "S157", "A 'method func' must be a non-extern function declared inside a module.");
+            if (node.Parameters.Count == 0)
+                throw new CompilerException(node, "S157", $"Method '{node.Name}' requires a first parameter that receives the value before the dot.");
+            string receiver = node.Parameters[0].Type;
+            string value = TypeSystem.GetBorrowedType(receiver);
+            if (TypeSystem.IsRawPointer(value) || TypeSystem.IsArrayType(value))
+                throw new CompilerException(node, "S157", $"Method receiver '{receiver}' is not supported; use a scalar, str, struct, or native resource receiver.");
+            if (!TypeSystem.IsBorrowType(receiver) && TypeSystem.IsNativeResource(value))
+                throw new CompilerException(node, "S157",
+                    $"Method '{node.Name}' would consume its '{receiver}' receiver invisibly. Take '&{receiver}' or '&mut {receiver}', or call '{node.ModuleOwner}::{node.Name}(owner)' as an ordinary function.");
+        }
+
+        /// <summary>
+        /// Selects the single opted-in method named like the call whose receiver parameter accepts
+        /// <paramref name="receiverType"/> among the modules visible to this file. Never uses precedence.
+        /// </summary>
+        private string ResolveMethod(MethodCallNode node, string receiverType)
+        {
+            bool Accepts(FunctionDeclarationNode function) => function.Parameters.Count > 0 &&
+                TypeSystem.GetBorrowedType(function.Parameters[0].Type) == receiverType;
+            var applicable = _methodsByName.GetValueOrDefault(node.Name, [])
+                .Where(callable => Accepts(_functionDeclarations[callable])).Order(StringComparer.Ordinal).ToList();
+            var visible = applicable.Where(callable => IsCallableVisible(callable)).ToList();
+            if (visible.Count == 1) return visible[0];
+            if (visible.Count > 1)
+                throw new CompilerException(node, "S158",
+                    $"Method '{node.Name}' for '{receiverType}' is ambiguous between {string.Join(", ", visible)}. Qualify the call, for example '{visible[0]}(value, ...)'.");
+            if (applicable.Count > 0)
+            {
+                string origin = CallableOrigin(applicable[0]);
+                throw new CompilerException(node, "S153",
+                    $"Method '{applicable[0]}' is declared in '{origin}.sg', which this file does not import. Add 'use {origin};'.");
+            }
+            string? plain = _functionDeclarations
+                .Where(entry => entry.Value.Name == node.Name && !entry.Value.IsMethod && Accepts(entry.Value) && IsCallableVisible(entry.Key))
+                .Select(entry => entry.Key).Order(StringComparer.Ordinal).FirstOrDefault();
+            if (plain != null)
+                throw new CompilerException(node, "S159",
+                    $"Function '{plain}' is not declared as a method. Call it as '{plain}(value, ...)' or declare it with 'method func'.");
+            if (_structDeclarations.TryGetValue(receiverType, out var structure) && structure.Fields.Any(field => field.Name == node.Name))
+                throw new CompilerException(node, "S156", $"'{node.Name}' is a field of struct '{receiverType}', not a method. Fields are not callable.");
+            throw new CompilerException(node, "S156", $"No imported module provides method '{node.Name}' for receiver type '{receiverType}'.");
         }
 
         private void RegisterNativeResource(NativeResourceDeclarationNode node, ExternBlockNode origin)
@@ -299,6 +361,7 @@ namespace Sage.Core
         public string Visit(FunctionDeclarationNode node)
         {
             RegisterFunction(node, node.ModuleOwner);
+            if (node.IsMethod) ValidateMethodDeclaration(node);
             RejectResourceAggregateType(node.ReturnType, node);
             foreach (var parameter in node.Parameters) RejectResourceAggregateType(parameter.Type, node);
             bool returnsResource = TypeSystem.IsNativeResource(node.ReturnType);
@@ -401,7 +464,7 @@ namespace Sage.Core
                 throw new CompilerException(node, "S102", $"Variable '{node.Name}' is already defined.");
             if (TypeSystem.IsBorrowType(node.Type)) return AnalyzeBorrowedBinding(node);
 
-            if (isResource && node.Initializer is not (IdentifierNode or FunctionCallNode) &&
+            if (isResource && node.Initializer is not (IdentifierNode or FunctionCallNode or MethodCallNode) &&
                 (node.Initializer is not CastExpressionNode adoption || adoption.TargetType != node.Type))
                 throw new CompilerException(node, "S192", "A resource local requires a named owner move, a direct owning call, or direct unsafe adoption from its declared native pointer.");
 
@@ -571,6 +634,32 @@ namespace Sage.Core
             }
 
             return symbol.Type;
+        }
+
+        /// <summary>
+        /// Resolves <c>receiver.name(args)</c> statically and analyzes the equivalent qualified call, so the
+        /// receiver goes through the same argument, borrow, move, and unsafe checks as an ordinary call.
+        /// </summary>
+        public string Visit(MethodCallNode node)
+        {
+            // Only the receiver type is needed for resolution; the lowered call applies ownership effects once.
+            var ownership = _symbolTable.CaptureOwnership();
+            string receiverType = node.Receiver.Accept(this);
+            SymbolTable.RestoreOwnership(ownership);
+
+            string callable = ResolveMethod(node, receiverType);
+            string receiverParameter = _functionDeclarations[callable].Parameters[0].Type;
+            AstNode receiver = node.Receiver;
+            if (TypeSystem.IsBorrowType(receiverParameter))
+            {
+                // The declaration's contract, not the call site, decides the auto-borrow mode.
+                receiver = new BorrowExpressionNode(node.Receiver, TypeSystem.GetBorrowKind(receiverParameter) == BorrowKind.Mutable)
+                { Line = node.Receiver.Line, Column = node.Receiver.Column };
+            }
+            var lowered = new FunctionCallNode(callable, [receiver, .. node.Arguments]) { Line = node.Line, Column = node.Column };
+            node.Lowered = lowered;
+            if (ReferenceEquals(node, _owningInitializer)) _owningInitializer = lowered;
+            return lowered.Accept(this);
         }
 
         public string Visit(BorrowExpressionNode node)

@@ -84,6 +84,9 @@ namespace Sage.Interfaces
         /// <summary>Visits a function call expression including arguments.</summary>
         T Visit(FunctionCallNode node);
 
+        /// <summary>Visits an extension-method call resolved statically to a module function.</summary>
+        T Visit(MethodCallNode node);
+
         /// <summary>Visits a member access operation (e.g., object.property).</summary>
         T Visit(MemberAccessNode node);
 
