@@ -136,6 +136,11 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
   Native mode fixes output capability: `can_write` reports it; read-only handles
   reject byte/block writes and flush before stdio, including zero-limit writes.
   Do not add input-only modes without keeping incompatible output guarded.
+- `extern cpp alias("header.hpp") { ... }` binds explicit C++ targets (`= ns::f`,
+  `= "ns::f<int>"`, `= .member`, `= new`, `= delete`; `class H = ns::T;` handles)
+  through generated `extern "C"` adapters (`CppAdapterGenerator`, validated by
+  `CppInteropValidator`, S210). Exceptions abort; only C++ builds invoke `g++`.
+  See `docs/cpp-interop.md` and `tests/cpp-interop.ps1`.
 
 ## Generated C
 
