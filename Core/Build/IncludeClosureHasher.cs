@@ -16,6 +16,8 @@ namespace Sage.Core.Build
     internal sealed partial class IncludeClosureHasher
     {
         private readonly Dictionary<string, ScannedFile> _scanned = new(StringComparer.OrdinalIgnoreCase);
+        // Include resolution memo, keyed by search path, including directory and directive.
+        private readonly Dictionary<(string SearchPath, string Directory, IncludeDirective Include), (string? Path, string Location)> _resolved = [];
 
         private sealed record ScannedFile(string Hash, IReadOnlyList<IncludeDirective> Includes);
 
@@ -29,25 +31,34 @@ namespace Sage.Core.Build
         {
             var record = new StringBuilder();
             var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            Visit(Path.GetFullPath(sourcePath), "source", includeDirectories, visited, record);
+            var search = new SearchPath(string.Join(Path.PathSeparator, includeDirectories), includeDirectories);
+            Visit(Path.GetFullPath(sourcePath), "source", search, visited, record);
             return ContentHash.Of(record.ToString());
         }
 
-        private void Visit(string path, string label, IReadOnlyList<string> includeDirectories, HashSet<string> visited, StringBuilder record)
+        private sealed record SearchPath(string Key, IReadOnlyList<string> Directories);
+
+        private void Visit(string path, string label, SearchPath search, HashSet<string> visited, StringBuilder record)
         {
             var file = Scan(path);
             record.Append(label).Append(' ').AppendLine(file.Hash);
 
+            string directory = Path.GetDirectoryName(path)!;
             foreach (var include in file.Includes)
             {
-                var (resolved, location) = Resolve(include, Path.GetDirectoryName(path)!, includeDirectories);
+                if (!_resolved.TryGetValue((search.Key, directory, include), out var resolution))
+                {
+                    resolution = Resolve(include, directory, search.Directories);
+                    _resolved[(search.Key, directory, include)] = resolution;
+                }
+                var (resolved, location) = resolution;
                 if (resolved == null)
                 {
                     record.Append("system ").AppendLine(include.Name);
                 }
                 else if (visited.Add(resolved))
                 {
-                    Visit(resolved, $"{location}:{include.Name}", includeDirectories, visited, record);
+                    Visit(resolved, $"{location}:{include.Name}", search, visited, record);
                 }
             }
         }
