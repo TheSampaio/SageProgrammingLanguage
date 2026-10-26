@@ -18,7 +18,7 @@ The project strictly follows **SOLID principles** and **Clean Code** architectur
 * **Native Resource Ownership:** Explicit native representation/destructor metadata is validated across imports. Owners support moves, replacement assignment, borrows, consuming parameters, factory returns, safe null checks, and automatic scope cleanup; native adoption remains unsafe. See [resource contracts and boundaries](docs/native-resource-contracts.md).
 * **Local Resource Structs:** Local struct literals may move named native resource owners into direct or nested fields. Cleanup runs recursively in reverse field order; direct resource fields can be replaced from named owners. Copying, calls, and returns remain unsupported. See [resource struct contracts](docs/resource-structs.md).
 * **Local Resource Arrays:** Fixed local arrays of native resources or resource-containing structs accept direct literals or empty initialization and clean up in reverse index order. Array copying and element extraction remain unsupported; see [resource array contracts](docs/resource-arrays.md).
-* **Bounded C++ Interop:** `extern cpp` blocks bind declared free functions, overloads, explicit template instances, and class handles (constructor, destructor, member functions) through generated `extern "C"` adapters. Exceptions abort instead of unwinding into C; C-only projects need no C++ toolchain. See [C++ interop](docs/cpp-interop.md).
+* **Bounded C++ Interop:** `extern cpp` blocks bind declared free functions, overloads, explicit template instances, and class handles (constructor, destructor, member functions) through generated `extern "C"` adapters. Exceptions abort instead of unwinding into C; C-only projects need no C++ toolchain. Extern blocks may declare project `.c`/`.cpp` sources (`source "x.cpp";`) that are compiled and linked automatically. See [C++ interop](docs/cpp-interop.md).
 * **Owned Byte Files:** Bounded ASCII paths support creation and existing read-only input. Borrowed byte/block I/O, mode checks, positioning and consuming close expose explicit outcomes; see [byte files](docs/byte-files.md).
 * **Tree-Shaking Code Gen:** Smart header management that only includes necessary C headers (`stdio.h`, `stdint.h`, etc.) based on actual code usage.
 * **Modern Type System:** Explicit fixed-width types (`i32`, `f64`, `str`, `b8`) with support for **Constants** (`const`) and **Explicit Casting** (`as`).
@@ -370,7 +370,7 @@ file directly with `sage <file>.test.sg` and read the `[PASS]`/`[FAIL]` output.
 
 ## Project Status
 
-The project is currently in **v0.30.0 (Alpha)**.
+The project is currently in **v0.31.0 (Alpha)**.
 
 Phase 2 now supports local fixed arrays of same-file structs containing native
 resources. Literal elements move named owners into fields; generated cleanup

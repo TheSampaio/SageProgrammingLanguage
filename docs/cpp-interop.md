@@ -1,4 +1,4 @@
-# Bounded C++ interop (v0.30.0)
+# Bounded C++ interop (v0.31.0)
 
 Sage keeps its C backend. An `extern cpp` block declares the C++ API it needs;
 the compiler generates `extern "C"` adapters in `obj/sage_cpp_adapters.cpp`,
@@ -41,8 +41,36 @@ through automatic cleanup.
   handle, prints `Sage C++ interop: <alias::name>: <reason>` to stderr and
   aborts the process.
 - Headers resolve from the project source directory, the generated `obj/`
-  directory, and the compiler runtime includes. The optional second string links
-  a prebuilt library (`-l`). Projects without `extern cpp` never invoke `g++`.
+  directory, the compiler runtime includes, and directories of declared native
+  sources. The optional second string links a prebuilt library (`-l`).
+  Projects without C++ adapters or C++ sources never invoke `g++`.
+
+## Project native sources (v0.31.0)
+
+Any extern block, C or C++, may declare implementation files compiled and
+linked with the program:
+
+```sage
+extern cpp lib("tally.hpp") {
+    source "tally.cpp";          // compiled by g++ -std=c++17 into obj/
+    class Tally = lib::Tally;
+    func create(start: c_int): Tally* = new;
+}
+extern report("report.h") {
+    source "report.c";           // joins the gcc -std=c11 build
+    func report_value(label: c_char*, value: c_int): none;
+}
+```
+
+Paths are relative to the declaring `.sg` file, so imported and std modules
+carry their own sources. Supported extensions are `.c`, `.cpp`, `.cc`, and
+`.cxx`; a missing file or other extension is S211, reported before code
+generation. A file declared by several blocks is compiled once, and each
+source directory joins the include path. Any C++ source links `-lstdc++`.
+Sources are rebuilt on every build; compiler flags and incremental native
+caching are not configurable yet. Native symbols share the C namespace with
+flattened Sage names (`module_function`), so avoid names such as `helper_twice`
+next to a `helper::twice` function; collision detection is Phase 5 work.
 
 ## Limits (S210 unless noted)
 
@@ -57,7 +85,7 @@ blocks (S006).
 Not implemented: automatic header parsing (no Clang dependency is assumed;
 GCC is the supported toolchain), reference parameters, `std::string` and
 container mapping, recoverable exception results, static members, operators,
-inheritance-aware casts, callbacks, thread-safety metadata, and compiling
-project C++ sources. Declared types are trusted ABI contracts: a wrong
+inheritance-aware casts, callbacks, thread-safety metadata, and per-source
+compiler flags. Declared types are trusted ABI contracts: a wrong
 declaration fails to compile in the adapter or, for conversions, behaves as
 the equivalent C++ call would.

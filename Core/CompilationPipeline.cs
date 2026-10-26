@@ -29,20 +29,23 @@ namespace Sage.Core
 
             var queue = new Queue<string>();
             var parsedModules = new Dictionary<string, ProgramNode>();
+            var moduleFiles = new Dictionary<string, string>();
             var generatedCFiles = new List<string>();
             var analyzer = new SemanticAnalyzer();
 
             queue.Enqueue(config.InputPath);
 
-            ParseAndDiscover(queue, parsedModules, config, env, analyzer);
+            ParseAndDiscover(queue, parsedModules, moduleFiles, config, env, analyzer);
             analyzer.ValidateNativeResourceContracts();
+            var nativeSources = NativeSourceSet.Collect(parsedModules.SelectMany(module =>
+                EnumerateExternBlocks(module.Value).Select(block => (block, moduleFiles[module.Key]))));
             GenerateCode(parsedModules, generatedCFiles, config, env, analyzer);
             string? cppAdapters = GenerateCppAdapters(parsedModules, env);
 
             if (config.BuildNative)
             {
                 var libraries = CollectLinkLibraries(parsedModules);
-                return LinkNativeBinary(generatedCFiles, cppAdapters, libraries, config, env);
+                return LinkNativeBinary(generatedCFiles, cppAdapters, nativeSources, libraries, config, env);
             }
             return 0;
         }
@@ -93,6 +96,7 @@ namespace Sage.Core
         private static void ParseAndDiscover(
             Queue<string> queue,
             Dictionary<string, ProgramNode> parsedModules,
+            Dictionary<string, string> moduleFiles,
             CompilerConfig config,
             CompilationEnvironment env,
             SemanticAnalyzer analyzer)
@@ -128,6 +132,7 @@ namespace Sage.Core
                 var ast = new Parser(tokens, Path.GetFileName(path)).Parse();
                 analyzer.RegisterModuleSymbols(ast);
                 parsedModules.Add(moduleName, ast);
+                moduleFiles.Add(moduleName, path);
 
                 foreach (var use in ast.Statements.OfType<UseNode>())
                 {
@@ -205,7 +210,8 @@ namespace Sage.Core
         /// <summary>
         /// Invokes the native toolchain to link generated C files into an executable binary.
         /// </summary>
-        private static int LinkNativeBinary(List<string> cFiles, string? cppAdapters, HashSet<string> libraries, CompilerConfig config, CompilationEnvironment env)
+        private static int LinkNativeBinary(List<string> cFiles, string? cppAdapters, NativeSourceSet nativeSources,
+            HashSet<string> libraries, CompilerConfig config, CompilationEnvironment env)
         {
             if (config.IsDebugMode) CompilerLogger.LogStep("\nLinking binaries...");
 
@@ -214,13 +220,17 @@ namespace Sage.Core
                 exeName = new DirectoryInfo(env.ProjectRoot).Name;
 
             string exePath = Path.Combine(env.BinDir, $"{exeName}.exe");
-            string sources = string.Join(" ", cFiles.Select(f => $"\"{Path.GetFullPath(f)}\""));
+            string sources = string.Join(" ", cFiles.Concat(nativeSources.CSources).Select(f => $"\"{Path.GetFullPath(f)}\""));
             string libFlags = libraries.Count > 0
                 ? " " + string.Join(" ", libraries.OrderBy(l => l, StringComparer.Ordinal).Select(l => $"-l{l}"))
                 : "";
             string runtimeIncludes = Path.Combine(AppContext.BaseDirectory, "Runtime", "include");
-            string cppLink = cppAdapters == null ? "" : CompileCppAdapters(cppAdapters, runtimeIncludes, config, env);
-            string args = $"{sources} -o \"{exePath}\" -std=c11 -I\"{env.ObjDir}\" -I\"{runtimeIncludes}\"{libFlags}{cppLink}";
+            string includes = $" -I\"{env.ObjDir}\" -I\"{runtimeIncludes}\"" +
+                string.Concat(nativeSources.IncludeDirectories.Select(directory => $" -I\"{directory}\""));
+            string cppObjects = CompileCppSources(cppAdapters, nativeSources, includes, config, env);
+            // The C++ runtime follows user libraries so their C++ dependencies resolve too.
+            string cppRuntime = cppObjects.Length > 0 ? " -lstdc++" : "";
+            string args = $"{sources}{cppObjects} -o \"{exePath}\" -std=c11{includes}{libFlags}{cppRuntime}";
 
             if (config.IsDebugMode) CompilerLogger.LogInfo("Invoking native toolchain: gcc");
 
@@ -238,16 +248,24 @@ namespace Sage.Core
         }
 
         /// <summary>
-        /// Compiles the adapter unit with g++ (C++ headers resolve from the project source directory)
-        /// and returns the extra link arguments: its object file, then the C++ runtime after user libraries.
+        /// Compiles the generated adapters and declared C++ sources with g++, one object each, and
+        /// returns them as link arguments. Adapters also see the project source directory, where
+        /// <c>extern cpp</c> headers resolve. Returns an empty string when the build has no C++.
         /// </summary>
-        private static string CompileCppAdapters(string cppAdapters, string runtimeIncludes, CompilerConfig config, CompilationEnvironment env)
+        private static string CompileCppSources(string? cppAdapters, NativeSourceSet nativeSources, string includes,
+            CompilerConfig config, CompilationEnvironment env)
         {
-            string adapterObject = Path.ChangeExtension(cppAdapters, ".o");
+            var units = nativeSources.CppSources
+                .Select((source, index) => (Source: source, Object: Path.Combine(env.ObjDir, $"sage_native_{index}_{Path.GetFileNameWithoutExtension(source)}.o"), Includes: includes))
+                .ToList();
+            if (cppAdapters != null)
+                units.Insert(0, (cppAdapters, Path.ChangeExtension(cppAdapters, ".o"), $"{includes} -I\"{env.SourceDir}\""));
+            if (units.Count == 0) return "";
+
             if (config.IsDebugMode) CompilerLogger.LogInfo("Invoking native toolchain: g++");
-            ProcessExecutor.Run("g++", $"-c \"{Path.GetFullPath(cppAdapters)}\" -o \"{Path.GetFullPath(adapterObject)}\" -std=c++17 " +
-                $"-I\"{env.ObjDir}\" -I\"{env.SourceDir}\" -I\"{runtimeIncludes}\"");
-            return $" \"{Path.GetFullPath(adapterObject)}\" -lstdc++";
+            foreach (var (source, objectFile, unitIncludes) in units)
+                ProcessExecutor.Run("g++", $"-c \"{Path.GetFullPath(source)}\" -o \"{Path.GetFullPath(objectFile)}\" -std=c++17{unitIncludes}");
+            return string.Concat(units.Select(unit => $" \"{Path.GetFullPath(unit.Object)}\""));
         }
 
         /// <summary>

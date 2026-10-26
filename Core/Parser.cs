@@ -163,9 +163,18 @@ namespace Sage.Core
             Consume(TokenType.OpenBrace);
 
             var declarations = new List<AstNode>();
+            var sources = new List<string>();
 
             while (Current.Type != TokenType.CloseBrace && Current.Type != TokenType.EndOfFile)
             {
+                // Project native source: 'source "counter.cpp";' — compiled and linked with this binding.
+                if (Current.Type == TokenType.Identifier && Current.Value == "source")
+                {
+                    _pos++; // consume 'source'
+                    sources.Add(Consume(TokenType.String, "Expected a native source path string after 'source'.").Value);
+                    Consume(TokenType.Semicolon, "Native source declarations end with ';'.");
+                    continue;
+                }
                 if (Current.Type == TokenType.Identifier && Current.Value == "resource")
                 {
                     var resourceToken = Current;
@@ -231,13 +240,13 @@ namespace Sage.Core
                 else
                 {
                     throw new CompilerException(Current, "S006", isCpp
-                        ? "Only 'func', 'class', and 'resource' declarations are allowed inside extern cpp blocks."
-                        : "Only 'func', 'type', and 'resource' declarations are allowed inside extern blocks.");
+                        ? "Only 'func', 'class', 'resource', and 'source' declarations are allowed inside extern cpp blocks."
+                        : "Only 'func', 'type', 'resource', and 'source' declarations are allowed inside extern blocks.");
                 }
             }
 
             Consume(TokenType.CloseBrace);
-            return CreateNode(new ExternBlockNode(alias, header, declarations, library, isCpp), startToken);
+            return CreateNode(new ExternBlockNode(alias, header, declarations, library, isCpp, sources), startToken);
         }
 
         /// <summary>Parses the right-hand side of an extern cpp function: a target, <c>.member</c>, <c>new</c>, or <c>delete</c>.</summary>

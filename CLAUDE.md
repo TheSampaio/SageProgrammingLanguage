@@ -144,6 +144,9 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
   through generated `extern "C"` adapters (`CppAdapterGenerator`, validated by
   `CppInteropValidator`, S210). Exceptions abort; only C++ builds invoke `g++`.
   See `docs/cpp-interop.md` and `tests/cpp-interop.ps1`.
+- `source "x.c|x.cpp";` inside any extern block compiles a project native source
+  (path relative to the declaring .sg; S211 if missing/unsupported) via
+  `NativeSourceSet`; see `tests/native-sources.ps1`.
 
 ## Generated C
 

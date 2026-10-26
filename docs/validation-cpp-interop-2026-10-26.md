@@ -1,4 +1,4 @@
-﻿# Bounded C++ interop â€” 2026-10-26
+# Bounded C++ interop â€” 2026-10-26
 
 Sage 0.30.0 adds `extern cpp` blocks with generated `extern "C"` adapters for
 declared free functions, overloads, explicit template instances, and class

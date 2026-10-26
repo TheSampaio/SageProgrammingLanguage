@@ -1,0 +1,25 @@
+extern cpp lib("tally.hpp") {
+    source "tally.cpp";
+    class Tally = lib::Tally;
+    func create(start: c_int): Tally* = new;
+    func destroy(tally: Tally*): none = delete;
+    func add(tally: Tally*, amount: c_int): c_int = .add;
+    func square(value: c_int): c_int = lib::square;
+    resource OwnedTally: Tally* drop destroy;
+}
+
+extern report("report.h") {
+    source "report.c";
+    func report_value(label: c_char*, value: c_int): none;
+}
+
+func main(): none
+{
+    unsafe
+    {
+        var tally: OwnedTally = lib::create(40) as OwnedTally;
+        var total: c_int = lib::add(tally as Tally*, 2);
+        report::report_value("total" as c_char*, total);
+        report::report_value("square" as c_char*, lib::square(7));
+    }
+}
