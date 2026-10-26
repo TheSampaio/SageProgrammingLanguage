@@ -49,11 +49,12 @@
             CallableSignature? signature = null,
             BorrowKind borrowing = BorrowKind.None,
             BorrowLoan? loan = null,
-            bool isType = false)
+            bool isType = false,
+            bool ownsResources = false)
         {
             if (_scopes.Count > 0)
             {
-                _scopes.Peek()[name] = new SymbolMetadata(type, isFunction, isExtern, isConstant, isReference, declarationLoopDepth, signature, borrowing, loan, isType);
+                _scopes.Peek()[name] = new SymbolMetadata(type, isFunction, isExtern, isConstant, isReference, declarationLoopDepth, signature, borrowing, loan, isType, ownsResources);
             }
         }
 

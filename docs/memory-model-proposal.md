@@ -8,10 +8,10 @@ implemented. Field-stored and returned borrows remain proposed work.
 [Value-copy capabilities and fixed-array copies](value-copy.md) are implemented
 for a bounded subset. [Native resource contracts](native-resource-contracts.md)
 now cover local ownership, borrows, owning callables, and safe presence queries.
-Owned buffers/strings, safe file operations, aggregate resource ownership, and
-the broader contracts below remain proposed work.
-Existing `new`, `delete`, and `unsafe` programs remain valid until a separately
-tested migration deliberately changes that behavior.
+Resource structs move by value since v0.32.0, and `new`/`delete` are
+unsafe-only since v0.32.2 (see [guarantees and limits](memory.md)). Owned
+buffers/strings, safe file operations, and the broader contracts below remain
+proposed work.
 
 ## Values and capabilities
 

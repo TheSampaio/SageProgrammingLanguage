@@ -9,14 +9,14 @@ func update_lifetime(value: &mut LifetimeValue): none
 }
 func copy_lifetime(): LifetimeValue
 {
-    var owner: LifetimeValue = new LifetimeValue { value = 9 };
+    var owner: LifetimeValue = { value = 9 };
     var view: &LifetimeValue = &owner;
     return view;
 }
 
 func main(): none
 {
-    var owner: LifetimeValue = new LifetimeValue { value = 1 };
+    var owner: LifetimeValue = { value = 1 };
     if (true)
     {
         var first: &LifetimeValue = &owner;

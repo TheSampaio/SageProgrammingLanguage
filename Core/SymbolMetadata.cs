@@ -19,7 +19,8 @@ namespace Sage.Core
         CallableSignature? signature = null,
         BorrowKind borrowing = BorrowKind.None,
         BorrowLoan? loan = null,
-        bool isType = false)
+        bool isType = false,
+        bool ownsResources = false)
     {
         /// <summary>Gets the Sage data type associated with this symbol.</summary>
         public string Type { get; } = type;
@@ -38,7 +39,10 @@ namespace Sage.Core
 
         /// <summary>Whether this binding owns a heap allocation or native resource.</summary>
         public bool IsOwningValue => !IsType && !IsFunction && Borrowing == BorrowKind.None &&
-            (IsReference || TypeSystem.IsNativeResource(Type));
+            (IsReference || OwnsResources || TypeSystem.IsNativeResource(Type));
+
+        /// <summary>True for a struct value whose fields transitively own native resources.</summary>
+        public bool OwnsResources { get; } = ownsResources;
 
         /// <summary>Current path-sensitive availability of an owning value.</summary>
         public OwnershipState Ownership { get; set; } = OwnershipState.Available;

@@ -10,7 +10,7 @@ func increment(counter: &mut Counter): none { counter.value++; }
 
 func main(): none
 {
-    var counter: Counter = new Counter { value = 1 };
+    var counter: Counter = { value = 1 };
     var before: i32 = read(&counter);
     increment(&mut counter);
     // counter is still owned here and has value 2.
@@ -40,7 +40,7 @@ values cannot be copied or returned through this rule.
 An explicit local binding retains a borrow until the end of its lexical scope:
 
 ```sage
-var owner: Counter = new Counter { value = 1 };
+var owner: Counter = { value = 1 };
 if (true)
 {
     var view: &mut Counter = &mut owner;
@@ -77,6 +77,28 @@ Globals, temporaries, and individual field places are rejected in this increment
 Call borrows end at the call boundary. Local scopes and the prohibition on
 rebinding, field storage, and borrowed returns prevent a borrow from outliving its source.
 
+## Escaping borrows (v0.32.1)
+
+A borrow cannot outlive its owner because every route that could carry it out of
+the owner's lexical scope is closed before C generation:
+
+| Escape route | Result |
+|--------------|--------|
+| Borrowed return type, or `return &local` | S173 |
+| Returning a borrowed resource as an owner | S191 |
+| Borrowed struct field type; `&x` in a field, array, interpolation, or operand | S173 |
+| Borrowed resource moved into an owning field or array element | S191 |
+| Rebinding a borrow (`view = &other`) | S173 |
+| Casting a value to `&T` / `&mut T`, including inside `unsafe` | S173 |
+| Borrowing a global, a field place, or an array element | S176 / S175 |
+| Borrowed native ABI parameter or return | S173 |
+| Moving, consuming, returning, replacing, or overwriting the owner while a lexical borrow is live | S178 |
+| Consuming and borrowing the same owner in one call | S194 |
+
+A copied scalar or Copy struct read through a borrow is an independent value
+and may be returned or stored. `tests/memory-escaping-borrows.ps1` checks each
+route. Raw pointers derived from a borrow inside `unsafe` remain trusted code.
+
 Supported value types are numeric scalars, booleans, and structs recursively
 composed of these types. Since v0.10.0, those structs may also contain fixed
 arrays of copyable values; [value-copy semantics](value-copy.md) prevent Sage
@@ -108,7 +130,7 @@ relationships for field-stored or returned references remain future work.
 | S170 | Borrow argument missing, wrong type, or wrong access mode |
 | S171 | Mutation or mutable reborrow through shared/constant access |
 | S172 | Conflicting arguments borrow the same binding |
-| S173 | Borrow used outside a supported local/parameter/call contract |
+| S173 | Borrow used outside a supported local/parameter/call contract, including returns, fields, rebinding, and casts |
 | S174 | Attempt to delete a borrowed value |
 | S175 | Borrow target is a temporary or an unsupported field place |
 | S176 | Borrow uses a global or an unsupported value type |

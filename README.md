@@ -260,23 +260,26 @@ func main(): none
 Sage currently restricts raw pointers (`T*`, including `none*`) in
 ordinary code — declaring, casting to, or dereferencing one is a compile error. They are only
 allowed inside an `unsafe { }` block or in an `unsafe func`. FFI declarations (`extern`) are
-implicitly unsafe, since they cross into C. Local heap references now have
-[move and deletion checks](docs/memory.md), while native aliases and resource
-lifetimes across API boundaries still require further work.
+implicitly unsafe, since they cross into C. Safe code uses plain values that are
+copied, [moved, borrowed, and cleaned up automatically](docs/memory.md); native
+aliases created inside `unsafe` remain the programmer's responsibility.
 
-### Transitional heap syntax: `new` / `delete`
+### Plain values instead of `new` / `delete`
 
 ```rust
 struct Person { name: str; age: i32; }
 
 func main(): none
 {
-    // 'new' allocates on the heap. The reference has no pointer arithmetic.
-    var hero: Person = new Person { name = "Zelda", age = 118 };
+    // A plain struct value: no manual allocation or release.
+    var hero: Person = { name = "Zelda", age = 118 };
     console::print_line("{hero.name} is {hero.age}");
-    // Released automatically when this scope ends. Explicit delete remains supported.
 }
 ```
+
+Since v0.32.2, `new` and `delete` are manual memory management and are rejected
+outside `unsafe` (S133). Inside `unsafe` they remain a checked trusted boundary
+(moves, double deletion, and scope cleanup are still verified).
 
 ### Raw pointers require `unsafe`
 
@@ -331,7 +334,7 @@ The bundled standard library (`Sandbox/std/`) doubles as the reference for idiom
 | Module    | Purpose                                                                 |
 |-----------|-------------------------------------------------------------------------|
 | `console` | Terminal I/O (`print`, `print_line`, `read`, `run`).                    |
-| `memory`  | Raw heap primitives (`alloc`/`release`, `unsafe`). Prefer `new`/`delete`.|
+| `memory`  | Raw heap primitives (`alloc`/`release`, `unsafe`). Prefer plain values.  |
 | `file`    | File I/O over `<stdio.h>` (opaque `FILE`, `c_*` aliases).               |
 | `byte_file` | Owned binary byte/block I/O, bounded ASCII paths, existing read-only input, explicit outcomes and consuming close. |
 | `byte_buffer` | Owned fixed-capacity byte storage, checked initialized-prefix access and consuming release. |
@@ -371,14 +374,19 @@ file directly with `sage <file>.test.sg` and read the `[PASS]`/`[FAIL]` output.
 
 ## Project Status
 
-The project is currently in **v0.37.0 (Alpha)**.
+The project is currently in **v0.37.1 (Alpha)**.
 
 Phase 5 resolves callables only through direct `use` imports and rejects
 callables whose generated C symbols would collide (S212); see [modules](docs/modules.md).
 Opt-in `method func` declarations add statically resolved extension methods
 (`value.read()` for `counter::read(&value)`); see [extension methods](docs/extension-methods.md).
 
-Phase 2 now supports local fixed arrays of same-file structs containing native
+Safe Sage has no manual memory management: `new`/`delete` and raw pointers are
+unsafe-only, structs owning native resources move by value with exactly-once
+cleanup, and borrows cannot escape their owner. See
+[guarantees and limits](docs/memory.md#guarantees-and-limits-v0322).
+
+Phase 2 also supports local fixed arrays of same-file structs containing native
 resources. Literal elements move named owners into fields; generated cleanup
 releases elements in reverse index order and fields in reverse declaration
 order. See [resource arrays](docs/resource-arrays.md) for the supported subset.
@@ -402,7 +410,7 @@ Header parsing with Clang is deferred; see [C++ interop](docs/cpp-interop.md).
 * [x] **Structs and Custom Types**
 * [x] **Arrays and Pointers**
 * [x] **Memory Safety** (`unsafe` blocks gate raw pointers; `const` enforced)
-* [x] **Safe Heap Allocation** (`new` / `delete` references)
+* [x] **Ownership & Borrowing** (moves, `&T`/`&mut T`, automatic cleanup; `new`/`delete` only in `unsafe`)
 * [x] **Ergonomic FFI** (`c_*` interop aliases + opaque `type` declarations)
 * [x] **Bounded C++ Interop** (`extern cpp` adapters for declared functions and class handles)
 * [x] **Modular Standard Library** (Libc decoupled from Compiler Core)

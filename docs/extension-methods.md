@@ -50,7 +50,7 @@ A method declaration must:
 * have a first parameter, the receiver (`S157` otherwise);
 * use a scalar, `str`, struct, or native resource receiver, by value or through
   `&T` / `&mut T`. Raw pointer and fixed-array receivers are `S157`;
-* not consume a native resource receiver. `method func close(file: File)` is
+* not consume a native resource receiver or a struct that owns one. `method func close(file: File)` is
   `S157`: a consuming call must stay visible as `module::close(file)`. Other
   parameters may still consume owners; that move is visible as a named argument.
 

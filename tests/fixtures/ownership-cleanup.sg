@@ -22,7 +22,7 @@ unsafe func named_projection(): i32
     return owner.value;
 }
 
-func early(flag: b8): i32
+unsafe func early(flag: b8): i32
 {
     var first: Item = new Item { value = 1 };
     if (flag)

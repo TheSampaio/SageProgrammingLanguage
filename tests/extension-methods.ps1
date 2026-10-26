@@ -43,6 +43,7 @@ $cases = @(
     @{ Name = 'use_after_move_argument'; Code = 'use counter; use heap; func main(): none { var c: Counter = { count = 1, limit = 0 }; var block: Block = heap::make(); c.absorb(block); var y: b8 = block.present(); }'; Error = 'S140' },
     @{ Name = 'moved_receiver'; Code = 'use heap; func main(): none { var block: Block = heap::make(); heap::consume(block); var y: b8 = block.present(); }'; Error = 'S140' },
     @{ Name = 'consuming_receiver'; Code = 'use heap; module local { method func close(block: Block): none {} } func main(): none {}'; Error = 'S157' },
+    @{ Name = 'consuming_struct_receiver'; Code = 'use heap; struct Holder { block: Block; } module local { method func close(holder: Holder): none {} } func main(): none {}'; Error = 'S157' },
     @{ Name = 'receiverless_method'; Code = 'module local { method func make(): i32 { return 1; } } func main(): none {}'; Error = 'S157' },
     @{ Name = 'pointer_receiver'; Code = 'module local { unsafe method func raw(value: i32*): none {} } func main(): none {}'; Error = 'S157' },
     @{ Name = 'top_level_method'; Code = 'method func doubled(value: i32): i32 { return value; } func main(): none {}'; Error = 'S157' },

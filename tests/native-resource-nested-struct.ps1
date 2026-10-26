@@ -14,9 +14,11 @@ $cases = @(
     @{ Name = 'nested_empty'; Code = 'var outer: Outer = { nested = {} };' },
     @{ Name = 'nested_source_moved'; Code = $outer + 'first;'; Error = 'S140' },
     @{ Name = 'duplicate_owner'; Code = $owner + 'var outer: Outer = { nested = { item = first }, last = first };'; Error = 'S140' },
-    @{ Name = 'copy_nested_binding'; Code = $owner + 'var inner: Inner = { item = first }; var outer: Outer = { nested = inner };'; Error = 'S196' },
-    @{ Name = 'copy_outer'; Code = $outer + 'var clone: Outer = outer;'; Error = 'S196' },
-    @{ Name = 'assign_outer'; Code = $outer + 'outer = {};'; Error = 'S196' },
+    @{ Name = 'move_nested_binding'; Code = $owner + 'var inner: Inner = { item = first }; var outer: Outer = { nested = inner };' },
+    @{ Name = 'nested_binding_moved'; Code = $owner + 'var inner: Inner = { item = first }; var outer: Outer = { nested = inner }; var again: Outer = { nested = inner };'; Error = 'S140' },
+    @{ Name = 'move_outer'; Code = $outer + 'var moved: Outer = outer;' },
+    @{ Name = 'reset_outer'; Code = $outer + 'outer = {};' },
+    @{ Name = 'replace_nested_struct'; Code = $outer + 'var next: OwnedFile = make(); var inner: Inner = { item = next }; outer.nested = inner;' },
     @{ Name = 'nested_field_replacement'; Code = $outer + 'var next: OwnedFile = make(); outer.nested.item = next;' },
     @{ Name = 'nested_replacement_source_moved'; Code = $outer + 'var next: OwnedFile = make(); outer.nested.item = next; next;'; Error = 'S140' },
     @{ Name = 'nested_replacement_borrowed_source'; Code = $outer + 'var next: OwnedFile = make(); var view: &OwnedFile = &next; outer.nested.item = view;'; Error = 'S191' },
@@ -32,8 +34,8 @@ $cases = @(
     @{ Name = 'nested_array_field'; Code = 'struct ArrayOuter { inner: Inner[1]; }'; Error = 'S196'; Global = $true },
     @{ Name = 'forward_nested_type'; Code = 'struct Forward { inner: Later; } struct Later { item: OwnedFile; }'; Error = 'S196'; Global = $true },
     @{ Name = 'self_recursive_resource'; Code = 'struct Recursive { inner: Recursive; item: OwnedFile; }'; Error = 'S196'; Global = $true },
-    @{ Name = 'nested_return'; Code = 'func create(): Outer { return {}; }'; Error = 'S196'; Global = $true },
-    @{ Name = 'nested_parameter'; Code = 'func take(value: Outer): none {}'; Error = 'S196'; Global = $true }
+    @{ Name = 'nested_return'; Code = 'func create(): Outer { return {}; }'; Global = $true },
+    @{ Name = 'nested_parameter'; Code = 'func take(value: Outer): none {}'; Global = $true }
 )
 
 try {

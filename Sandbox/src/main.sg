@@ -1,6 +1,6 @@
 /// Sage Savings Calculator
 /// A small, useful program that projects compound-interest growth of a savings
-/// account year by year. Showcases safe heap references (new/delete), structs,
+/// account year by year. Showcases plain struct values (cleaned up automatically),
 /// floating-point math, loops, and formatted string interpolation.
 use console;
 
@@ -16,8 +16,8 @@ func main(): none
 {
     console::print_line("===== Sage Savings Calculator =====");
 
-    // Heap-allocated, memory-safe account reference.
-    var acc: Account = new Account {
+    // A plain struct value: no manual allocation or release is needed.
+    var acc: Account = {
         name = "Retirement Fund",
         principal = 1000.00,
         rate = 0.07,
@@ -48,6 +48,4 @@ func main(): none
     console::print_line("Final balance:  ${balance:2f}");
     console::print_line("Total interest: ${interest_total:2f}");
     console::print_line("Total growth:   {growth:2f}%");
-
-    delete acc;
 }
