@@ -31,6 +31,14 @@ func early(): i32
     return deep.outer.nested.value;
 }
 
+func replace_early(): i32
+{
+    var deep: Deep = {};
+    var replacement: OwnedHandle = produce(5);
+    deep.outer.nested.first = replacement;
+    return deep.outer.nested.value;
+}
+
 unsafe func main(): none
 {
     trace::resource_reset();
@@ -64,4 +72,27 @@ unsafe func main(): none
         trace::resource_check(empty.outer.nested.value == 0, "empty_nested_struct_zeroed");
     }
     trace::resource_check(trace::resource_drop_calls() == 0, "empty_nested_struct_skips_destructors");
+
+    trace::resource_reset();
+    if (true)
+    {
+        var first: OwnedHandle = produce(1);
+        var extra: OwnedHandle = produce(2);
+        var deep: Deep = { outer = { nested = { first = first } }, extra = extra };
+        var replacement: OwnedHandle = produce(3);
+        deep.outer.nested.first = replacement;
+        trace::resource_check(trace::resource_outstanding() == 2, "nested_replacement_old_field_released");
+        trace::resource_check(trace::resource_release_order() == 1, "nested_replacement_old_field_first");
+        trace::resource_check(trace::resource_drop_calls() == 1, "nested_replacement_old_field_once");
+    }
+    trace::resource_check(trace::resource_outstanding() == 0, "nested_replacement_scope_cleanup");
+    trace::resource_check(trace::resource_release_order() == 123, "nested_replacement_recursive_order");
+    trace::resource_check(trace::resource_drop_calls() == 3, "nested_replacement_total_drops");
+
+    trace::resource_reset();
+    var replaced_result: i32 = replace_early();
+    trace::resource_check(replaced_result == 0, "empty_nested_field_return_value");
+    trace::resource_check(trace::resource_outstanding() == 0, "empty_nested_field_early_cleanup");
+    trace::resource_check(trace::resource_release_order() == 5 && trace::resource_drop_calls() == 1,
+        "empty_nested_field_replacement_dropped_once");
 }

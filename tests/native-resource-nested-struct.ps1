@@ -17,7 +17,14 @@ $cases = @(
     @{ Name = 'copy_nested_binding'; Code = $owner + 'var inner: Inner = { item = first }; var outer: Outer = { nested = inner };'; Error = 'S196' },
     @{ Name = 'copy_outer'; Code = $outer + 'var clone: Outer = outer;'; Error = 'S196' },
     @{ Name = 'assign_outer'; Code = $outer + 'outer = {};'; Error = 'S196' },
-    @{ Name = 'nested_field_replacement'; Code = $outer + 'var next: OwnedFile = make(); outer.nested.item = next;'; Error = 'S143' },
+    @{ Name = 'nested_field_replacement'; Code = $outer + 'var next: OwnedFile = make(); outer.nested.item = next;' },
+    @{ Name = 'nested_replacement_source_moved'; Code = $outer + 'var next: OwnedFile = make(); outer.nested.item = next; next;'; Error = 'S140' },
+    @{ Name = 'nested_replacement_borrowed_source'; Code = $outer + 'var next: OwnedFile = make(); var view: &OwnedFile = &next; outer.nested.item = view;'; Error = 'S191' },
+    @{ Name = 'nested_replacement_live_loan'; Code = $outer + 'var next: OwnedFile = make(); var view: &OwnedFile = &next; outer.nested.item = next;'; Error = 'S178' },
+    @{ Name = 'nested_replacement_const_root'; Code = $owner + 'const outer: Outer = { nested = { item = first } }; var next: OwnedFile = make(); outer.nested.item = next;'; Error = 'S103' },
+    @{ Name = 'nested_replacement_anonymous'; Code = $outer + 'outer.nested.item = make();'; Error = 'S143' },
+    @{ Name = 'nested_replacement_expression'; Code = $outer + 'var next: OwnedFile = make(); var result: i32 = (outer.nested.item = next);'; Error = 'S143' },
+    @{ Name = 'nested_replacement_outer_loop_source'; Code = $outer + 'var next: OwnedFile = make(); for (var i: i32 = 0; i < 1; i++) { outer.nested.item = next; }'; Error = 'S145' },
     @{ Name = 'array_outer'; Code = 'var values: Outer[1] = { {} };' },
     @{ Name = 'borrowed_nested_owner'; Code = $owner + 'var view: &OwnedFile = &first; var outer: Outer = { nested = { item = view } };'; Error = 'S191' },
     @{ Name = 'live_borrow_nested_owner'; Code = $owner + 'var view: &OwnedFile = &first; var outer: Outer = { nested = { item = first } };'; Error = 'S178' },
@@ -37,8 +44,8 @@ try {
     $output = & dotnet $compilerPath $source 2>&1
     $text = $output -join "`n"
     $passes = @($output | Select-String '\[PASS\]').Count
-    if ($LASTEXITCODE -ne 0 -or $text -match '\[FAIL\]|error ' -or $passes -ne 10) {
-        throw "Nested resource runtime checks failed ($passes/10 PASS).`n$text"
+    if ($LASTEXITCODE -ne 0 -or $text -match '\[FAIL\]|error ' -or $passes -ne 19) {
+        throw "Nested resource runtime checks failed ($passes/19 PASS).`n$text"
     }
 
     foreach ($case in $cases) {
