@@ -250,8 +250,8 @@ Implementation order:
 5. Implemented: safe contextual null comparisons on named owners and borrows.
 6. In progress: the bounded byte-file interface provides borrowed byte I/O and
    consuming fallible close. Safe general paths/strings and broader std migration
-   remain unfinished. Fixed-capacity byte buffers and direct resource fields in
-   local structs are available; nested resource structs, arrays, general collections, and C++ adapters
+   remain unfinished. Fixed-capacity byte buffers and direct or nested resource fields in
+   local structs are available; resource arrays, general collections, and C++ adapters
    need their own subsequent contracts.
 
 Invalid native contracts use S190. Acceptance tests are in

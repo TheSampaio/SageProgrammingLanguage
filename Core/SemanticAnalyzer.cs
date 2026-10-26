@@ -16,6 +16,7 @@ namespace Sage.Core
         private readonly SymbolTable _symbolTable = sharedTable ?? new SymbolTable();
         private readonly Dictionary<string, StructDeclarationNode> _structDeclarations = new();
         private readonly HashSet<string> _localStructs = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _validatedStructs = new(StringComparer.Ordinal);
         private readonly Dictionary<string, FunctionDeclarationNode> _functionDeclarations = new(StringComparer.Ordinal);
         private readonly Dictionary<string, (NativeResourceDeclarationNode Node, ExternBlockNode Origin, string? File)> _nativeResources = new(StringComparer.Ordinal);
         private string _currentModule = "";
@@ -36,6 +37,7 @@ namespace Sage.Core
         public void Analyze(ProgramNode ast)
         {
             _localStructs.Clear();
+            _validatedStructs.Clear();
             foreach (var structure in ast.Statements.OfType<StructDeclarationNode>()) _localStructs.Add(structure.Name);
             ast.Accept(this);
         }
@@ -186,9 +188,16 @@ namespace Sage.Core
         private static bool IsResourceBorrow(string type) => TypeSystem.IsBorrowType(type) &&
             TypeSystem.IsNativeResource(TypeSystem.GetBorrowedType(type));
 
-        private bool IsResourceAggregate(string type) =>
-            _structDeclarations.TryGetValue(type, out var structure) &&
-            structure.Fields.Any(field => TypeSystem.IsNativeResource(field.Type));
+        private bool IsResourceAggregate(string type) => IsResourceAggregate(type, new HashSet<string>(StringComparer.Ordinal));
+
+        private bool IsResourceAggregate(string type, HashSet<string> path)
+        {
+            if (!_structDeclarations.TryGetValue(type, out var structure) || !path.Add(type)) return false;
+            bool ownsResource = structure.Fields.Any(field => TypeSystem.IsNativeResource(field.Type) ||
+                (!TypeSystem.IsArrayType(field.Type) && IsResourceAggregate(field.Type, path)));
+            path.Remove(type);
+            return ownsResource;
+        }
 
         private void RejectResourceAggregateType(string type, AstNode operation)
         {
@@ -196,7 +205,7 @@ namespace Sage.Core
             if (TypeSystem.IsArrayType(valueType)) valueType = TypeSystem.GetArrayBaseType(valueType);
             valueType = valueType.TrimEnd('*');
             if (IsResourceAggregate(valueType))
-                throw new CompilerException(operation, "S196", "Structs containing native resources currently support only direct local initialization and cleanup; copying, nesting, arrays, calls, and returns need ownership contracts.");
+                throw new CompilerException(operation, "S196", "Structs containing native resources require local literal initialization; copying, arrays, pointers, calls, and returns need ownership contracts.");
         }
 
         private void RejectResourceBindingName(string name, AstNode operation)
@@ -610,6 +619,13 @@ namespace Sage.Core
                     ConsumeReference(owner, initializer, OwnershipKind.Moved);
                     continue;
                 }
+                if (IsResourceAggregate(field.Type))
+                {
+                    if (value is not (StructInitializationNode or ArrayInitializationNode))
+                        throw new CompilerException(value, "S196", "A nested resource struct requires a literal; copying a named struct would duplicate its owners.");
+                    AnalyzeValue(value, field.Type, "S181", $"Field '{type}.{name}'");
+                    continue;
+                }
                 AnalyzeValue(value, field.Type, "S181", $"Field '{type}.{name}'");
                 RequireValueContract(value);
             }
@@ -862,11 +878,20 @@ namespace Sage.Core
         {
             foreach (var field in node.Fields)
                 if (!TypeSystem.IsNativeResource(field.Type)) RejectResourceValueType(field.Type, node);
-            foreach (var field in node.Fields) RejectResourceAggregateType(field.Type, node);
+            foreach (var field in node.Fields)
+            {
+                if (IsResourceAggregate(field.Type))
+                {
+                    if (!_validatedStructs.Contains(field.Type) || !_localStructs.Contains(field.Type))
+                        throw new CompilerException(node, "S196", $"Resource struct field '{field.Name}' requires its local type '{field.Type}' to be declared earlier.");
+                }
+                else RejectResourceAggregateType(field.Type, node);
+            }
             if (node.Fields.Any(field => TypeSystem.IsBorrowType(field.Type)))
                 throw new CompilerException(node, "S173", "Struct fields cannot store borrowed references yet.");
             RegisterStructDefinition(node);
             _symbolTable.Define(node.Name, "struct");
+            _validatedStructs.Add(node.Name);
             return "none";
         }
 

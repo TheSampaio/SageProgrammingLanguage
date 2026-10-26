@@ -18,6 +18,7 @@ namespace Sage.Core
         private readonly Dictionary<string, string> _cleanupHelpers = new();
         private readonly Dictionary<string, string> _resourceCleanupHelpers = new();
         private readonly Dictionary<string, string> _aggregateCleanupHelpers = new();
+        private readonly List<string> _aggregateCleanupOrder = [];
         private readonly Dictionary<string, StructDeclarationNode> _structures = new(StringComparer.Ordinal);
         private readonly HashSet<string> _usedNames = new(StringComparer.Ordinal);
 
@@ -37,6 +38,7 @@ namespace Sage.Core
             _cleanupHelpers.Clear();
             _resourceCleanupHelpers.Clear();
             _aggregateCleanupHelpers.Clear();
+            _aggregateCleanupOrder.Clear();
             _structures.Clear();
             foreach (var structure in ast.Statements.OfType<StructDeclarationNode>()) _structures.Add(structure.Name, structure);
             _tempCounter = 0;
@@ -60,11 +62,13 @@ namespace Sage.Core
                 sb.AppendLine($"static void {helper}({type}* owner) {{ if (owner->_sage_handle != NULL) {{ " +
                     $"(void){contract.DestructorName}(owner->_sage_handle); owner->_sage_handle = NULL; }} }}");
             }
-            foreach (var (type, helper) in _aggregateCleanupHelpers)
+            foreach (var type in _aggregateCleanupOrder)
             {
-                var fields = _structures[type].Fields.Where(field => TypeSystem.IsNativeResource(field.Type)).Reverse();
+                string helper = _aggregateCleanupHelpers[type];
+                var fields = _structures[type].Fields.Where(field => TypeSystem.IsNativeResource(field.Type) || IsResourceAggregate(field.Type)).Reverse();
                 sb.AppendLine($"static void {helper}({type}* owner) {{ " +
-                    string.Join(" ", fields.Select(field => $"{_resourceCleanupHelpers[field.Type]}(&owner->{field.Name});")) + " }");
+                    string.Join(" ", fields.Select(field =>
+                        $"{(TypeSystem.IsNativeResource(field.Type) ? _resourceCleanupHelpers[field.Type] : _aggregateCleanupHelpers[field.Type])}(&owner->{field.Name});")) + " }");
             }
 
             sb.AppendLine("\n/* --- Generated Logic --- */");
@@ -164,8 +168,7 @@ namespace Sage.Core
             string? initialValue = node.Initializer?.Accept(this);
             string init = initialValue != null ? $" = {initialValue}" : "";
 
-            if (_structures.TryGetValue(node.Type, out var structure) &&
-                structure.Fields.Any(field => TypeSystem.IsNativeResource(field.Type)))
+            if (_structures.TryGetValue(node.Type, out var structure) && IsResourceAggregate(node.Type))
             {
                 string helper = AggregateCleanupHelper(node.Type, structure);
                 return $"{Indent}{node.Type} {node.Name} __attribute__((cleanup({helper}))){init};\n";
@@ -594,11 +597,26 @@ namespace Sage.Core
         private string AggregateCleanupHelper(string type, StructDeclarationNode structure)
         {
             if (_aggregateCleanupHelpers.TryGetValue(type, out string? helper)) return helper;
-            foreach (var field in structure.Fields.Where(field => TypeSystem.IsNativeResource(field.Type)))
-                ResourceCleanupHelper(field.Type);
+            foreach (var field in structure.Fields)
+            {
+                if (TypeSystem.IsNativeResource(field.Type)) ResourceCleanupHelper(field.Type);
+                else if (IsResourceAggregate(field.Type)) AggregateCleanupHelper(field.Type, _structures[field.Type]);
+            }
             helper = MintName("_sage_aggregate_drop_");
             _aggregateCleanupHelpers.Add(type, helper);
+            _aggregateCleanupOrder.Add(type);
             return helper;
+        }
+
+        private bool IsResourceAggregate(string type) => IsResourceAggregate(type, new HashSet<string>(StringComparer.Ordinal));
+
+        private bool IsResourceAggregate(string type, HashSet<string> path)
+        {
+            if (!_structures.TryGetValue(type, out var structure) || !path.Add(type)) return false;
+            bool ownsResource = structure.Fields.Any(field => TypeSystem.IsNativeResource(field.Type) ||
+                IsResourceAggregate(field.Type, path));
+            path.Remove(type);
+            return ownsResource;
         }
 
         /// <summary>Reserve source identifiers before introducing backend cleanup helpers or temporaries.</summary>

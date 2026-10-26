@@ -109,11 +109,11 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
 - Standalone `destination = source;` between available named native resource
   owners moves the source and drops the old destination. Self-assignment and
   conflicting loans remain rejected; see `tests/native-resource-reassignment.ps1`.
-- Structs with direct native resource fields support local literal initialization
-  from named owners and automatic reverse-field cleanup. Empty and omitted fields
-  are zeroed. Whole-struct copy, nested resource structs, arrays, calls, returns,
+- Structs with direct or nested native resource fields support local literal
+  initialization from named owners and recursive reverse-field cleanup. Empty
+  and omitted fields are zeroed. Whole-struct copy, arrays, calls, returns,
   and resource-field assignment remain S196/S143 boundaries; see
-  `docs/resource-structs.md` and `tests/native-resource-struct.ps1`.
+  `docs/resource-structs.md` and `tests/native-resource-nested-struct.ps1`.
 - `byte_file` provides bounded owned byte I/O and consuming close with explicit
   outcomes. `create_bytes(u8[260], u16)` safely accepts 1..259 printable ASCII
   bytes; `create(str)` remains unsafe. Retain the legacy `file` module. The std
