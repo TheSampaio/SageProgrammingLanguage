@@ -121,6 +121,45 @@ named owner still belongs to the existing trusted `unsafe` boundary; it does not
 extend the owner's lifetime. Validate allocation contexts with
 `tests/allocation-contexts.ps1` and native cleanup instrumentation.
 
+## Guarantees and limits (v0.32.2)
+
+**Proven statically for safe Sage** (code outside `unsafe` and `extern`), before
+any C is generated:
+
+- No manual allocation or release: `new`, `delete`, raw pointer types, pointer
+  casts, and pointer indexing are rejected (S133, S120-S123).
+- Copy vs. move is inferred from composition. Scalars and structs of Copy
+  fields copy. Native resources and same-file resource structs move; the source
+  is unavailable afterwards (S140), including after a branch that may have moved
+  it (S142) or a repeated loop path (S145).
+- Every owned native handle has exactly one owner. Cleanup runs once at scope
+  exit, early return, and loop iteration exit, in reverse declaration order and
+  recursively through struct fields and arrays. Moved-from, empty, and replaced
+  places release nothing twice; replacement releases the old value once.
+- Borrows (`&T`, `&mut T`) cannot outlive their owner: they cannot be returned,
+  stored in fields or arrays, rebound, fabricated by casts, or taken of globals,
+  fields, or temporaries. While a lexical borrow lives, the owner cannot be
+  moved, consumed, replaced, or written (S178); a mutable borrow also blocks
+  reads. One call cannot both consume and borrow an owner (S194).
+- Fixed-array indexing is checked: constant out-of-range indices are S185 and
+  dynamic ones stop the program with runtime S186 before any access.
+
+**Trusted, not proven** (the programmer's responsibility):
+
+- Everything inside `unsafe`: legacy `new`/`delete` references (still move- and
+  double-delete-checked), raw pointers, handle adoption (`ptr as Resource`),
+  and raw handle exposure from owners or borrows.
+- Native declarations: the ABI signature, the declared destructor's behavior,
+  and what native code does with any pointer it receives.
+- `str` is a C `char*` without an ownership or lifetime contract; interpolation
+  uses static buffers (Phase 4 work).
+- Process termination (`exit`, `abort`, native crashes, runtime S186) does not
+  run scope cleanup. Allocation failure inside `new` aborts.
+- Not yet supported (rejected rather than unchecked): borrows of resource
+  structs, field or element borrows, moving a field or element out of an
+  aggregate, whole resource-array transfers, imported resource-struct layouts
+  by value, owned strings and growable collections.
+
 ## Remaining boundaries
 
 [Borrowed parameters and lexical locals](borrowing.md) now support shared and

@@ -374,7 +374,12 @@ file directly with `sage <file>.test.sg` and read the `[PASS]`/`[FAIL]` output.
 
 The project is currently in **v0.32.2 (Alpha)**.
 
-Phase 2 now supports local fixed arrays of same-file structs containing native
+Safe Sage has no manual memory management: `new`/`delete` and raw pointers are
+unsafe-only, structs owning native resources move by value with exactly-once
+cleanup, and borrows cannot escape their owner. See
+[guarantees and limits](docs/memory.md#guarantees-and-limits-v0322).
+
+Phase 2 also supports local fixed arrays of same-file structs containing native
 resources. Literal elements move named owners into fields; generated cleanup
 releases elements in reverse index order and fields in reverse declaration
 order. See [resource arrays](docs/resource-arrays.md) for the supported subset.
