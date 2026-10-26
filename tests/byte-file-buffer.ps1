@@ -52,7 +52,7 @@ try {
     $stream.Dispose()
     foreach ($case in $cases) {
         $source = Join-Path $sourceDir ($case.Name + '.sg')
-        Set-Content -LiteralPath $source -Value ('use byte_file; ' + $case.Code)
+        Set-Content -LiteralPath $source -Value ('use byte_file; use byte_buffer; ' + $case.Code)
         $output = & dotnet $compilerPath $source 2>&1
         if ($LASTEXITCODE -ne 1 -or ($output -join "`n") -notmatch ("error " + $case.Error + ':') -or
             (Test-Path -LiteralPath (Join-Path $projectDir "obj/$($case.Name).c"))) { throw "$($case.Name): expected semantic $($case.Error).`n$($output -join "`n")" }

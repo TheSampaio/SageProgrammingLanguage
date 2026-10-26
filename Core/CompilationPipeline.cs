@@ -112,7 +112,7 @@ namespace Sage.Core
                 }
 
                 var ast = new Parser(tokens, Path.GetFileName(path)).Parse();
-                analyzer.RegisterModuleSymbols(ast);
+                analyzer.RegisterModuleSymbols(ast, moduleName);
                 parsedModules.Add(moduleName, ast);
 
                 foreach (var use in ast.Statements.OfType<UseNode>())

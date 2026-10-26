@@ -20,6 +20,11 @@ namespace Sage.Core
         private readonly Dictionary<string, FunctionDeclarationNode> _functionDeclarations = new(StringComparer.Ordinal);
         private readonly Dictionary<string, (NativeResourceDeclarationNode Node, ExternBlockNode Origin, string? File)> _nativeResources = new(StringComparer.Ordinal);
         private string _currentModule = "";
+        private readonly Dictionary<ProgramNode, string> _units = new(ReferenceEqualityComparer.Instance);
+        private readonly Dictionary<string, HashSet<string>> _callableUnits = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, (string Callable, bool IsNative)> _cSymbols = new(StringComparer.Ordinal);
+        private string _currentUnit = "";
+        private HashSet<string> _importedUnits = new(StringComparer.Ordinal);
         private string? _currentReturnType;
 
         /// <summary>Depth of nested unsafe contexts (unsafe blocks, unsafe functions, extern signatures).</summary>
@@ -39,14 +44,20 @@ namespace Sage.Core
             _localStructs.Clear();
             _validatedStructs.Clear();
             foreach (var structure in ast.Statements.OfType<StructDeclarationNode>()) _localStructs.Add(structure.Name);
+            _currentUnit = _units.GetValueOrDefault(ast, "");
+            _importedUnits = ast.Statements.OfType<UseNode>().Select(use => use.Module).ToHashSet(StringComparer.Ordinal);
             ast.Accept(this);
         }
 
         /// <summary>
         /// Pre-registers module-level symbols to allow forward references and out-of-order calls.
         /// </summary>
-        public void RegisterModuleSymbols(ProgramNode moduleAst)
+        /// <param name="moduleAst">The parsed compilation unit.</param>
+        /// <param name="unit">The unit name that <c>use</c> directives reference (the file stem).</param>
+        public void RegisterModuleSymbols(ProgramNode moduleAst, string unit = "")
         {
+            _units[moduleAst] = unit;
+            _currentUnit = unit;
             foreach (var structure in moduleAst.Statements.OfType<StructDeclarationNode>()) RegisterStructDefinition(structure);
             foreach (var external in moduleAst.Statements.OfType<ExternBlockNode>()) RegisterExternBlock(external);
             foreach (var function in moduleAst.Statements.OfType<FunctionDeclarationNode>()) RegisterFunction(function);
@@ -78,6 +89,8 @@ namespace Sage.Core
             }
             if (_symbolTable.Resolve(name) != null)
                 throw new CompilerException(func, "S150", $"Callable '{name}' conflicts with an existing declaration.");
+            RegisterCSymbol(CNaming.ResolveFunctionName(func), name, func.IsExtern, func);
+            RecordCallableOrigin(name);
             _functionDeclarations.Add(name, func);
             _symbolTable.Define(name, func.ReturnType, isFunction: true, isExtern: func.IsExtern,
                 signature: new CallableSignature(func.ReturnType, func.Parameters.Select(parameter => parameter.Type), func.IsUnsafe));
@@ -124,12 +137,53 @@ namespace Sage.Core
                         {
                             if (existing.Signature == null || !existing.Signature.Matches(signature))
                                 throw new CompilerException(func, "S152", $"Native alias '{name}' has conflicting signatures or native origins.");
+                            RecordCallableOrigin(name);
                             break;
                         }
+                        RegisterCSymbol(func.Name, name, isNative: true, func);
+                        RecordCallableOrigin(name);
                         _symbolTable.Define(name, func.ReturnType, isFunction: true, isExtern: true, signature: signature);
                         break;
                 }
             }
+        }
+
+        /// <summary>Records the compilation unit that declares a callable, for direct-import visibility.</summary>
+        private void RecordCallableOrigin(string callable)
+        {
+            if (!_callableUnits.TryGetValue(callable, out var units)) _callableUnits.Add(callable, units = new(StringComparer.Ordinal));
+            units.Add(_currentUnit);
+        }
+
+        /// <summary>
+        /// Rejects two different callables that lower to the same C symbol, such as <c>a_b::c</c> and
+        /// <c>a::b_c</c>. Native aliases may share a C function because they name the same library symbol.
+        /// </summary>
+        private void RegisterCSymbol(string cName, string callable, bool isNative, AstNode declaration)
+        {
+            if (_cSymbols.TryGetValue(cName, out var existing))
+            {
+                if (existing.Callable == callable || (existing.IsNative && isNative)) return;
+                throw new CompilerException(declaration, "S155",
+                    $"Callable '{callable}' and '{existing.Callable}' both generate the C symbol '{cName}'. Rename one of them.");
+            }
+            _cSymbols.Add(cName, (callable, isNative));
+        }
+
+        /// <summary>
+        /// A Sage callable is visible in its declaring file and in files that directly <c>use</c> that file.
+        /// Native aliases are private to the files that declare them. Transitive imports grant nothing.
+        /// </summary>
+        private void EnsureCallableVisible(AstNode call, string name, SymbolMetadata symbol)
+        {
+            if (!_callableUnits.TryGetValue(name, out var units) || units.Contains(_currentUnit)) return;
+            if (symbol.IsExtern)
+                throw new CompilerException(call, "S153",
+                    $"Native alias '{name}' is declared in another file. Declare the extern binding in this file to call it.");
+            if (units.Overlaps(_importedUnits)) return;
+            string origin = units.Order(StringComparer.Ordinal).First();
+            throw new CompilerException(call, "S153",
+                $"Callable '{name}' is declared in '{origin}.sg', which this file does not import. Add 'use {origin};'.");
         }
 
         private void RegisterNativeResource(NativeResourceDeclarationNode node, ExternBlockNode origin)
@@ -451,6 +505,7 @@ namespace Sage.Core
                 foreach (string parameter in signature.ParameterTypes) RejectResourceValueType(parameter, node);
             if (signature.IsUnsafe && !InUnsafe)
                 throw new CompilerException(node, "S164", $"Calling {(symbol.IsExtern ? "native" : "unsafe")} function '{name}' requires an unsafe context.");
+            EnsureCallableVisible(node, name, symbol);
             if (returnsResource && (_functionDepth == 0 || !ReferenceEquals(node, _owningInitializer)))
                 throw new CompilerException(node, "S193", "An owning resource result must directly initialize a local owner before it can be used.");
             if (node.Arguments.Count != signature.ParameterTypes.Count)

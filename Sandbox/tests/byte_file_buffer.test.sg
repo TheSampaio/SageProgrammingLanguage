@@ -1,5 +1,6 @@
 use test;
 use byte_file;
+use byte_buffer;
 
 func main(): none
 {

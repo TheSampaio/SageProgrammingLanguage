@@ -21,9 +21,39 @@ declaration during compiler passes is idempotent.
 
 The [function-contract increment](function-contracts.md) validates Sage signatures
 and the consistency of repeated native aliases. Ownership-aware signatures are
-still pending. Native aliases remain shared across the compilation session.
-The compilation session can also see transitively discovered modules; validation
-of direct-import visibility remains future work.
+still pending.
+
+## Direct-import visibility (v0.34.0)
+
+Each source file is a compilation unit named by its file stem; `use alpha;`
+imports the unit `alpha.sg`. A Sage callable (module function or top-level
+function) is visible only in the file that declares it and in files that
+directly `use` that file. Transitive discovery grants nothing: if `main.sg` uses
+`gamma` and `gamma.sg` uses `alpha`, `main.sg` must also write `use alpha;`
+before calling `alpha::value()`. Native extern aliases are private to each file
+that declares them; another file declares its own extern binding (identical
+repeated declarations remain valid). Violations report `S153` with the declaring
+file. Struct and resource type names are still shared across the import closure.
+
+Migration: add the missing `use` directive. Sandbox `byte_file_buffer.test.sg`
+and two fixtures previously reached `byte_buffer` only through `byte_file`.
+
+## Generated C symbol collisions (v0.34.0)
+
+Module functions lower to `module_function` C names. Two different callables
+that would produce the same C symbol, such as `a_b::c` and `a::b_c`, a top-level
+`alpha_value` beside `alpha::value`, a module function named `main`, or a Sage
+function named like a declared native function, are rejected with `S155`
+instead of colliding at link time. Several native aliases may still bind the
+same C library function.
+
+| Code | Meaning |
+|------|---------|
+| S150 | Duplicate Sage callable or native alias/Sage callable conflict |
+| S151 | Called name is a non-callable binding |
+| S153 | Callable not visible: its file is not directly imported, or a native alias belongs to another file |
+| S155 | Two callables lower to the same C symbol |
 
 Run `tests/module-resolution.ps1 -CompilerDll <Sage.dll>` to validate runtime
-origins, forward calls, duplicate declarations, and non-callable bindings.
+origins, forward calls, duplicate declarations, and non-callable bindings, and
+`tests/module-visibility.ps1` for direct-import visibility and C symbol collisions.
