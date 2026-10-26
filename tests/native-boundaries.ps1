@@ -26,6 +26,10 @@ $cases = @(
     @{ Name = 'http_download_requires_unsafe'; Code = 'use http_client; func main(): none { http_client::download("https://example.invalid", "target"); }'; Error = 'S164' },
     @{ Name = 'http_explicit_contract_not_invoked'; Code = 'use http_client; unsafe func helper(): none { http_client::fetch("https://example.invalid"); http_client::post("https://example.invalid", "body"); http_client::download("https://example.invalid", "target"); } func main(): none {}' },
     @{ Name = 'unsafe_still_checks_shared_access'; Code = 'struct Item { value: i32; } func helper(value: &Item): none { unsafe { value.value = 2; } } func main(): none {}'; Error = 'S171' },
+    @{ Name = 'native_none_parameter_rejected'; Code = 'extern native("string.h") { func foo(value: none): none; } func main(): none {}'; Error = 'S213' },
+    @{ Name = 'native_none_pointer_parameter'; Code = 'extern native("stdlib.h") { func free(value: none*): none; } func main(): none {}' },
+    @{ Name = 'native_borrow_parameter_rejected'; Code = 'extern native("string.h") { func foo(value: &c_int): none; } func main(): none {}'; Error = 'S173' },
+    @{ Name = 'native_callback_parameter_unsupported'; Code = 'extern native("stdlib.h") { func foo(callback: func(c_int): c_int): none; } func main(): none {}'; Error = 'S003' },
     @{ Name = 'unsafe_still_requires_allocation_owner'; Code = 'struct Item { value: i32; } func main(): none { unsafe { var x: i32 = (new Item {}).value; } }'; Error = 'S146' }
 )
 

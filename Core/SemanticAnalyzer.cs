@@ -116,6 +116,8 @@ namespace Sage.Core
                         foreach (var parameter in func.Parameters) ValidateArrayLength(parameter.Type, func);
                         if (TypeSystem.IsBorrowType(func.ReturnType) || func.Parameters.Any(parameter => TypeSystem.IsBorrowType(parameter.Type)))
                             throw new CompilerException(func, "S173", "Native ABI declarations cannot use Sage borrowing contracts.");
+                        foreach (var parameter in func.Parameters.Where(parameter => parameter.Type == "none"))
+                            throw new CompilerException(func, "S213", $"Native parameter '{parameter.Name}' cannot have type 'none'; use 'none*' for an untyped pointer.");
                         if (_functionDeclarations.ContainsKey($"{node.Alias}::{func.Name}"))
                             throw new CompilerException(func, "S150",
                                 $"Native alias '{node.Alias}::{func.Name}' conflicts with a Sage callable.");

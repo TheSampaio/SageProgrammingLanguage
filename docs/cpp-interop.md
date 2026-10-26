@@ -1,4 +1,4 @@
-# Bounded C++ interop (v0.31.2)
+# Bounded C++ interop (v0.31.3)
 
 Sage keeps its C backend. An `extern cpp` block declares the C++ API it needs;
 the compiler generates `extern "C"` adapters in `obj/sage_cpp_adapters.cpp`,
@@ -129,10 +129,26 @@ handle pointer and return `none`; members take the handle first. Missing
 targets are syntax errors (S001); `type` declarations are not allowed in C++
 blocks (S006).
 
-Not implemented: automatic header parsing (no Clang dependency is assumed;
-GCC is the supported toolchain), reference parameters, `std::string` and
-container mapping, operators,
-inheritance-aware casts, callbacks, thread-safety metadata, and per-source
+Not implemented: automatic header parsing (see the decision below), reference
+parameters, `std::string` and container mapping, operators, inheritance-aware
+casts, callbacks, thread-safety metadata, and per-source
 compiler flags. Declared types are trusted ABI contracts: a wrong
 declaration fails to compile in the adapter or, for conversions, behaves as
 the equivalent C++ call would.
+
+## Decision: Clang-based header parsing is deferred
+
+Investigated 2026-10-26: no `clang`, `clang++`, or `llvm-config` is installed on
+the development machine (GCC 15.2.0 is the only toolchain), and Sage requires
+nothing beyond GCC. Automatic wrapper generation would need libclang or a
+`clang -Xclang -ast-dump=json` pipeline: a heavyweight mandatory dependency for a
+feature most projects never use. It would also have to guess what C++ headers do
+not state (ownership, destruction rules, exception behavior, thread safety,
+template instantiation), which the language requires to be explicit. Adapters
+therefore stay generated from explicit `extern cpp` declarations that name every
+target. A future parser should be an optional tool that emits those same
+declarations for review, never a build dependency; C-only and explicitly declared
+C++ projects keep building with GCC alone. `tests/cpp-toolchain-isolation.ps1`
+puts a failing `g++` shim first on `PATH` and proves that projects without C++
+(std modules, C externs, C sources, a C block named `cpp`) never invoke it, while
+an `extern cpp` project does.

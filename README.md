@@ -370,7 +370,7 @@ file directly with `sage <file>.test.sg` and read the `[PASS]`/`[FAIL]` output.
 
 ## Project Status
 
-The project is currently in **v0.31.2 (Alpha)**.
+The project is currently in **v0.31.3 (Alpha)**.
 
 Phase 2 now supports local fixed arrays of same-file structs containing native
 resources. Literal elements move named owners into fields; generated cleanup
@@ -379,6 +379,10 @@ order. See [resource arrays](docs/resource-arrays.md) for the supported subset.
 Resource fields of local structs also support standalone replacement from a
 named owner, including nested struct field paths. The old field is released
 before scope cleanup.
+
+Phase 3 native interoperability adds opt-in recoverable C++ exceptions (`catch`), S212 detection of
+colliding native symbols, and an FFI safety review in [native boundaries](docs/native-boundaries.md).
+Header parsing with Clang is deferred; see [C++ interop](docs/cpp-interop.md).
 
 * [x] **CLI & Project System** (`new`, `build`, `run`, `--version`)
 * [x] **Variable Declarations** (`var`) & **Constants** (`const`)

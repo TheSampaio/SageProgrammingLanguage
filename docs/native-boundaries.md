@@ -60,3 +60,32 @@ accesses inside it. General native pointer operations remain unchecked.
 Validate with `tests/native-boundaries.ps1` and
 `Sandbox/tests/native_boundaries.test.sg`. HTTP and unbounded input helpers are
 compiled in unused test functions; the suite performs no HTTP request or input read.
+
+
+## FFI safety review (v0.31.3)
+
+Review of the native-interop safety requirements against the implementation.
+Enforced means the compiler or generated code checks it; trusted means the
+declared contract is believed and only the call boundary is checked; unsupported
+means the construct is rejected or does not exist.
+
+| Requirement | Enforced | Trusted | Unsupported |
+| --- | --- | --- | --- |
+| Buffer lengths | Fixed Sage arrays are bounds checked in Sage code and need positive lengths; `byte_buffer` and `byte_file` validate capacity and limits before I/O | Raw `T*` pointers and `c_size_t` lengths handed to C (`memcpy`, `read`) | Inferring a length from a pointer |
+| String encoding | `byte_file` accepts 1..259 printable ASCII path bytes | `str` and `c_char*` are NUL-terminated bytes of unspecified encoding | Encoding validation or conversion at the boundary |
+| Nullability | `owner == null` for resources and borrows; null handle member calls in C++ adapters (abort, or a recorded failure with `catch`); resource cleanup tolerates null | `0 as T*` in `unsafe`; extern results may be null | Non-null pointer types |
+| Native allocation | Heap `new` ownership; `resource` adoption is explicit and unsafe | Whatever an extern returns is owned only if declared a `resource` | Inferring ownership from names such as `open` or `create` |
+| Resource destruction | `resource ... drop` cleanup at scope exit, moves, and replacement; destructor ABI matched to the pointer | That the declared destructor really releases the handle | Double-pointer or unknown-layout handles |
+| Ownership transfer | Moves, consuming parameters, and returns of named owners; use after move is rejected | Native code that stores or frees a pointer it was handed | Transfers through raw pointers |
+| Borrowed native memory | `&` and `&mut` cannot cross the ABI (S173); borrows of resources are lexically checked | Raw pointers returned by C stay valid as long as C says | Borrowed returns and native lifetimes |
+| Callback lifetimes | Function-typed parameters do not parse (S003) | | Callbacks and function pointers |
+| Type conversions | `c_*` and Sage numeric types need explicit casts; C++ adapters accept only scalars, `str`, scalar pointers, and one handle pointer (S210); `none` parameters are rejected (S213) | Declared widths and signedness match the C prototype; adapter argument conversions follow C++ rules | Structs, arrays, references, and standard-library types in `extern cpp` |
+| Error propagation | `byte_file` returns explicit outcomes; C++ exceptions never unwind into C (abort by default, `catch` for an explicit status) | `errno` and C return codes mean what the wrapper says | Automatic mapping of C error codes |
+| Symbols and linkage | Declared symbol collisions (S212), missing native sources (S211), repeated alias consistency (S152) | Symbols defined in undeclared native sources or libraries | Collision detection inside native code |
+
+Small check added with this review: `none` is rejected as an extern parameter
+type (S213; it used to surface as a GCC error), and
+`tests/native-boundaries.ps1` now pins the borrow and callback rejections.
+Larger gaps (non-null pointer types, length-carrying slices for C buffers,
+callbacks, error-code mapping) need language features and are deliberately not
+approximated here.
