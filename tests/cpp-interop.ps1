@@ -48,12 +48,12 @@ try {
 
     Copy-Item -LiteralPath (Join-Path $fixtures 'cpp-interop.hpp'), (Join-Path $fixtures 'cpp-interop.sg'), (Join-Path $fixtures 'cpp_interop_helper.sg') -Destination $sourceDir
 
-    # Overloads, an explicit template instance, constructor/methods/destructor, resource cleanup,
+    # Overloads, a static member, an explicit template instance, constructor/methods/destructor, resource cleanup,
     # and an adapter shared by two modules.
     $output = & dotnet $compilerPath (Join-Path $sourceDir 'cpp-interop.sg') 2>&1
     $text = $output -join "`n"
     if ($LASTEXITCODE -ne 0) { throw "C++ interop program must build and run.`n$text" }
-    foreach ($expected in 'sum=5 real=3.5 top=9', 'sum=42 real=0.5 top=15', '[counter dropped 15]') {
+    foreach ($expected in 'sum=5 real=3.5 top=9', 'sum=42 real=0.0 top=0', 'sum=42 real=0.5 top=15', '[counter dropped 15]') {
         if (!$text.Contains($expected)) { throw "Missing runtime output '$expected'.`n$text" }
     }
     $adapters = Get-Content -LiteralPath (Join-Path $probeDir 'obj/sage_cpp_adapters.cpp') -Raw

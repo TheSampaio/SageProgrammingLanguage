@@ -7,6 +7,7 @@ namespace demo {
     template <typename T> T biggest(T a, T b) { return a > b ? a : b; }
     inline void report(int a, double b, int c) { std::printf("sum=%d real=%.1f top=%d\n", a, b, c); }
     inline int fail(int code) { if (code != 0) throw std::runtime_error("bad code"); return 0; }
+    struct Math { static int triple(int value) { return value * 3; } };
     class Counter {
     public:
         explicit Counter(int start) : value_(start) {}

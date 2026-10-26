@@ -5,6 +5,7 @@ extern cpp geo("cpp-interop.hpp") {
     func add(a: c_int, b: c_int): c_int = demo::add;
     func add_real(a: c_double, b: c_double): c_double = demo::add;
     func biggest(a: c_int, b: c_int): c_int = "demo::biggest<int>";
+    func triple(value: c_int): c_int = demo::Math::triple;
     func report(a: c_int, b: c_double, c: c_int): none = demo::report;
     func create(start: c_int): Counter* = new;
     func destroy(counter: Counter*): none = delete;
@@ -36,6 +37,7 @@ func main(): none
         var real: f64 = geo::add_real(1.5, 2.0) as f64;
         var top: i32 = geo::biggest(4, 9) as i32;
         geo::report(sum as c_int, real as c_double, top as c_int);
+        geo::report(geo::triple(14), 0.0, 0);
         geo::report(cpp_interop_helper::twice(21) as c_int, 0.5, current(&counter) as c_int);
     }
 }

@@ -20,7 +20,8 @@ extern cpp geo("counter.hpp") {
 ```
 
 Every function names its target explicitly; nothing is inferred from the
-Sage name. Overloads get distinct Sage names, and C++ overload resolution
+Sage name. Static member functions bind as qualified functions
+(`= demo::Math::triple`). Overloads get distinct Sage names, and C++ overload resolution
 selects the target from the declared argument types. If no exact overload
 exists, standard C++ implicit conversions apply. A string target is
 required for explicit template instances and is restricted to qualified
@@ -84,7 +85,7 @@ blocks (S006).
 
 Not implemented: automatic header parsing (no Clang dependency is assumed;
 GCC is the supported toolchain), reference parameters, `std::string` and
-container mapping, recoverable exception results, static members, operators,
+container mapping, recoverable exception results, operators,
 inheritance-aware casts, callbacks, thread-safety metadata, and per-source
 compiler flags. Declared types are trusted ABI contracts: a wrong
 declaration fails to compile in the adapter or, for conversions, behaves as
