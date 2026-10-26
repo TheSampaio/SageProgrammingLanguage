@@ -156,3 +156,76 @@ error after every run:
 | `units_compiled`, `units_reused`, `relinked` | Cache outcome |
 | `process_ms` | Wall time since process start, including .NET startup |
 | `peak_working_set_bytes`, `allocated_bytes`, `gc_collections` | Peak memory, managed allocation and GC counts (gen0/gen1/gen2) |
+
+## Benchmarks
+
+`tools/bench-incremental.ps1 -CompilerDll <Sage.dll> [-Modules 40]
+[-FunctionsPerModule 20] [-Iterations 5] [-OutputJson <file>]` generates a
+synthetic project in a temporary directory (module `i` uses modules `i-1` and
+`i/2`; `main` uses all of them), performs one unrecorded warm-up build, then
+times `sage build` (wall clock, including .NET startup) in four scenarios per
+iteration: **clean** (`obj/` and `bin/` deleted, so older compilers work too),
+**no-change**, **body** (one function body edited in module `m<N/4>`, which has
+many dependents) and **interface** (a public function added to that module).
+It records the compiler version and build configuration, GCC version and
+target, .NET SDK, OS, CPU, core count, RAM, workload and iteration count. With
+an Instrumented compiler it also reports how many units compiled.
+
+### Measured results (2026-10-26)
+
+Environment: Intel Core i5-10400F (6 cores / 12 threads), 15.9 GB RAM, Windows
+NT 10.0.26200, GCC 15.2.0 x86_64-w64-mingw32 (w64devkit), .NET SDK 10.0.401,
+Release compilers, 5 iterations, median (min-max) milliseconds. The baseline is
+v0.30.0 (commit `9b080dd`, one GCC command for all sources) built from a
+`git archive` export; v0.36.4 is this branch. Both ran in the same session.
+
+41 modules (40 generated + main), 20 functions each, hot module `m010`:
+
+| Scenario | v0.30.0 | v0.36.4 | Units compiled (Instrumented) |
+| --- | --- | --- | --- |
+| clean | 4098 (4052-5004) | 2015 (1944-2091) | 41 |
+| no-change | 4141 (4043-4298) | 665 (654-719) | 0 |
+| body | 4134 (4077-4274) | 963 (923-984) | 1 |
+| interface | 4128 (4025-4290) | 1731 (1727-1832) | 31 |
+
+5 modules (4 generated + main), 5 functions each, hot module `m001`:
+
+| Scenario | v0.30.0 | v0.36.4 | Units compiled (Instrumented) |
+| --- | --- | --- | --- |
+| clean | 519 (516-537) | 454 (435-474) | 5 |
+| no-change | 521 (514-566) | 188 (179-194) | 0 |
+| body | 524 (508-544) | 420 (407-424) | 1 |
+| interface | 535 (512-537) | 442 (434-463) | 4 |
+
+Observations (from the measurements above and one instrumented run of the
+41-module workload, not averaged):
+
+- Clean builds are faster because units compile in parallel; the baseline ran
+  all sources through one sequential GCC command.
+- A no-change rebuild of the 41-module project spends roughly 490 ms in
+  semantic analysis, 90 ms in C generation and 50 ms in cache validation; GCC
+  is not invoked. The front end is now the dominant cost.
+- A one-unit rebuild costs about one `gcc -c` (~100-160 ms) plus the link
+  (~200 ms).
+
+These are measurements on one machine; other hardware, antivirus scanning and
+disk caches change absolute numbers.
+
+## Precompiled headers: investigated, not implemented
+
+Measured on the same machine (20 compiles each, `gcc -c -std=c11`): an empty C
+file takes about 72 ms per compile (process start-up and code generation), the
+same file with the system headers Sage modules use (`stdint.h`, `stdbool.h`,
+`stdio.h`, `stdlib.h`, `string.h`, `stddef.h`, `limits.h`) about 96-97 ms, a
+generated `console.c` about 104 ms, and the header file through a precompiled
+`common.h.gch` (4.07 MB) about 81 ms. A PCH would therefore save about 16 ms per
+compiled unit.
+
+That is about 1.5% of a one-unit rebuild of the 41-module project and, spread
+over 6 parallel workers, roughly 110 ms of a 2 s clean build, before paying for
+generating the `.gch` (one extra compile per flag set) and keeping it in the
+cache key. GCC also requires the precompiled header to be the first include of
+every translation unit with identical flags, which would force a common
+generated header ahead of each module header. The estimated gain does not
+justify that coupling, so Sage does not use PCH. Revisit if generated modules
+start including substantially larger headers.

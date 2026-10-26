@@ -153,6 +153,8 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
   forces a rebuild. Anything new that affects object code must enter the unit's key.
 - Development metrics: `dotnet build -c Instrumented` defines `SAGE_INSTRUMENTATION`;
   `CompilerInstrumentation` calls are `[Conditional]`, so Debug/Release stay quiet.
+- `tools/bench-incremental.ps1 -CompilerDll <dll>` benchmarks clean vs incremental builds;
+  record measured results in `docs/incremental-build.md` (PCH was measured and rejected).
 
 ## Generated C
 
