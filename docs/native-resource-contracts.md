@@ -58,9 +58,16 @@ func main(): none
 ```
 
 Initialization from another named owner moves the handle and clears the source.
+Since v0.24.0, a standalone assignment between two named local owners of the
+same resource type also moves the source. It first clears the source, then calls
+the destination's declared destructor if its old handle is non-null, and finally
+stores the incoming handle. Self-assignment, assignment from a borrowed value,
+and replacement while either owner has a conflicting live borrow are rejected.
+The destination must be available; assignment does not reinitialize a moved owner.
+Use a fresh local binding to hold a factory result before assigning it.
 The analyzer tracks moved/possibly moved bindings across branches and rejects
-repeated moves of outer bindings in loops (S140/S142/S145). Overwriting owners
-is disabled (S143); assigning to const remains S103. Local bindings and parameters
+repeated moves of outer bindings in loops (S140/S142/S145). Assigning to const
+remains S103. Local bindings and parameters
 cannot shadow a resource type name (S150), because the C backend uses its typedef.
 
 Scope exit, early return, and loop iteration exit call typed GCC cleanup helpers

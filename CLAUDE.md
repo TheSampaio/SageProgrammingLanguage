@@ -106,6 +106,9 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
 - `owner == null` / `owner != null` checks a named resource or borrow in safe
   Sage. `null` is contextual and existing bindings keep their meaning. Bind a
   presence query before passing it alongside consumed arguments; see S195/S194.
+- Standalone `destination = source;` between available named native resource
+  owners moves the source and drops the old destination. Self-assignment and
+  conflicting loans remain rejected; see `tests/native-resource-reassignment.ps1`.
 - `byte_file` provides bounded owned byte I/O and consuming close with explicit
   outcomes. `create_bytes(u8[260], u16)` safely accepts 1..259 printable ASCII
   bytes; `create(str)` remains unsafe. Retain the legacy `file` module. The std

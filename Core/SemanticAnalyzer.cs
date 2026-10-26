@@ -26,6 +26,7 @@ namespace Sage.Core
         private int _functionDepth;
         private int _borrowExpressionDepth;
         private AstNode? _owningInitializer;
+        private AssignmentNode? _standaloneAssignment;
         private int _consumingArgumentDepth;
 
         /// <summary>True when analysis is currently inside an unsafe context.</summary>
@@ -624,13 +625,31 @@ namespace Sage.Core
             }
 
             string targetType = node.Target.Accept(this);
+            if (TypeSystem.IsNativeResource(targetType))
+            {
+                if (!ReferenceEquals(node, _standaloneAssignment) || node.Target is not IdentifierNode target ||
+                    node.Expression is not IdentifierNode source)
+                    throw new CompilerException(node, "S143", "Resource reassignment requires a standalone assignment between named local owners.");
+                var destination = _symbolTable.ResolveLocal(target.Name);
+                if (destination is not { IsOwningValue: true })
+                    throw new CompilerException(target, "S143", "A borrowed resource cannot be reassigned as an owner.");
+                AnalyzeValue(source, targetType, "S108", "Assignment");
+                var origin = _symbolTable.ResolveLocal(source.Name);
+                if (origin is not { IsOwningValue: true })
+                    throw new CompilerException(source, "S191", "A borrowed resource cannot be moved into an owner.");
+                if (ReferenceEquals(destination, origin))
+                    throw new CompilerException(node, "S143", "A resource owner cannot be assigned to itself.");
+                ConsumeReference(source, node, OwnershipKind.Moved);
+                node.VariableType = targetType;
+                return targetType;
+            }
             if (TypeSystem.IsArrayType(targetType))
             {
                 if (_functionDepth == 0) throw new CompilerException(node, "S188", "Array copy assignment requires a function scope.");
                 RequireStableArrayPlace(node.Target);
                 RequireCopyableArray(targetType, node);
             }
-            if (node.Target.IsReference || TypeSystem.IsNativeResource(targetType))
+            if (node.Target.IsReference)
                 throw new CompilerException(node, "S143",
                     "Reassigning an owning value is not supported yet. Create a new binding to transfer ownership.");
             AnalyzeValue(node.Expression, targetType, "S108", "Assignment");
@@ -732,7 +751,13 @@ namespace Sage.Core
             RequireValueContract(node.Expression);
             return type;
         }
-        public string Visit(ExpressionStatementNode node) => node.Expression.Accept(this);
+        public string Visit(ExpressionStatementNode node)
+        {
+            var previous = _standaloneAssignment;
+            _standaloneAssignment = node.Expression as AssignmentNode;
+            try { return node.Expression.Accept(this); }
+            finally { _standaloneAssignment = previous; }
+        }
 
         public string Visit(UnaryExpressionNode node)
         {

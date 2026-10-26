@@ -278,6 +278,15 @@ namespace Sage.Core
         /// </summary>
         public string Visit(AssignmentNode node)
         {
+            if (node.VariableType != null && TypeSystem.IsNativeResource(node.VariableType))
+            {
+                string destination = node.Target.Accept(this);
+                string origin = node.Expression.Accept(this);
+                string incoming = MintName("_resource_replacement");
+                string helper = ResourceCleanupHelper(node.VariableType);
+                return $"({{ {node.VariableType} {incoming} = {origin}; {origin}._sage_handle = NULL; " +
+                    $"{helper}(&{destination}); {destination} = {incoming}; }})";
+            }
             if (node.VariableType == null || !TypeSystem.IsArrayType(node.VariableType))
                 return $"{node.Target.Accept(this)} = {node.Expression.Accept(this)}";
             string target = MintName("_copy_target");
