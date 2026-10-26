@@ -27,6 +27,7 @@ namespace Sage.Core
         private int _loopDepth;
         private int _functionDepth;
         private int _borrowExpressionDepth;
+        private readonly NativeSymbolRegistry _nativeSymbols = new();
         private AstNode? _owningInitializer;
         private AssignmentNode? _standaloneAssignment;
         private int _consumingArgumentDepth;
@@ -78,6 +79,7 @@ namespace Sage.Core
             }
             if (_symbolTable.Resolve(name) != null)
                 throw new CompilerException(func, "S150", $"Callable '{name}' conflicts with an existing declaration.");
+            _nativeSymbols.RegisterSage(func, name);
             _functionDeclarations.Add(name, func);
             _symbolTable.Define(name, func.ReturnType, isFunction: true, isExtern: func.IsExtern,
                 signature: new CallableSignature(func.ReturnType, func.Parameters.Select(parameter => parameter.Type), func.IsUnsafe));
@@ -118,6 +120,7 @@ namespace Sage.Core
                             throw new CompilerException(func, "S150",
                                 $"Native alias '{node.Alias}::{func.Name}' conflicts with a Sage callable.");
                         string name = $"{node.Alias}::{func.Name}";
+                        _nativeSymbols.RegisterNative(func, name);
                         var signature = new CallableSignature(func.ReturnType, func.Parameters.Select(parameter => parameter.Type),
                             isUnsafe: true, nativeHeader: node.Header, nativeLibrary: node.Library,
                             nativeSymbol: func.CppBinding == null ? null : CNaming.ResolveFunctionName(func),

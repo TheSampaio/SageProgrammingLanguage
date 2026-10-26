@@ -1,4 +1,4 @@
-# Bounded C++ interop (v0.31.1)
+# Bounded C++ interop (v0.31.2)
 
 Sage keeps its C backend. An `extern cpp` block declares the C++ API it needs;
 the compiler generates `extern "C"` adapters in `obj/sage_cpp_adapters.cpp`,
@@ -104,8 +104,20 @@ generation. A file declared by several blocks is compiled once, and each
 source directory joins the include path. Any C++ source links `-lstdc++`.
 Sources are rebuilt on every build; compiler flags and incremental native
 caching are not configurable yet. Native symbols share the C namespace with
-flattened Sage names (`module_function`), so avoid names such as `helper_twice`
-next to a `helper::twice` function; collision detection is Phase 5 work.
+flattened Sage names (`module_function`); declared collisions are S212 (below).
+
+## Native symbol collisions (v0.31.2)
+
+Sage functions link as `module_function` (or the plain name at top level), C
+externs keep their C name, and C++ adapters use `sage_cpp_fn_<len><alias>_<name>`.
+When two different declarations would produce the same C symbol, the compiler
+stops with S212 before generating C. Examples: `helper::twice` next to a
+`helper_twice` function, `a_b::c` next to `a::b_c`, a C extern named like a Sage
+function, or a Sage function named like an adapter. The same C function declared
+through several aliases is one symbol and is accepted. Only declared symbols are
+visible: names defined inside project `.c`/`.cpp` sources or linked libraries are
+not parsed, so a collision with an undeclared native definition still surfaces as
+a link error.
 
 ## Limits (S210 unless noted)
 
