@@ -55,6 +55,11 @@ namespace Sage.Utilities
         /// </summary>
         public static void LogError(Token token, string code, string message)
         {
+            if (DiagnosticOutput.IsJson)
+            {
+                DiagnosticOutput.Write(DiagnosticOutput.Create(CurrentFile ?? "main.sg", token.Line, token.Column, code, message));
+                return;
+            }
             Console.ForegroundColor = ConsoleColor.Red;
             string file = CurrentFile ?? "main.sg";
             Console.WriteLine($"{file}({token.Line},{token.Column}): error {code}: {message}");
@@ -80,6 +85,7 @@ namespace Sage.Utilities
         /// </summary>
         public static void LogSuccess(string message)
         {
+            if (DiagnosticOutput.IsJson) return; // Machine-readable mode carries only diagnostics.
             Console.ForegroundColor = ConsoleColor.Green;
 #if DEBUG
             Console.WriteLine($"[SUCCESS] {message}");
@@ -94,6 +100,12 @@ namespace Sage.Utilities
         /// </summary>
         public static void LogFatal(Exception ex)
         {
+            if (DiagnosticOutput.IsJson)
+            {
+                DiagnosticOutput.Write(DiagnosticOutput.FromException(ex, CurrentFile));
+                return;
+            }
+
             Console.ForegroundColor = ConsoleColor.Red;
 
             if (ex is CompilerException sce)

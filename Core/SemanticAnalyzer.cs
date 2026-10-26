@@ -603,7 +603,8 @@ namespace Sage.Core
                     var kind = TypeSystem.GetBorrowKind(borrowedType);
                     if (borrowed.TryGetValue(source, out var previous) && (kind == BorrowKind.Mutable || previous.Kind == BorrowKind.Mutable))
                         throw new CompilerException(borrow, "S172",
-                            $"This borrow conflicts with the borrow at ({previous.Expression.Line},{previous.Expression.Column}) in the same call.");
+                            $"This borrow conflicts with the borrow at ({previous.Expression.Line},{previous.Expression.Column}) in the same call.")
+                            .WithRelated(null, "conflicting borrow", CompilerLogger.CurrentFile, previous.Expression.Line, previous.Expression.Column);
                     borrowed[source] = (kind, borrow);
                     continue;
                 }
@@ -842,14 +843,17 @@ namespace Sage.Core
                     OwnershipKind.Released => "S141",
                     _ => "S142"
                 };
+                string by = string.IsNullOrEmpty(state.Operation) ? "" : $" by {state.Operation}";
                 string reason = state.Kind switch
                 {
-                    OwnershipKind.Moved => "was moved",
-                    OwnershipKind.Released => "was deleted",
-                    _ => "may have been moved or deleted on another path"
+                    OwnershipKind.Moved => $"was moved{by}",
+                    OwnershipKind.Released => $"was deleted{by}",
+                    _ => $"may have been moved or deleted{by} on another path"
                 };
                 throw new CompilerException(node, code,
-                    $"Owner '{node.Name}' {reason} at ({state.Line},{state.Column}) and cannot be used here.");
+                    $"Owner '{node.Name}' {reason} at ({state.Line},{state.Column}) and cannot be used here.")
+                    .WithRelated(node.Name, string.IsNullOrEmpty(state.Operation) ? "invalidated here" : $"invalidated by {state.Operation}",
+                        CompilerLogger.CurrentFile, state.Line, state.Column);
             }
             node.VariableType = symbol.Type;
             node.IsReference = symbol.IsReference;
@@ -985,9 +989,7 @@ namespace Sage.Core
                 var right = elseState[symbol];
                 symbol.Ownership = !thenContinues ? right : !elseContinues ? left
                     : left.Kind == right.Kind ? left
-                    : new OwnershipState(OwnershipKind.MaybeUnavailable,
-                        left.Kind != OwnershipKind.Available ? left.Line : right.Line,
-                        left.Kind != OwnershipKind.Available ? left.Column : right.Column);
+                    : InvalidatedOnSomePath(left, right);
             }
             return "none";
         }
@@ -1213,8 +1215,28 @@ namespace Sage.Core
             if (_loopDepth > symbol.DeclarationLoopDepth)
                 throw new CompilerException(operation, "S145",
                     $"Owner '{source.Name}' is declared outside this loop and cannot be moved or deleted on a potentially repeated path.");
-            symbol.Ownership = new OwnershipState(kind, operation.Line, operation.Column);
+            symbol.Ownership = new OwnershipState(kind, operation.Line, operation.Column, DescribeInvalidation(operation));
         }
+
+        /// <summary>Merges two path states where at least one path invalidated the owner, keeping the first culprit.</summary>
+        private static OwnershipState InvalidatedOnSomePath(OwnershipState left, OwnershipState right)
+        {
+            var culprit = left.Kind != OwnershipKind.Available ? left : right;
+            return new OwnershipState(OwnershipKind.MaybeUnavailable, culprit.Line, culprit.Column, culprit.Operation);
+        }
+
+        /// <summary>Names the operation that moved or deleted an owner so diagnostics can say what invalidated it.</summary>
+        private static string DescribeInvalidation(AstNode operation) => operation switch
+        {
+            FunctionCallNode call => $"passing it to '{call.Name}'",
+            DeleteNode => "'delete'",
+            AssignmentNode => "assignment",
+            ReturnNode => "'return'",
+            VariableDeclarationNode declaration => $"initializing '{declaration.Name}'",
+            ArrayInitializationNode => "an array initializer",
+            StructInitializationNode => "a struct initializer",
+            _ => ""
+        };
 
         private void RegisterStructDefinition(StructDeclarationNode node)
         {
@@ -1287,7 +1309,8 @@ namespace Sage.Core
                 if (!ReferenceEquals(BorrowRoot(live), root) || IsBorrowAncestor(live, binding)) continue;
                 if (isWrite || live.Borrowing == BorrowKind.Mutable)
                     throw new CompilerException(operation, "S178",
-                        $"Access conflicts with a live borrow at ({live.Loan!.Line},{live.Loan.Column}). End its scope before accessing the source this way.");
+                        $"Access conflicts with a live borrow at ({live.Loan!.Line},{live.Loan.Column}). End its scope before accessing the source this way.")
+                        .WithRelated(null, "live borrow", CompilerLogger.CurrentFile, live.Loan.Line, live.Loan.Column);
             }
         }
 

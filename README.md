@@ -374,7 +374,14 @@ file directly with `sage <file>.test.sg` and read the `[PASS]`/`[FAIL]` output.
 
 ## Project Status
 
-The project is currently in **v0.37.1 (Alpha)**.
+The project is currently in **v0.37.2 (Alpha)**.
+
+Diagnostics are available as structured JSON with `--diagnostics json`; see
+[diagnostics](docs/diagnostics.md) for the stable code table and the JSON fields.
+
+`sage graphify build` persists a deterministic, incremental, compiler-derived semantic index
+under `obj/graphify`, and `sage graphify query symbol|refs|callers|callees|deps|contract|module <name>`
+answers focused JSON questions about it; see [Graphify](docs/graphify.md).
 
 Phase 5 resolves callables only through direct `use` imports and rejects
 callables whose generated C symbols would collide (S212); see [modules](docs/modules.md).

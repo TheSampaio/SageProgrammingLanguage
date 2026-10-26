@@ -118,6 +118,6 @@ The `SymbolTable` uses a `Stack<Dictionary<string, Symbol>>` to represent **Lexi
 1. **Single Responsibility**: Each class has one job (e.g., `Lexer` only knows about characters and tokens).
 2. **Open/Closed Principle**: The Visitor Pattern allows us to add new operations (like a Linter or Formatter) without modifying existing AST nodes.
 3. **Immutability**: Once an AST node is created by the parser, its state is frozen to prevent side effects during analysis.
-4. **Standardized Diagnostics**: All errors follow the `file(line,col): error CODE: Message` format for IDE compatibility (e.g., VS Code problem matchers).
+4. **Standardized Diagnostics**: All errors follow the `file(line,col): error CODE: Message` format for IDE compatibility (e.g., VS Code problem matchers). `--diagnostics json` emits one structured object per diagnostic (rule, related locations, suggestion); see [diagnostics](docs/diagnostics.md).
 
 © 2026 Kellvyn Sampaio — Sage Language Project
