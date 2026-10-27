@@ -44,11 +44,17 @@
             bool isFunction = false,
             bool isExtern = false,
             bool isConstant = false,
-            bool isReference = false)
+            bool isReference = false,
+            int declarationLoopDepth = 0,
+            CallableSignature? signature = null,
+            BorrowKind borrowing = BorrowKind.None,
+            BorrowLoan? loan = null,
+            bool isType = false,
+            bool ownsResources = false)
         {
             if (_scopes.Count > 0)
             {
-                _scopes.Peek()[name] = new SymbolMetadata(type, isFunction, isExtern, isConstant, isReference);
+                _scopes.Peek()[name] = new SymbolMetadata(type, isFunction, isExtern, isConstant, isReference, declarationLoopDepth, signature, borrowing, loan, isType, ownsResources);
             }
         }
 
@@ -66,6 +72,18 @@
             return null;
         }
 
+        /// <summary>Resolves lexical bindings while excluding the global declaration scope.</summary>
+        public SymbolMetadata? ResolveLocal(string name)
+        {
+            foreach (var scope in _scopes.Take(_scopes.Count - 1))
+                if (scope.TryGetValue(name, out var symbol)) return symbol;
+            return null;
+        }
+
+        /// <summary>Only bindings in live lexical scopes contribute outstanding loans.</summary>
+        public IEnumerable<SymbolMetadata> ActiveBorrowBindings() =>
+            _scopes.SelectMany(scope => scope.Values).Where(symbol => symbol.Loan != null);
+
         /// <summary>
         /// Checks if a symbol is already declared specifically within the current (topmost) scope.
         /// Useful for preventing duplicate declarations within the same block.
@@ -73,5 +91,16 @@
         /// <param name="name">The identifier name to check.</param>
         /// <returns><c>true</c> if the symbol exists in the current scope; otherwise, <c>false</c>.</returns>
         public bool IsDefinedInCurrentScope(string name) => _scopes.Count > 0 && _scopes.Peek().ContainsKey(name);
+
+        /// <summary>Snapshots binding identities so shadowed names retain separate state.</summary>
+        public Dictionary<SymbolMetadata, OwnershipState> CaptureOwnership() =>
+            _scopes.SelectMany(scope => scope.Values).Where(symbol => symbol.IsOwningValue)
+                .ToDictionary(symbol => symbol, symbol => symbol.Ownership);
+
+        /// <summary>Restores states captured before a branch or loop.</summary>
+        public static void RestoreOwnership(IReadOnlyDictionary<SymbolMetadata, OwnershipState> snapshot)
+        {
+            foreach (var (symbol, state) in snapshot) symbol.Ownership = state;
+        }
     }
 }

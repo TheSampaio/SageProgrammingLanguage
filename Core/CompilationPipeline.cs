@@ -1,4 +1,5 @@
 ﻿using Sage.Ast;
+using Sage.Core.Build;
 using Sage.Utilities;
 using System.Diagnostics;
 
@@ -13,12 +14,15 @@ namespace Sage.Core
         /// Executes the full compilation lifecycle based on provided command-line arguments.
         /// </summary>
         /// <param name="args">The command-line arguments containing paths and configuration flags.</param>
-        public static void Run(string[] args)
+        public static int Run(string[] args)
         {
             TypeSystem.Reset();
 
             var config = ConfigurationResolver.Resolve(args);
             var env = EnvironmentFactory.Create(config);
+
+            // Identify the native toolchain while the front end runs (used by the build cache key).
+            if (config.BuildNative) NativeToolchainIdentity.Prefetch(NativeTranslationUnit.CCompiler);
 
             if (config.IsDebugMode)
             {
@@ -29,36 +33,29 @@ namespace Sage.Core
 
             var queue = new Queue<string>();
             var parsedModules = new Dictionary<string, ProgramNode>();
+            var moduleFiles = new Dictionary<string, string>();
             var generatedCFiles = new List<string>();
             var analyzer = new SemanticAnalyzer();
+            var moduleGraph = new ModuleGraph();
 
             queue.Enqueue(config.InputPath);
 
-            try
-            {
-                ParseAndDiscover(queue, parsedModules, config, env, analyzer);
-            }
-            catch (CompilerException ex)
-            {
-                CompilerLogger.LogFatal(ex);
-                return;
-            }
-
-            try
-            {
-                GenerateCode(parsedModules, generatedCFiles, config, env, analyzer);
-            }
-            catch (CompilerException ex)
-            {
-                CompilerLogger.LogFatal(ex);
-                return;
-            }
+            ParseAndDiscover(queue, parsedModules, moduleFiles, moduleGraph, config, env, analyzer);
+            if (config.IsDebugMode) CompilerLogger.LogInfo($"Module graph: {moduleGraph.Describe()}");
+            long semanticStart = CompilerInstrumentation.Start();
+            analyzer.ValidateNativeResourceContracts();
+            CompilerInstrumentation.Stop("semantic", semanticStart);
+            var nativeSources = NativeSourceSet.Collect(parsedModules.SelectMany(module =>
+                EnumerateExternBlocks(module.Value).Select(block => (block, moduleFiles[module.Key]))));
+            GenerateCode(parsedModules, generatedCFiles, config, env, analyzer);
+            string? cppAdapters = GenerateCppAdapters(parsedModules, env);
 
             if (config.BuildNative)
             {
                 var libraries = CollectLinkLibraries(parsedModules);
-                LinkNativeBinary(generatedCFiles, libraries, config, env);
+                return LinkNativeBinary(generatedCFiles, cppAdapters, nativeSources, libraries, config, env);
             }
+            return 0;
         }
 
         /// <summary>
@@ -78,6 +75,19 @@ namespace Sage.Core
             return libs;
         }
 
+        /// <summary>
+        /// Writes the C++ adapter translation unit when any module declares an <c>extern cpp</c> block.
+        /// Returns its path, or null so C-only projects never depend on a C++ toolchain.
+        /// </summary>
+        private static string? GenerateCppAdapters(Dictionary<string, ProgramNode> modules, CompilationEnvironment env)
+        {
+            var blocks = modules.Values.SelectMany(EnumerateExternBlocks).Where(block => block.IsCpp).ToList();
+            if (blocks.Count == 0) return null;
+            string path = Path.Combine(env.ObjDir, CppAdapterGenerator.FileName);
+            File.WriteAllText(path, CppAdapterGenerator.Generate(blocks));
+            return path;
+        }
+
         private static IEnumerable<ExternBlockNode> EnumerateExternBlocks(ProgramNode ast)
         {
             foreach (var stmt in ast.Statements)
@@ -94,6 +104,8 @@ namespace Sage.Core
         private static void ParseAndDiscover(
             Queue<string> queue,
             Dictionary<string, ProgramNode> parsedModules,
+            Dictionary<string, string> moduleFiles,
+            ModuleGraph moduleGraph,
             CompilerConfig config,
             CompilationEnvironment env,
             SemanticAnalyzer analyzer)
@@ -114,11 +126,13 @@ namespace Sage.Core
 
                 if (!File.Exists(path))
                 {
-                    CompilerLogger.LogError($"Source file not found: {path}");
-                    continue;
+                    throw new FileNotFoundException($"Source file not found: {path}");
                 }
 
+                DiagnosticOutput.RegisterSource(path);
+                long lexStart = CompilerInstrumentation.Start();
                 var tokens = new Lexer(File.ReadAllText(path)).Tokenize();
+                CompilerInstrumentation.Stop("lex", lexStart);
 
                 if (config.IsDebugMode)
                 {
@@ -127,13 +141,20 @@ namespace Sage.Core
                     CompilerLogger.LogStep("2. Parsing...");
                 }
 
+                long parseStart = CompilerInstrumentation.Start();
                 var ast = new Parser(tokens, Path.GetFileName(path)).Parse();
-                analyzer.RegisterModuleSymbols(ast);
+                CompilerInstrumentation.Stop("parse", parseStart);
+                long registerStart = CompilerInstrumentation.Start();
+                analyzer.RegisterModuleSymbols(ast, moduleName);
+                CompilerInstrumentation.Stop("semantic", registerStart);
                 parsedModules.Add(moduleName, ast);
+                moduleFiles.Add(moduleName, path);
+                moduleGraph.AddModule(moduleName);
 
                 foreach (var use in ast.Statements.OfType<UseNode>())
                 {
                     ResolveDependency(use, env, queue);
+                    moduleGraph.AddDependency(moduleName, use.Module);
                 }
             }
         }
@@ -185,7 +206,9 @@ namespace Sage.Core
                     CompilerLogger.LogStep("3. Semantic Analysis...");
                 }
 
+                long analyzeStart = CompilerInstrumentation.Start();
                 analyzer.Analyze(ast);
+                CompilerInstrumentation.Stop("semantic", analyzeStart);
 
                 if (config.IsDebugMode)
                 {
@@ -193,21 +216,24 @@ namespace Sage.Core
                     CompilerLogger.LogStep("4. Generating C Code...");
                 }
 
+                long codegenStart = CompilerInstrumentation.Start();
                 File.WriteAllText(Path.Combine(env.ObjDir, name + ".h"), new HeaderGenerator().Generate(ast));
 
                 string cCode = new CodeGenerator().Generate(ast, name); 
                 string cPath = Path.Combine(env.ObjDir, name + ".c");
 
                 File.WriteAllText(cPath, cCode);
+                CompilerInstrumentation.Stop("codegen", codegenStart);
 
                 cFiles.Add(cPath);
             }
         }
 
         /// <summary>
-        /// Invokes the native toolchain to link generated C files into an executable binary.
+        /// Compiles each generated C file into its own object file and links the objects into an executable binary.
         /// </summary>
-        private static void LinkNativeBinary(List<string> cFiles, HashSet<string> libraries, CompilerConfig config, CompilationEnvironment env)
+        private static int LinkNativeBinary(List<string> cFiles, string? cppAdapters, NativeSourceSet nativeSources,
+            HashSet<string> libraries, CompilerConfig config, CompilationEnvironment env)
         {
             if (config.IsDebugMode) CompilerLogger.LogStep("\nLinking binaries...");
 
@@ -216,30 +242,63 @@ namespace Sage.Core
                 exeName = new DirectoryInfo(env.ProjectRoot).Name;
 
             string exePath = Path.Combine(env.BinDir, $"{exeName}.exe");
-            string sources = string.Join(" ", cFiles.Select(f => $"\"{Path.GetFullPath(f)}\""));
-            string libFlags = libraries.Count > 0
-                ? " " + string.Join(" ", libraries.OrderBy(l => l, StringComparer.Ordinal).Select(l => $"-l{l}"))
-                : "";
-            string args = $"{sources} -o \"{exePath}\" -std=c11 -I\"{env.ObjDir}\"{libFlags}";
+            string runtimeIncludes = Path.Combine(AppContext.BaseDirectory, "Runtime", "include");
+            string[] includeDirectories = [env.ObjDir, runtimeIncludes, .. nativeSources.IncludeDirectories];
 
-            if (config.IsDebugMode) CompilerLogger.LogInfo("Invoking native toolchain: gcc");
+            // Native build integration point: every native source (generated C modules, declared
+            // project C/C++ sources, generated C++ adapters) becomes one translation unit compiled to
+            // its own object and cached by content (see Core/Build/NativeBuilder).
+            var units = cFiles.Select(file => NativeTranslationUnit.ForC(file, includeDirectories)).ToList();
+            units.AddRange(CollectProjectAndCppUnits(cppAdapters, nativeSources, includeDirectories, env));
+            // g++ links the C++ runtime after user libraries; C-only builds never depend on it.
+            bool hasCpp = units.Any(unit => unit.Compiler == NativeTranslationUnit.CppCompiler);
+            var link = new NativeLinkRequest(exePath, libraries, hasCpp ? NativeTranslationUnit.CppCompiler : NativeTranslationUnit.CCompiler);
 
-            ProcessExecutor.Run("gcc", args);
+            if (config.IsDebugMode) CompilerLogger.LogInfo($"Invoking native toolchain: {link.Linker}");
+
+            new NativeBuilder(env.ObjDir, config.ForceClean, config.IsDebugMode).Build(units, link);
 
             if (config.RunOnSuccess)
             {
-                RunApplication(exePath);
+                long runStart = CompilerInstrumentation.Start();
+                int exitCode = RunApplication(exePath);
+                CompilerInstrumentation.Stop("run", runStart);
+                return exitCode;
             }
             else
             {
                 CompilerLogger.LogSuccess($"Build complete: {exePath}");
+                return 0;
             }
+        }
+
+        /// <summary>
+        /// Describes declared project sources and the generated C++ adapters as translation units. Their
+        /// objects live in <c>obj/</c> under unique names; C sources join the C11 build, while C++ sources
+        /// and adapters use <c>g++ -std=c++17</c>. Adapters also see the project source directory, where
+        /// <c>extern cpp</c> headers resolve.
+        /// </summary>
+        private static IEnumerable<NativeTranslationUnit> CollectProjectAndCppUnits(string? cppAdapters,
+            NativeSourceSet nativeSources, IReadOnlyList<string> includeDirectories, CompilationEnvironment env)
+        {
+            if (cppAdapters != null)
+                yield return NativeTranslationUnit.ForCpp(Path.GetFullPath(cppAdapters),
+                    Path.GetFullPath(Path.ChangeExtension(cppAdapters, ".o")), [.. includeDirectories, env.SourceDir]);
+            foreach (var (source, index) in nativeSources.CSources.Select((source, index) => (source, index)))
+            {
+                string objectPath = Path.Combine(env.ObjDir, $"sage_native_c_{index}_{Path.GetFileNameWithoutExtension(source)}.o");
+                yield return new NativeTranslationUnit(Path.GetFileNameWithoutExtension(objectPath), source, objectPath,
+                    NativeTranslationUnit.CCompiler, NativeTranslationUnit.CFlags, includeDirectories);
+            }
+            foreach (var (source, index) in nativeSources.CppSources.Select((source, index) => (source, index)))
+                yield return NativeTranslationUnit.ForCpp(source,
+                    Path.Combine(env.ObjDir, $"sage_native_{index}_{Path.GetFileNameWithoutExtension(source)}.o"), includeDirectories);
         }
 
         /// <summary>
         /// Starts the compiled application and monitors its exit status.
         /// </summary>
-        private static void RunApplication(string exePath)
+        private static int RunApplication(string exePath)
         {
 #if DEBUG
             CompilerLogger.LogStep("Running Application...");
@@ -247,8 +306,7 @@ namespace Sage.Core
 #endif
             if (!File.Exists(exePath))
             {
-                CompilerLogger.LogError($"Executable not found at: {exePath}");
-                return;
+                throw new FileNotFoundException($"Executable not found at: {exePath}");
             }
 
             using var process = Process.Start(new ProcessStartInfo
@@ -256,13 +314,14 @@ namespace Sage.Core
                 FileName = exePath,
                 UseShellExecute = false,
                 WorkingDirectory = Path.GetDirectoryName(exePath)
-            });
+            }) ?? throw new InvalidOperationException($"Could not start application: {exePath}");
 
-            process?.WaitForExit();
+            process.WaitForExit();
 #if DEBUG
             Console.WriteLine("--------------------------------------------------");
-            CompilerLogger.LogInfo($"App exited with code: {process?.ExitCode ?? -1}");
+            CompilerLogger.LogInfo($"App exited with code: {process.ExitCode}");
 #endif
+            return process.ExitCode;
         }
     }
 }

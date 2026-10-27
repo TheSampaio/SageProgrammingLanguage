@@ -3,8 +3,13 @@
 ///
 /// The extern bindings use C interop aliases (c_size_t, c_void) so they match the real
 /// <stdlib.h> signatures. These wrappers traffic in raw pointers, so they are `unsafe func`
-/// and must be called from within an `unsafe` block. For everyday allocation prefer the
-/// memory-safe `new` / `delete` keywords instead.
+/// and must be called from within an `unsafe` block. Safe code should not allocate manually:
+/// use plain struct values, which are copied, moved, and cleaned up automatically. The `new` /
+/// `delete` keywords are likewise restricted to `unsafe` code.
+///
+/// Safe owned alternatives: `text` (strings), `int_vector` (growable i32 sequence),
+/// `byte_buffer` (fixed byte storage). They allocate explicitly, report failure as
+/// an empty owner or outcome, and free automatically. Keep this module for FFI work.
 module memory
 {
     // --- Native C Bindings (Private to this module) ---

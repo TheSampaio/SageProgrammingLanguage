@@ -5,7 +5,7 @@
 /// real <stdio.h> / <stdlib.h> signatures. The public API exposes ergonomic Sage types.
 module console
 {
-    // --- Native C Bindings (Private to this module) ---
+    // --- Native C Bindings: trusted ABI boundary ---
 
     extern libc_stdio("stdio.h")
     {
@@ -25,36 +25,38 @@ module console
     /// Uses ANSI escape sequences for cross-platform compatibility.
     func clear(): none
     {
-        libc_stdio::printf("\x1B[2J\x1B[H", "");
+        unsafe { libc_stdio::printf("\x1B[2J\x1B[H", ""); }
     }
 
     /// Writes the provided text to the standard output.
     func print(text: str): none
     {
-        libc_stdio::printf("%s", text);
+        unsafe { libc_stdio::printf("%s", text); }
     }
 
     /// Writes text to the standard output followed by a newline character.
     func print_line(text: str): none
     {
-        libc_stdio::printf("%s\n", text);
+        unsafe { libc_stdio::printf("%s\n", text); }
     }
 
     /// Runs a shell command through the system's command processor.
     func run(command: str): i32
     {
-        return libc_stdlib::system(command);
+        unsafe { return libc_stdlib::system(command) as i32; }
     }
 
     /// Captures a single character input from the user.
     /// Returns the ASCII/Integer value of the key pressed.
     func read(): i32
     {
-        return libc_stdio::getchar();
+        unsafe { return libc_stdio::getchar() as i32; }
     }
 
     /// Reads a whitespace-delimited token from standard input into the provided buffer.
-    func read_line(buffer: str): none
+    /// Caller must supply writable storage with sufficient capacity; this legacy API has no length contract.
+    /// Deprecated: for bounded input use `text` (`var line: Text = text::create(80); line.read_line();`).
+    unsafe func read_line(buffer: str): none
     {
         libc_stdio::scanf("%s", buffer);
     }

@@ -12,12 +12,21 @@ The project strictly follows **SOLID principles** and **Clean Code** architectur
 ## Core Features
 
 * **Native Compilation:** Handles the entire build process from source to optimized binary (`.exe`).
-* **Memory Safety by Default:** Raw pointers (`T*`) are forbidden in ordinary code and only usable inside `unsafe { }` blocks (and FFI). Constants (`const`) are strictly enforced.
-* **Safe Heap Allocation (`new` / `delete`):** Allocate on the heap and get a memory-safe reference — no pointer arithmetic, released explicitly with `delete`.
-* **Ergonomic FFI:** `extern` blocks with C interop aliases (`c_int`, `c_size_t`, `c_char`, …) and opaque C types (`type FILE;`) that map cleanly onto real C signatures.
+* **Pointer Boundary:** Raw pointers (`T*`) are restricted to `unsafe` contexts and FFI. This is not yet an ownership or lifetime guarantee.
+* **Local Ownership and Borrowing:** Heap-reference initialization transfers ownership, and scope exit releases owned allocations automatically. Explicit borrowed parameters and lexical local bindings provide shared or mutable access for supported scalar/struct values; see [borrowing semantics](docs/borrowing.md) and [memory semantics](docs/memory.md).
+* **Explicit FFI Boundaries:** `extern` blocks use C interop aliases (`c_int`, `c_size_t`, `c_char`, …) and opaque types (`type FILE;`). Direct calls require `unsafe`; see [native boundaries](docs/native-boundaries.md).
+* **Native Resource Ownership:** Explicit native representation/destructor metadata is validated across imports. Owners support moves, replacement assignment, borrows, consuming parameters, factory returns, safe null checks, and automatic scope cleanup; native adoption remains unsafe. See [resource contracts and boundaries](docs/native-resource-contracts.md).
+* **Local Resource Structs:** Local struct literals may move named native resource owners into direct or nested fields. Cleanup runs recursively in reverse field order; resource fields reachable through local struct fields can be replaced from named owners. Copying, calls, and returns remain unsupported. See [resource struct contracts](docs/resource-structs.md).
+* **Local Resource Arrays:** Fixed local arrays of native resources or resource-containing structs accept direct literals or empty initialization and clean up in reverse index order. Array copying and element extraction remain unsupported; see [resource array contracts](docs/resource-arrays.md).
+* **Bounded C++ Interop:** `extern cpp` blocks bind declared free functions, overloads, explicit template instances, and class handles (constructor, destructor, member functions) through generated `extern "C"` adapters. Exceptions abort by default (or, with `catch`, report a recoverable failure) instead of unwinding into C; C-only projects need no C++ toolchain. Extern blocks may declare project `.c`/`.cpp` sources (`source "x.cpp";`) that are compiled and linked automatically. See [C++ interop](docs/cpp-interop.md).
+* **Owned Byte Files:** Bounded ASCII paths support creation and existing read-only input. Borrowed byte/block I/O, mode checks, positioning and consuming close expose explicit outcomes; see [byte files](docs/byte-files.md).
 * **Tree-Shaking Code Gen:** Smart header management that only includes necessary C headers (`stdio.h`, `stdint.h`, etc.) based on actual code usage.
 * **Modern Type System:** Explicit fixed-width types (`i32`, `f64`, `str`, `b8`) with support for **Constants** (`const`) and **Explicit Casting** (`as`).
-* **Modularity:** First-class support for `module` blocks and namespaced calls (`math::sum`) to manage large codebases.
+* **Aggregate Contracts:** Struct fields and fixed-array initializer elements are checked recursively before C generation; see [aggregate initialization](docs/aggregate-contracts.md).
+* **Checked Fixed Arrays:** Invalid literal indices fail at compile time; other out-of-bounds accesses terminate with an error before accessing the element. See [array bounds](docs/array-bounds.md).
+* **Value Copies:** Fixed-array bindings, assignments, and Sage parameters copy supported values into independent storage. Copyability is inferred from struct/array composition; see [value-copy semantics](docs/value-copy.md).
+* **Modularity:** First-class support for `module` blocks and namespaced calls (`math::sum`). Callables are visible only through direct `use` imports, and C symbol collisions are rejected; see [callable resolution](docs/modules.md).
+* **Extension Methods:** Module functions declared `method func` can be called as `value.func(args)`, resolved statically with ambiguity detection and the receiver contract (`T`, `&T`, `&mut T`) of the first parameter; see [extension methods](docs/extension-methods.md).
 * **Developer Tooling:** Standardized **JSON** debug outputs for Tokens (`.tok.json`) and Abstract Syntax Trees (`.ast.json`).
 
 
@@ -246,26 +255,31 @@ func main(): none
 }
 ```
 
-## Memory Safety, `new` and FFI
+## Current memory model, `new` and FFI
 
-Sage is **memory-safe by default**. Raw pointers (`T*`, including `none*`) cannot appear in
+Sage currently restricts raw pointers (`T*`, including `none*`) in
 ordinary code — declaring, casting to, or dereferencing one is a compile error. They are only
 allowed inside an `unsafe { }` block or in an `unsafe func`. FFI declarations (`extern`) are
-implicitly unsafe, since they cross into C.
+implicitly unsafe, since they cross into C. Safe code uses plain values that are
+copied, [moved, borrowed, and cleaned up automatically](docs/memory.md); native
+aliases created inside `unsafe` remain the programmer's responsibility.
 
-### Safe heap allocation: `new` / `delete`
+### Plain values instead of `new` / `delete`
 
 ```rust
 struct Person { name: str; age: i32; }
 
 func main(): none
 {
-    // 'new' allocates on the heap and yields a memory-safe reference (no pointer arithmetic).
-    var hero: Person = new Person { name = "Zelda", age = 118 };
+    // A plain struct value: no manual allocation or release.
+    var hero: Person = { name = "Zelda", age = 118 };
     console::print_line("{hero.name} is {hero.age}");
-    delete hero; // release it explicitly
 }
 ```
+
+Since v0.32.2, `new` and `delete` are manual memory management and are rejected
+outside `unsafe` (S133). Inside `unsafe` they remain a checked trusted boundary
+(moves, double deletion, and scope cleanup are still verified).
 
 ### Raw pointers require `unsafe`
 
@@ -307,7 +321,7 @@ module file
 | `i8..i64`/`u8..u64` | `int8_t..uint64_t` | Fixed-width primitives              |
 | `f32` / `f64`   | `float` / `double` |                                        |
 | `b8`            | `bool`           |                                        |
-| `str`           | `char*`          | Safe string type (not a raw pointer)   |
+| `str`           | `char*`          | String surface type; lifetime is not checked |
 | `none`          | `void`           |                                        |
 | `none*`         | `void*`          | Raw pointer — `unsafe` only            |
 | `c_int`, `c_uint`, `c_char`, `c_size_t`, `c_void`, … | `int`, `unsigned int`, `char`, `size_t`, `void`, … | FFI interop aliases (native width) |
@@ -320,13 +334,38 @@ The bundled standard library (`Sandbox/std/`) doubles as the reference for idiom
 | Module    | Purpose                                                                 |
 |-----------|-------------------------------------------------------------------------|
 | `console` | Terminal I/O (`print`, `print_line`, `read`, `run`).                    |
-| `memory`  | Raw heap primitives (`alloc`/`release`, `unsafe`). Prefer `new`/`delete`.|
-| `file`    | File I/O over `<stdio.h>` (opaque `FILE`, `c_*` aliases).               |
-| `http`    | HTTP client — consume APIs via `curl` (`fetch`, `post`, `download`).    |
-| `server`  | Minimal HTTP server on Winsock (links `ws2_32`).                        |
+| `memory`  | Raw heap primitives (`alloc`/`release`, `unsafe`). Prefer plain values, `text`, `int_vector`. |
+| `file`    | Legacy raw `FILE*` I/O (`unsafe`). Deprecated: use `byte_file` with `Text` paths. |
+| `byte_file` | Owned binary byte/block/Text I/O, bounded ASCII byte or `Text` paths, read-only input, explicit outcomes and consuming close. |
+| `byte_buffer` | Owned fixed-capacity byte storage, checked initialized-prefix access and consuming release. |
+| `text`    | Owned fixed-capacity text: append, compare, print and bounded line input without `unsafe`. |
+| `int_vector` | Owned growable `i32` vector with a fixed limit, checked access and explicit growth outcomes. |
+| `http_client` | Safe `get`/`post`/`download` over `Text`: curl started without a shell, bounded responses. Legacy `str` helpers stay `unsafe`. |
+| `http_server` | Owned `HttpListener` (Winsock, links `ws2_32`): bounded `accept`, `respond`, automatic socket cleanup. |
 | `test`    | Unit-testing assertions that emit `[PASS]`/`[FAIL]` lines.              |
 
+The `std` directory contains only `.sg` files. Native support ships with the
+compiler in `Runtime/include`. Since v0.19.0, import `http_client` and
+`http_server` instead of `http` and `server`; see [the migration notes](docs/std-layout.md).
+
+The [owned byte buffer](docs/byte-buffers.md) supports safe creation, shared reads,
+exclusive mutation, and automatic cleanup without exposing native storage.
+[Owned text](docs/text.md) adds safe strings and bounded `read_line`, [`int_vector`](docs/int-vector.md)
+a bounded growable collection; the
+[std migration audit](docs/std-migration.md) tracks the remaining unsafe APIs. Safe HTTP is described in [HTTP](docs/http.md).
+
+Direct native calls and legacy unbounded input helpers require an explicit
+`unsafe` context; see [migration and remaining contracts](docs/native-boundaries.md).
+
+Native builds are incremental: each generated C module is compiled to its own
+object in `obj/` and reused while its generated C, included headers, compiler
+version, flags and toolchain are unchanged. `sage build --clean` (also `run`
+or an explicit file) forces a full rebuild; see [incremental builds](docs/incremental-build.md).
+
 ## Testing
+
+Execution commands propagate the native application's exit status; see
+[CLI exit status](docs/cli-exit-status.md) for build-only and failure behavior.
 
 Tests are ordinary Sage programs (`Sandbox/tests/*.test.sg`) that use the `test` module:
 
@@ -345,7 +384,44 @@ file directly with `sage <file>.test.sg` and read the `[PASS]`/`[FAIL]` output.
 
 ## Project Status
 
-The project is currently in **v0.8.0 (Alpha)**.
+The project is currently in **v0.38.1 (Alpha)**.
+
+Builds compile each generated module, declared native source, and C++ adapter into its own
+object and reuse unchanged objects from a content-addressed cache; `--clean` forces a full
+rebuild. See [incremental builds](docs/incremental-build.md).
+
+Diagnostics are available as structured JSON with `--diagnostics json`; see
+[diagnostics](docs/diagnostics.md) for the stable code table and the JSON fields.
+
+`sage graphify build` persists a deterministic, incremental, compiler-derived semantic index
+under `obj/graphify`, and `sage graphify query symbol|refs|callers|callees|deps|contract|module <name>`
+answers focused JSON questions about it; see [Graphify](docs/graphify.md).
+
+Phase 4 migrates the standard library to owned, safe APIs: `text`, `int_vector`,
+`Text` file paths, shell-free HTTP, and an owned HTTP listener. The Sandbox app and
+examples use no `unsafe`. See the [std migration audit](docs/std-migration.md).
+
+Phase 5 resolves callables only through direct `use` imports and rejects
+callables whose generated C symbols would collide (S212); see [modules](docs/modules.md).
+Opt-in `method func` declarations add statically resolved extension methods
+(`value.read()` for `counter::read(&value)`); see [extension methods](docs/extension-methods.md).
+
+Safe Sage has no manual memory management: `new`/`delete` and raw pointers are
+unsafe-only, structs owning native resources move by value with exactly-once
+cleanup, and borrows cannot escape their owner. See
+[guarantees and limits](docs/memory.md#guarantees-and-limits-v0322).
+
+Phase 2 also supports local fixed arrays of same-file structs containing native
+resources. Literal elements move named owners into fields; generated cleanup
+releases elements in reverse index order and fields in reverse declaration
+order. See [resource arrays](docs/resource-arrays.md) for the supported subset.
+Resource fields of local structs also support standalone replacement from a
+named owner, including nested struct field paths. The old field is released
+before scope cleanup.
+
+Phase 3 native interoperability adds opt-in recoverable C++ exceptions (`catch`), S212 detection of
+colliding native symbols, and an FFI safety review in [native boundaries](docs/native-boundaries.md).
+Header parsing with Clang is deferred; see [C++ interop](docs/cpp-interop.md).
 
 * [x] **CLI & Project System** (`new`, `build`, `run`, `--version`)
 * [x] **Variable Declarations** (`var`) & **Constants** (`const`)
@@ -359,8 +435,9 @@ The project is currently in **v0.8.0 (Alpha)**.
 * [x] **Structs and Custom Types**
 * [x] **Arrays and Pointers**
 * [x] **Memory Safety** (`unsafe` blocks gate raw pointers; `const` enforced)
-* [x] **Safe Heap Allocation** (`new` / `delete` references)
+* [x] **Ownership & Borrowing** (moves, `&T`/`&mut T`, automatic cleanup; `new`/`delete` only in `unsafe`)
 * [x] **Ergonomic FFI** (`c_*` interop aliases + opaque `type` declarations)
+* [x] **Bounded C++ Interop** (`extern cpp` adapters for declared functions and class handles)
 * [x] **Modular Standard Library** (Libc decoupled from Compiler Core)
 * [x] **Visitor-based Transpilation** (Full separation of Header/Logic)
 

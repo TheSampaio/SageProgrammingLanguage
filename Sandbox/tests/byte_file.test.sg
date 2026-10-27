@@ -1,0 +1,30 @@
+use test;
+use byte_file;
+
+func consume_empty(value: ByteFile): b8 { return byte_file::close(value); }
+
+func main(): none
+{
+    var file: ByteFile = byte_file::empty();
+    test::assert_false("byte_file_empty_is_closed", byte_file::is_open(&file));
+    var read: ByteRead = byte_file::read_byte(&mut file);
+    test::assert_false("byte_file_empty_has_no_byte", read.has_value);
+    test::assert_true("byte_file_empty_reports_failure", read.failed);
+    var value: u8 = 255;
+    test::assert_false("byte_file_empty_write_fails", byte_file::write_byte(&mut file, value));
+    test::assert_false("byte_file_empty_seek_fails", byte_file::seek_start(&mut file));
+    test::assert_false("byte_file_empty_flush_fails", byte_file::flush(&mut file));
+    test::assert_false("byte_file_empty_close_fails", byte_file::close(file));
+    var other: ByteFile = byte_file::empty();
+    test::assert_false("byte_file_empty_consuming_call", consume_empty(other));
+    var path: u8[260] = { 97, 0, 98 };
+    var length: u16 = 3;
+    var invalid: ByteFile = byte_file::create_bytes(path, length);
+    test::assert_true("byte_file_embedded_zero_rejected", invalid == null);
+    length = 0;
+    var empty_path: ByteFile = byte_file::create_bytes(path, length);
+    test::assert_true("byte_file_empty_path_rejected", empty_path == null);
+    length = 65535;
+    var oversized: ByteFile = byte_file::create_bytes(path, length);
+    test::assert_true("byte_file_oversized_path_rejected", oversized == null);
+}

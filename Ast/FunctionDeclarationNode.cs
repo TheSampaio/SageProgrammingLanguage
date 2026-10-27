@@ -49,12 +49,21 @@ namespace Sage.Ast
         /// </summary>
         public bool IsExtern { get; set; } = false;
 
+        /// <summary>The explicit C++ target when declared in an <c>extern cpp</c> block; otherwise null.</summary>
+        public CppBinding? CppBinding { get; set; }
+
         /// <summary>
         /// Gets a value indicating whether the function is marked <c>unsafe</c>.
         /// The body runs in an unsafe context (raw pointers allowed) and callers must invoke it
         /// from within an unsafe context.
         /// </summary>
         public bool IsUnsafe { get; set; } = false;
+
+        /// <summary>
+        /// Gets a value indicating whether the function opted in to extension-method calls with
+        /// <c>method func</c>; its first parameter receives the value before the dot.
+        /// </summary>
+        public bool IsMethod { get; set; } = false;
 
         /// <summary>
         /// Dispatches the visitor to the appropriate visit method for this function declaration.

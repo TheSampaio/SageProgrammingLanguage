@@ -1,0 +1,68 @@
+extern trace("@TRACKER_HEADER@")
+{
+    type ResourceHandle;
+    func resource_open(id: c_int): ResourceHandle*;
+    func resource_close(handle: ResourceHandle*): c_int;
+    func resource_outstanding(): c_int;
+    func resource_release_order(): c_int;
+    func resource_drop_calls(): c_int;
+    func resource_reset(): none;
+    func resource_check(condition: b8, name: str): none;
+    resource OwnedHandle: ResourceHandle* drop resource_close;
+}
+
+func produce(id: i32): OwnedHandle
+{
+    unsafe
+    {
+        var owner: OwnedHandle = trace::resource_open(id as c_int) as OwnedHandle;
+        return owner;
+    }
+}
+
+func early(): i32
+{
+    var owner: OwnedHandle = produce(3);
+    var items: OwnedHandle[2] = { owner };
+    return 7;
+}
+
+unsafe func main(): none
+{
+    trace::resource_reset();
+    if (true)
+    {
+        var first: OwnedHandle = produce(1);
+        var second: OwnedHandle = produce(2);
+        var items: OwnedHandle[3] = { first, second };
+        trace::resource_check(trace::resource_outstanding() == 2, "array_elements_live");
+    }
+    trace::resource_check(trace::resource_outstanding() == 0, "array_scope_cleanup");
+    trace::resource_check(trace::resource_release_order() == 21, "array_reverse_cleanup_order");
+    trace::resource_check(trace::resource_drop_calls() == 2, "array_elements_dropped_once");
+
+    trace::resource_reset();
+    var result: i32 = early();
+    trace::resource_check(result == 7, "array_early_return_value");
+    trace::resource_check(trace::resource_outstanding() == 0, "array_early_return_cleanup");
+    trace::resource_check(trace::resource_release_order() == 3 && trace::resource_drop_calls() == 1,
+        "partial_array_dropped_once");
+
+    trace::resource_reset();
+    if (true)
+    {
+        var empty: OwnedHandle[2];
+        var explicit_empty: OwnedHandle[2] = {};
+    }
+    trace::resource_check(trace::resource_drop_calls() == 0, "empty_arrays_skip_destructors");
+
+    trace::resource_reset();
+    for (var i: i32 = 0; i < 2; i++)
+    {
+        var owner: OwnedHandle = produce(i + 5);
+        const items: OwnedHandle[1] = { owner };
+    }
+    trace::resource_check(trace::resource_outstanding() == 0, "array_iteration_cleanup");
+    trace::resource_check(trace::resource_release_order() == 56 && trace::resource_drop_calls() == 2,
+        "const_array_iteration_dropped_once");
+}

@@ -1,0 +1,45 @@
+use test;
+
+struct AggregateItem { value: i32; }
+struct AggregatePair { left: AggregateItem; right: AggregateItem; }
+struct AggregateBuffer { values: i32[3]; }
+struct AggregateWide { value: i64; }
+
+func aggregate_make(): AggregatePair
+{
+    return { left = { value = 3 }, right = { value = 4 } };
+}
+
+func aggregate_read(value: AggregatePair): i32
+{
+    value.left.value++;
+    return value.left.value + value.right.value;
+}
+
+func main(): none
+{
+    var pair: AggregatePair = aggregate_make();
+    test::assert_eq_i32("nested_return", pair.left.value, 3);
+    test::assert_eq_i32("nested_argument", aggregate_read({ left = { value = 3 }, right = { value = 4 } }), 8);
+    var copy: AggregatePair = pair;
+    copy.left.value = 9;
+    test::assert_eq_i32("nested_copy_preserves_source", pair.left.value, 3);
+    pair = { right = { value = 5 } };
+    test::assert_eq_i32("omitted_nested_field_zeroed", pair.left.value, 0);
+    pair = {};
+    test::assert_eq_i32("empty_struct_assignment", pair.right.value, 0);
+
+    unsafe
+    {
+        var owner: AggregatePair = new AggregatePair { left = { value = 6 } };
+        test::assert_eq_i32("nested_owned_initializer", owner.left.value, 6);
+    }
+    var buffer: AggregateBuffer = { values = { 7, 8 } };
+    test::assert_eq_i32("array_field_element", buffer.values[1], 8);
+    test::assert_eq_i32("omitted_array_element_zeroed", buffer.values[2], 0);
+    var items: AggregateItem[2] = { { value = 10 } };
+    test::assert_eq_i32("struct_array_initializer", items[0].value, 10);
+    test::assert_eq_i32("omitted_struct_array_element_zeroed", items[1].value, 0);
+    var wide: AggregateWide = { value = 11 };
+    test::assert_eq_i64("aggregate_literal_promotion", wide.value, 11);
+}

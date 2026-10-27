@@ -1,4 +1,5 @@
 using Sage.Core;
+using Sage.Graphify;
 using Sage.Utilities;
 
 namespace Sage
@@ -11,18 +12,27 @@ namespace Sage
         /// <summary>
         /// Primary execution loop for the compiler tool.
         /// </summary>
-        private static void Main(string[] args)
+        private static int Main(string[] args)
         {
             ConsoleHelper.EnableAnsiSupport();
 
             try
             {
-                if (HandleMetaCommands(args)) return;
-                CompilationPipeline.Run(args);
+                args = DiagnosticOutput.ConfigureFromArgs(args);
+                if (args.Length > 0 && args[0].Equals("graphify", StringComparison.OrdinalIgnoreCase))
+                    return GraphifyCommand.Run(args[1..]);
+                if (HandleMetaCommands(args)) return 0;
+                return CompilationPipeline.Run(args);
             }
             catch (Exception ex)
             {
                 CompilerLogger.LogFatal(ex);
+                return 1;
+            }
+            finally
+            {
+                // Compiled away unless the compiler is built with SAGE_INSTRUMENTATION.
+                CompilerInstrumentation.Report();
             }
         }
 

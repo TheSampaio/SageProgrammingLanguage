@@ -14,7 +14,13 @@ namespace Sage.Core
         bool isFunction,
         bool isExtern,
         bool isConstant = false,
-        bool isReference = false)
+        bool isReference = false,
+        int declarationLoopDepth = 0,
+        CallableSignature? signature = null,
+        BorrowKind borrowing = BorrowKind.None,
+        BorrowLoan? loan = null,
+        bool isType = false,
+        bool ownsResources = false)
     {
         /// <summary>Gets the Sage data type associated with this symbol.</summary>
         public string Type { get; } = type;
@@ -30,5 +36,25 @@ namespace Sage.Core
 
         /// <summary>Gets a value indicating whether this symbol holds a safe heap reference (from <c>new</c>).</summary>
         public bool IsReference { get; } = isReference;
+
+        /// <summary>Whether this binding owns a heap allocation or native resource.</summary>
+        public bool IsOwningValue => !IsType && !IsFunction && Borrowing == BorrowKind.None &&
+            (IsReference || OwnsResources || TypeSystem.IsNativeResource(Type));
+
+        /// <summary>True for a struct value whose fields transitively own native resources.</summary>
+        public bool OwnsResources { get; } = ownsResources;
+
+        /// <summary>Current path-sensitive availability of an owning value.</summary>
+        public OwnershipState Ownership { get; set; } = OwnershipState.Available;
+
+        /// <summary>Loop nesting at declaration, used to reject repeated consumption.</summary>
+        public int DeclarationLoopDepth { get; } = declarationLoopDepth;
+
+        /// <summary>Declared parameter and return contract, present for callable symbols.</summary>
+        public CallableSignature? Signature { get; } = signature;
+        public BorrowKind Borrowing { get; } = borrowing;
+        public BorrowLoan? Loan { get; } = loan;
+        /// <summary>True for a type symbol that cannot be evaluated as a runtime value.</summary>
+        public bool IsType { get; } = isType;
     }
 }

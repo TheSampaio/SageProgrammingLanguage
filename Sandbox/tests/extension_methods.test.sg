@@ -1,0 +1,29 @@
+use test;
+
+struct Meter { value: i32; step: i32; }
+
+module meter
+{
+    method func value(meter: &Meter): i32 { return meter.value * 100; }
+    method func advance(meter: &mut Meter): none { meter.value = meter.value + meter.step; }
+    method func advance_twice(meter: &mut Meter): none { meter.advance(); meter.advance(); }
+    method func squared(value: i32): i32 { return value * value; }
+    method func copy_with(meter: Meter, value: i32): Meter { meter.value = value; return meter; }
+}
+
+func main(): none
+{
+    var m: Meter = { value = 1, step = 2 };
+    m.advance();
+    test::assert_eq_i32("method_mutable_receiver", m.value, 3);
+    test::assert_eq_i32("method_field_stays_field", m.value, 3);
+    test::assert_eq_i32("method_shared_receiver", m.value(), 300);
+    test::assert_eq_i32("method_matches_qualified", m.value(), meter::value(&m));
+    m.advance_twice();
+    test::assert_eq_i32("method_reborrow_inside_module", m.value, 7);
+    test::assert_eq_i32("method_copy_receiver", m.value.squared(), 49);
+    test::assert_eq_i32("method_chain", (3).squared().squared(), 81);
+    var other: Meter = m.copy_with(10);
+    test::assert_eq_i32("method_value_copy_result", other.value, 10);
+    test::assert_eq_i32("method_value_copy_source", m.value, 7);
+}

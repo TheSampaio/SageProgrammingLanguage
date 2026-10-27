@@ -1,0 +1,30 @@
+use test;
+use byte_file;
+use byte_buffer;
+
+func main(): none
+{
+    var file: ByteFile = byte_file::empty();
+    var capacity: u32 = 4;
+    var buffer: ByteBuffer = byte_buffer::create(capacity);
+    var byte: u8 = 77;
+    byte_buffer::push(&mut buffer, byte);
+    var limit: u32 = 1;
+    var read: ByteTransfer = byte_file::read_buffer(&mut file, &mut buffer, limit);
+    test::assert_true("block_empty_file_read_fails", read.failed);
+    test::assert_true("block_empty_file_read_count_zero", read.count == 0);
+    test::assert_false("block_empty_file_read_not_eof", read.eof);
+    test::assert_true("block_empty_file_preserves_buffer_length", byte_buffer::length(&buffer) == 1);
+    var index: u32 = 0;
+    var retained: BufferRead = byte_buffer::read(&buffer, index);
+    test::assert_true("block_empty_file_preserves_buffer_byte", retained.has_value && retained.value == 77);
+    var written: ByteTransfer = byte_file::write_buffer(&mut file, &buffer, limit);
+    test::assert_true("block_empty_file_write_fails", written.failed);
+    test::assert_true("block_empty_file_write_count_zero", written.count == 0);
+    test::assert_false("block_write_never_reports_eof", written.eof);
+    var absent: ByteBuffer = byte_buffer::empty();
+    var missing_read: ByteTransfer = byte_file::read_buffer(&mut file, &mut absent, limit);
+    test::assert_true("block_empty_target_fails", missing_read.failed && missing_read.count == 0);
+    var missing_write: ByteTransfer = byte_file::write_buffer(&mut file, &absent, limit);
+    test::assert_true("block_empty_source_fails", missing_write.failed && missing_write.count == 0);
+}

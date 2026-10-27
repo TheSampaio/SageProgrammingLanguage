@@ -1,0 +1,22 @@
+use test;
+use byte_file;
+
+func main(): none
+{
+    var empty: ByteFile = byte_file::empty();
+    test::assert_false("read_only_empty_cannot_write", byte_file::can_write(&empty));
+    var path: u8[260] = { 97, 0 };
+    var length: u16 = 2;
+    var zero_byte: ByteFile = byte_file::open_read_bytes(path, length);
+    test::assert_true("read_only_zero_byte_rejected", zero_byte == null);
+    length = 0;
+    var no_path: ByteFile = byte_file::open_read_bytes(path, length);
+    test::assert_true("read_only_empty_path_rejected", no_path == null);
+    length = 260;
+    var oversized: ByteFile = byte_file::open_read_bytes(path, length);
+    test::assert_true("read_only_oversized_path_rejected", oversized == null);
+    path[0] = 255;
+    length = 1;
+    var non_ascii: ByteFile = byte_file::open_read_bytes(path, length);
+    test::assert_true("read_only_non_ascii_path_rejected", non_ascii == null);
+}

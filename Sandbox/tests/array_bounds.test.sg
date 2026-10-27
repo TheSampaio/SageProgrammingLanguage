@@ -1,0 +1,42 @@
+use test;
+
+struct BoundsRow { values: i32[2]; }
+var bounds_calls: i32 = 0;
+
+func bounds_next(): i32
+{
+    var result: i32 = bounds_calls;
+    bounds_calls++;
+    return result;
+}
+
+func bounds_parameter(values: i32[2], index: i32): i32
+{
+    return values[index];
+}
+
+func main(): none
+{
+    var _array0: i32 = 3;
+    var _index1: i32 = 4;
+    var values: i32[2] = { 4, 5 };
+    var index: i32 = 0;
+    test::assert_eq_i32("checked_read", values[index++], 4);
+    test::assert_eq_i32("read_index_once", index, 1);
+    values[index++] = 9;
+    test::assert_eq_i32("write_index_once", index, 2);
+    test::assert_eq_i32("checked_write", values[1], 9);
+    index = 0;
+    values[index++]++;
+    test::assert_eq_i32("checked_increment", values[0], 5);
+    test::assert_eq_i32("increment_index_once", index, 1);
+    test::assert_eq_i32("array_parameter_bound", bounds_parameter(values, 1), 9);
+
+    const fixed: i32[2] = { 7, 8 };
+    test::assert_eq_i32("checked_const_read", fixed[index], 8);
+    var rows: BoundsRow[2];
+    rows[bounds_next()].values[bounds_next()] = 12;
+    test::assert_eq_i32("nested_array_base_and_index_once", bounds_calls, 2);
+    test::assert_eq_i32("nested_array_checked_lvalue", rows[0].values[1], 12);
+    test::assert_eq_i32("bounds_temporary_names_preserve_user_values", _array0 + _index1, 7);
+}

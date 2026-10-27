@@ -1,0 +1,42 @@
+use byte_buffer;
+use test;
+
+func make(): ByteBuffer
+{
+    var capacity: u32 = 3;
+    var owner: ByteBuffer = byte_buffer::create(capacity);
+    return owner;
+}
+func early_return(): u32
+{
+    var owner: ByteBuffer = make();
+    return byte_buffer::capacity(&owner);
+}
+func consume(value: ByteBuffer): none
+{
+    test::assert_true("buffer_consumed_owner_live", byte_buffer::is_allocated(&value));
+}
+func identity(value: ByteBuffer): ByteBuffer { return value; }
+
+func main(): none
+{
+    var first: ByteBuffer = make();
+    var moved: ByteBuffer = first;
+    test::assert_true("buffer_returned_then_moved", byte_buffer::is_allocated(&moved));
+    byte_buffer::release(moved);
+    test::assert_true("buffer_early_return_capacity", early_return() == 3);
+    var consumed: ByteBuffer = make();
+    consume(consumed);
+    var input: ByteBuffer = make();
+    var returned: ByteBuffer = identity(input);
+    test::assert_true("buffer_parameter_return_preserves_owner", byte_buffer::is_allocated(&returned));
+    byte_buffer::release(returned);
+    if (true)
+    {
+        var scoped: ByteBuffer = make();
+        test::assert_true("buffer_scoped_owner_live", byte_buffer::is_allocated(&scoped));
+    }
+    const immutable: ByteBuffer = make();
+    test::assert_true("buffer_const_owner_live", byte_buffer::is_allocated(&immutable));
+    byte_buffer::release(immutable);
+}

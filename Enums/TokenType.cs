@@ -68,6 +68,7 @@
         GreaterEqual, // >=
         Bang,         // !
         AmpersandAmpersand, // &&
+        Ampersand,          // & (borrow)
         PipePipe,     // ||
 
         // --- Punctuation & Delimiters ---

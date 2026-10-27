@@ -1,0 +1,146 @@
+/// Standard Library: HTTP Server (Windows / Winsock)
+/// A minimal, single-threaded, blocking HTTP/1.1 server built on Winsock.
+///
+/// Safe API: `listen_local`/`listen` return an owned `HttpListener` (a native
+/// resource whose drop closes its sockets and balances WSAStartup), `accept` reads
+/// a bounded request head into a `Text`, and `respond` sends a complete text/plain
+/// response and closes the connection. No unsafe code is needed.
+///
+/// The legacy `serve` below is raw FFI (unchecked errors, never returns) and stays
+/// an `unsafe func`. SOCKET handles there are `c_uintptr` (pointer-width on Win64).
+use console;
+use text;
+
+/// Mirror of C's `struct sockaddr_in` (16 bytes: family, port, addr, 8 bytes padding).
+/// A `new` reference to this struct gives us a pointer to hand to bind().
+struct SockAddr
+{
+    family: i16;
+    port: u16;
+    addr: u32;
+    pad: u64;
+}
+
+module http_server
+{
+    extern winsock("winsock2.h", "ws2_32")
+    {
+        func WSAStartup(version: c_ushort, data: c_void*): c_int;
+        func WSACleanup(): c_int;
+        func socket(family: c_int, kind: c_int, protocol: c_int): c_uintptr;
+        func bind(sock: c_uintptr, addr: c_void*, len: c_int): c_int;
+        func listen(sock: c_uintptr, backlog: c_int): c_int;
+        func accept(sock: c_uintptr, addr: c_void*, len: c_void*): c_uintptr;
+        func recv(sock: c_uintptr, buffer: c_void*, len: c_int, flags: c_int): c_int;
+        func send(sock: c_uintptr, buffer: c_void*, len: c_int, flags: c_int): c_int;
+        func closesocket(sock: c_uintptr): c_int;
+        func htons(value: c_ushort): c_ushort;
+    }
+
+    extern libc_string("string.h")
+    {
+        func strlen(s: c_char*): c_size_t;
+    }
+
+    /// Starts a blocking HTTP server on the given port. Every request receives `body`
+    /// as an HTTP 200 text/plain response. This call does not return.
+    unsafe func serve(port: u16, body: str): none
+    {
+        // AF_INET = 2, SOCK_STREAM = 1
+        var wsa: c_char[512];
+        winsock::WSAStartup(514, wsa as none*); // MAKEWORD(2, 2)
+
+        var sock: c_uintptr = winsock::socket(2, 1, 0);
+
+        var addr: SockAddr = new SockAddr {
+            family = 2,
+            port = winsock::htons(port) as u16,
+            addr = 0,
+            pad = 0
+        };
+
+        winsock::bind(sock, addr as none*, 16);
+        winsock::listen(sock, 8);
+
+        console::print_line("Sage HTTP server listening on http://localhost:{port}");
+
+        var running: b8 = true;
+        while (running)
+        {
+            var client: c_uintptr = winsock::accept(sock, 0 as none*, 0 as none*);
+
+            var request: c_char[2048];
+            winsock::recv(client, request as none*, 2048, 0);
+
+            var body_len: c_int = libc_string::strlen(body) as c_int;
+            var response: str = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\nContent-Length: {body_len}\r\n\r\n{body}";
+            var response_len: c_int = libc_string::strlen(response) as c_int;
+
+            winsock::send(client, response as none*, response_len, 0);
+            winsock::closesocket(client);
+        }
+
+        winsock::closesocket(sock);
+        winsock::WSACleanup();
+    }
+
+    // --- Owned listener API (safe) ---
+
+    extern http_server_native("sage_http_server.h", "ws2_32")
+    {
+        type SageHttpListenerState;
+        func sage_http_listen(port: c_ushort, loopback_only: c_int): SageHttpListenerState*;
+        func sage_http_listener_port(value: SageHttpListenerState*): c_ushort;
+        func sage_http_accept(value: SageHttpListenerState*, request: SageTextState*): c_int;
+        func sage_http_respond(value: SageHttpListenerState*, status: c_uint, body: SageTextState*): c_int;
+        func sage_http_listener_drop(value: SageHttpListenerState*): none;
+        resource HttpListener: SageHttpListenerState* drop sage_http_listener_drop;
+    }
+
+    /// Listens on 127.0.0.1 only. Port 0 picks a free port (see `port`).
+    /// Returns an empty owner when Winsock, bind, or listen fails.
+    func listen_local(port: u16): HttpListener
+    {
+        unsafe
+        {
+            var owner: HttpListener = http_server_native::sage_http_listen(port as c_ushort, 1) as HttpListener;
+            return owner;
+        }
+    }
+
+    /// Listens on every IPv4 interface (may trigger a firewall prompt).
+    func listen(port: u16): HttpListener
+    {
+        unsafe
+        {
+            var owner: HttpListener = http_server_native::sage_http_listen(port as c_ushort, 0) as HttpListener;
+            return owner;
+        }
+    }
+
+    method func is_listening(value: &HttpListener): b8 { return value != null; }
+
+    /// The bound port (the chosen one when listening on port 0); 0 for an empty owner.
+    method func port(value: &HttpListener): u16
+    {
+        unsafe { return http_server_native::sage_http_listener_port(value as SageHttpListenerState*) as u16; }
+    }
+
+    /// Blocks for the next connection; replaces request with its head (request line
+    /// and headers) bounded by capacity. A client left unanswered is closed first.
+    /// Returns false for an empty owner/request or an accept failure.
+    method func accept(value: &mut HttpListener, request: &mut Text): b8
+    {
+        unsafe { return http_server_native::sage_http_accept(value as SageHttpListenerState*, request as SageTextState*) != 0; }
+    }
+
+    /// Sends a text/plain response (status 100..599) to the accepted client and
+    /// closes the connection. Returns true only when every byte was sent.
+    method func respond(value: &mut HttpListener, status: u16, body: &Text): b8
+    {
+        unsafe { return http_server_native::sage_http_respond(value as SageHttpListenerState*, status as c_uint, body as SageTextState*) != 0; }
+    }
+
+    /// Consumes the listener; cleanup closes the sockets and releases Winsock once.
+    func close(value: HttpListener): none {}
+}

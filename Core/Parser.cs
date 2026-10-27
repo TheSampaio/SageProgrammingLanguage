@@ -1,4 +1,4 @@
-﻿using Sage.Ast;
+using Sage.Ast;
 using Sage.Enums;
 using Sage.Interfaces;
 using Sage.Utilities;
@@ -116,7 +116,7 @@ namespace Sage.Core
             while (Current.Type != TokenType.CloseBrace && Current.Type != TokenType.EndOfFile)
             {
                 // 'unsafe' inside a module always introduces an unsafe function (modules hold no statements).
-                if (Current.Type == TokenType.Keyword_Func || Current.Type == TokenType.Keyword_Unsafe)
+                if (Current.Type == TokenType.Keyword_Func || Current.Type == TokenType.Keyword_Unsafe || IsMethodModifier(0))
                 {
                     module.Members.Add(ParseFunction(module.Name));
                 }
@@ -142,6 +142,11 @@ namespace Sage.Core
             var startToken = Current;
             Consume(TokenType.Keyword_Extern);
 
+            // 'cpp' is contextual: 'extern cpp alias(...)' versus a C block whose alias is 'cpp'.
+            bool isCpp = Current.Type == TokenType.Identifier && Current.Value == "cpp" &&
+                _pos + 1 < _tokens.Count && _tokens[_pos + 1].Type == TokenType.Identifier;
+            if (isCpp) _pos++;
+
             // 1. Alias (namespace local)
             string alias = Consume(TokenType.Identifier).Value;
 
@@ -158,12 +163,36 @@ namespace Sage.Core
             Consume(TokenType.OpenBrace);
 
             var declarations = new List<AstNode>();
+            var sources = new List<string>();
 
             while (Current.Type != TokenType.CloseBrace && Current.Type != TokenType.EndOfFile)
             {
+                // Project native source: 'source "counter.cpp";' — compiled and linked with this binding.
+                if (Current.Type == TokenType.Identifier && Current.Value == "source")
+                {
+                    _pos++; // consume 'source'
+                    sources.Add(Consume(TokenType.String, "Expected a native source path string after 'source'.").Value);
+                    Consume(TokenType.Semicolon, "Native source declarations end with ';'.");
+                    continue;
+                }
+                if (Current.Type == TokenType.Identifier && Current.Value == "resource")
+                {
+                    var resourceToken = Current;
+                    _pos++;
+                    string name = Consume(TokenType.Identifier, "Expected a Sage resource type name.").Value;
+                    Consume(TokenType.Colon);
+                    string nativeType = ConsumeType();
+                    var dropToken = Consume(TokenType.Identifier, "Expected 'drop' before the native destructor.");
+                    if (dropToken.Value != "drop")
+                        throw new CompilerException(dropToken, "S001", "Expected 'drop' before the native destructor.");
+                    string destructor = Consume(TokenType.Identifier, "Expected a native destructor name.").Value;
+                    Consume(TokenType.Semicolon);
+                    declarations.Add(CreateNode(new NativeResourceDeclarationNode(name, nativeType, destructor), resourceToken));
+                    continue;
+                }
                 // Opaque C type: 'type FILE;' — introduces a named C type without a Sage-side layout.
                 // 'type' is a contextual keyword recognized only inside extern blocks.
-                if (Current.Type == TokenType.Identifier && Current.Value == "type")
+                if (!isCpp && Current.Type == TokenType.Identifier && Current.Value == "type")
                 {
                     _pos++; // consume 'type'
                     string typeName = Consume(TokenType.Identifier, "Expected an opaque type name after 'type'.").Value;
@@ -171,7 +200,20 @@ namespace Sage.Core
                     declarations.Add(CreateNode(new ExternTypeNode(typeName), startToken));
                     continue;
                 }
+                // C++ class handle: 'class Counter = demo::Counter;' — an opaque handle the adapters convert.
+                if (isCpp && Current.Type == TokenType.Identifier && Current.Value == "class")
+                {
+                    var classToken = Current;
+                    _pos++; // consume 'class'
+                    string typeName = Consume(TokenType.Identifier, "Expected a Sage handle name after 'class'.").Value;
+                    Consume(TokenType.Equals, "A C++ class handle requires '= qualified::Type'.");
+                    string cppClass = ParseCppTarget();
+                    Consume(TokenType.Semicolon, "C++ class handle declarations end with ';'.");
+                    declarations.Add(CreateNode(new ExternTypeNode(typeName, cppClass), classToken));
+                    continue;
+                }
 
+                var funcToken = Current;
                 if (Match(TokenType.Keyword_Func))
                 {
                     // The extern function is registered by the SemanticAnalyzer as alias::funcName.
@@ -179,22 +221,77 @@ namespace Sage.Core
                     var parameters = ParseParameterList();
                     Consume(TokenType.Colon);
                     string retType = ConsumeType();
+                    // C++ targets are never inferred from the Sage name: each declaration names its binding.
+                    CppBinding? binding = null;
+                    if (isCpp)
+                    {
+                        Consume(TokenType.Equals, "An extern cpp function requires '= target', '= .member', '= new', or '= delete'.");
+                        binding = ParseCppBinding();
+                    }
                     Consume(TokenType.Semicolon); // Externs have no body.
 
                     var funcNode = new FunctionDeclarationNode(funcName, retType, parameters, null!, alias)
                     {
-                        IsExtern = true
+                        IsExtern = true,
+                        CppBinding = binding
                     };
-                    declarations.Add(CreateNode(funcNode, startToken));
+                    declarations.Add(CreateNode(funcNode, isCpp ? funcToken : startToken));
                 }
                 else
                 {
-                    throw new CompilerException(Current, "S006", "Only 'func' and 'type' declarations are allowed inside extern blocks.");
+                    throw new CompilerException(Current, "S006", isCpp
+                        ? "Only 'func', 'class', 'resource', and 'source' declarations are allowed inside extern cpp blocks."
+                        : "Only 'func', 'type', 'resource', and 'source' declarations are allowed inside extern blocks.");
                 }
             }
 
             Consume(TokenType.CloseBrace);
-            return CreateNode(new ExternBlockNode(alias, header, declarations, library), startToken);
+            return CreateNode(new ExternBlockNode(alias, header, declarations, library, isCpp, sources), startToken);
+        }
+
+        /// <summary>
+        /// Parses the right-hand side of an extern cpp function: a target, <c>.member</c>, <c>new</c>, or <c>delete</c>,
+        /// optionally followed by <c>catch</c> to make exceptions recoverable. <c>catch</c> alone and <c>catch.message</c>
+        /// bind the failure queries; <c>catch</c> is a reserved C++ word, so it never names a target.
+        /// </summary>
+        private CppBinding ParseCppBinding()
+        {
+            if (IsCatchWord())
+            {
+                _pos++;
+                if (!Match(TokenType.Dot)) return new CppBinding(CppBindingKind.FailureStatus);
+                var member = Consume(TokenType.Identifier, "Expected 'message' after 'catch.'.");
+                if (member.Value != "message") throw new CompilerException(member, "S001", "Expected 'message' after 'catch.'.");
+                return new CppBinding(CppBindingKind.FailureMessage);
+            }
+            var binding = ParseCppBindingTarget();
+            if (!IsCatchWord()) return binding;
+            _pos++;
+            return new CppBinding(binding.Kind, binding.Target, recoverable: true);
+        }
+
+        private bool IsCatchWord() => Current.Type == TokenType.Identifier && Current.Value == "catch";
+
+        private CppBinding ParseCppBindingTarget()
+        {
+            if (Match(TokenType.Keyword_New)) return new CppBinding(CppBindingKind.Constructor);
+            if (Match(TokenType.Keyword_Delete)) return new CppBinding(CppBindingKind.Destructor);
+            if (Match(TokenType.Dot))
+                return new CppBinding(CppBindingKind.Method, Consume(TokenType.Identifier, "Expected a member function name after '.'.").Value);
+            return new CppBinding(CppBindingKind.Function, ParseCppTarget());
+        }
+
+        /// <summary>
+        /// Parses a qualified C++ name (<c>demo::add</c>) or a string literal for names the Sage lexer
+        /// cannot express, such as explicit template instances (<c>"demo::max&lt;int&gt;"</c>).
+        /// The string form is validated semantically before it reaches generated C++.
+        /// </summary>
+        private string ParseCppTarget()
+        {
+            if (Current.Type == TokenType.String) return Consume(TokenType.String).Value;
+            string target = Consume(TokenType.Identifier, "Expected a qualified C++ name.").Value;
+            while (Match(TokenType.DoubleColon)) target += "::" + Consume(TokenType.Identifier, "Expected a name after '::'.").Value;
+            return target;
         }
 
         /// <summary>Parses a single statement or declaration.</summary>
@@ -211,6 +308,8 @@ namespace Sage.Core
             }
 
             // 2. Function definition / top-level FFI block
+            if (IsMethodModifier(0) || (Current.Type == TokenType.Keyword_Unsafe && IsMethodModifier(1)))
+                throw new CompilerException(Current, "S157", "A 'method func' must be declared inside a module.");
             if (Current.Type == TokenType.Keyword_Func) return ParseFunction("");
             if (Current.Type == TokenType.Keyword_Extern) return ParseExternBlock();
 
@@ -422,6 +521,8 @@ namespace Sage.Core
         {
             var startToken = Current;
             bool isUnsafe = Match(TokenType.Keyword_Unsafe);
+            bool isMethod = IsMethodModifier(0);
+            if (isMethod) _pos++;
             bool isExtern = Match(TokenType.Keyword_Extern);
             Consume(TokenType.Keyword_Func);
 
@@ -434,11 +535,35 @@ namespace Sage.Core
             {
                 Consume(TokenType.Semicolon);
                 return CreateNode(new FunctionDeclarationNode(name, retType, parameters, null!, moduleOwner)
-                { IsExtern = true, IsUnsafe = isUnsafe }, startToken);
+                { IsExtern = true, IsUnsafe = isUnsafe, IsMethod = isMethod }, startToken);
             }
 
             return CreateNode(new FunctionDeclarationNode(name, retType, parameters, ParseBlock(), moduleOwner)
-            { IsUnsafe = isUnsafe }, startToken);
+            { IsUnsafe = isUnsafe, IsMethod = isMethod }, startToken);
+        }
+
+        /// <summary>
+        /// True when the token at <paramref name="offset"/> is the contextual <c>method</c> modifier,
+        /// which is recognized only directly before <c>func</c>.
+        /// </summary>
+        private bool IsMethodModifier(int offset)
+        {
+            int index = Math.Min(_pos + offset, _tokens.Count - 1);
+            var next = _tokens[Math.Min(index + 1, _tokens.Count - 1)];
+            return _tokens[index] is { Type: TokenType.Identifier, Value: "method" } && next.Type == TokenType.Keyword_Func;
+        }
+
+        /// <summary>Parses a parenthesized call argument list: (expr, expr, ...).</summary>
+        private List<AstNode> ParseCallArguments()
+        {
+            Consume(TokenType.OpenParen);
+            var args = new List<AstNode>();
+            if (Current.Type != TokenType.CloseParen)
+            {
+                do { args.Add(ParseExpression()); } while (Match(TokenType.Comma));
+            }
+            Consume(TokenType.CloseParen);
+            return args;
         }
 
         /// <summary>Parses a scoped block of code enclosed in braces.</summary>
@@ -463,6 +588,11 @@ namespace Sage.Core
         /// </summary>
         private string ConsumeType()
         {
+            if (Match(TokenType.Ampersand))
+            {
+                bool mutable = MatchContextualMut();
+                return (mutable ? "&mut " : "&") + ConsumeType();
+            }
             if (!IsType(Current) && Current.Type != TokenType.Identifier)
                 throw new CompilerException(Current, "S003", $"Expected a type but found {Current.Type} ('{Current.Value}')");
 
@@ -579,6 +709,12 @@ namespace Sage.Core
 
         private AstNode ParseUnary()
         {
+            if (Current.Type == TokenType.Ampersand)
+            {
+                var token = Consume(TokenType.Ampersand);
+                bool mutable = MatchContextualMut();
+                return CreateNode(new BorrowExpressionNode(ParseUnary(), mutable), token);
+            }
             if (Current.Type == TokenType.Bang || Current.Type == TokenType.Minus)
             {
                 var opToken = Current;
@@ -586,6 +722,13 @@ namespace Sage.Core
                 return CreateNode(new UnaryExpressionNode(op, ParseUnary()), opToken);
             }
             return ParsePostfix();
+        }
+
+        private bool MatchContextualMut()
+        {
+            if (Current.Type != TokenType.Identifier || Current.Value != "mut") return false;
+            _pos++;
+            return true;
         }
 
         private AstNode ParsePostfix()
@@ -687,16 +830,8 @@ namespace Sage.Core
                 string name = Consume(TokenType.Identifier).Value;
                 while (Match(TokenType.DoubleColon)) name += "::" + Consume(TokenType.Identifier).Value;
 
-                if (Match(TokenType.OpenParen))
-                {
-                    var args = new List<AstNode>();
-                    if (Current.Type != TokenType.CloseParen)
-                    {
-                        do { args.Add(ParseExpression()); } while (Match(TokenType.Comma));
-                    }
-                    Consume(TokenType.CloseParen);
-                    return CreateNode(new FunctionCallNode(name, args), startToken);
-                }
+                if (Current.Type == TokenType.OpenParen)
+                    return CreateNode(new FunctionCallNode(name, ParseCallArguments()), startToken);
                 return CreateNode(new IdentifierNode(name), startToken);
             }
 
@@ -721,9 +856,11 @@ namespace Sage.Core
                     {
                         do
                         {
-                            string fieldName = Consume(TokenType.Identifier).Value;
+                            var fieldToken = Consume(TokenType.Identifier);
+                            string fieldName = fieldToken.Value;
                             Consume(TokenType.Equals, "Expected '=' after field name.");
-                            fields[fieldName] = ParseExpression();
+                            if (!fields.TryAdd(fieldName, ParseExpression()))
+                                throw new CompilerException(fieldToken, "S183", $"Field '{fieldName}' is initialized more than once.");
 
                         } while (Match(TokenType.Comma));
                     }
@@ -766,9 +903,11 @@ namespace Sage.Core
             {
                 do
                 {
-                    string fieldName = Consume(TokenType.Identifier).Value;
+                    var fieldToken = Consume(TokenType.Identifier);
+                    string fieldName = fieldToken.Value;
                     Consume(TokenType.Equals, "Expected '=' after field name.");
-                    fields[fieldName] = ParseExpression();
+                    if (!fields.TryAdd(fieldName, ParseExpression()))
+                        throw new CompilerException(fieldToken, "S183", $"Field '{fieldName}' is initialized more than once.");
                 } while (Match(TokenType.Comma));
             }
 
@@ -786,12 +925,13 @@ namespace Sage.Core
             var fields = new List<VariableDeclarationNode>();
             while (Current.Type != TokenType.CloseBrace && Current.Type != TokenType.EndOfFile)
             {
-                string fieldName = Consume(TokenType.Identifier).Value;
+                var fieldToken = Consume(TokenType.Identifier);
+                string fieldName = fieldToken.Value;
                 Consume(TokenType.Colon);
                 string fieldType = ConsumeType();
                 Consume(TokenType.Semicolon);
 
-                fields.Add(new VariableDeclarationNode(fieldName, fieldType, null!, false));
+                fields.Add(CreateNode(new VariableDeclarationNode(fieldName, fieldType, null!, false), fieldToken));
             }
             Consume(TokenType.CloseBrace);
 
@@ -807,7 +947,10 @@ namespace Sage.Core
                 {
                     var opToken = Current;
                     string propertyName = Consume(TokenType.Identifier, "Expected property name.").Value;
-                    left = CreateNode(new MemberAccessNode(left, propertyName), opToken);
+                    // 'value.name(...)' is always an extension-method call; 'value.name' is always a field.
+                    left = Current.Type == TokenType.OpenParen
+                        ? CreateNode(new MethodCallNode(left, propertyName, ParseCallArguments()), opToken)
+                        : CreateNode(new MemberAccessNode(left, propertyName), opToken);
                 }
                 else if (Match(TokenType.OpenBracket))
                 {

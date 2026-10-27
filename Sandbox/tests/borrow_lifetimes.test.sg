@@ -1,0 +1,53 @@
+use test;
+
+struct LifetimeValue { value: i32; }
+
+func update_lifetime(value: &mut LifetimeValue): none
+{
+    var value: &mut LifetimeValue = &mut value;
+    value.value++;
+}
+func copy_lifetime(): LifetimeValue
+{
+    var owner: LifetimeValue = { value = 9 };
+    var view: &LifetimeValue = &owner;
+    return view;
+}
+
+func main(): none
+{
+    var owner: LifetimeValue = { value = 1 };
+    if (true)
+    {
+        var first: &LifetimeValue = &owner;
+        var second: &LifetimeValue = &owner;
+        test::assert_eq_i32("local_shared_aliases", first.value + second.value, 2);
+        test::assert_eq_i32("shared_allows_owner_read", owner.value, 1);
+    }
+    owner.value = 2;
+    if (true)
+    {
+        var view: &mut LifetimeValue = &mut owner;
+        update_lifetime(&mut view);
+        if (true)
+        {
+            var child: &mut LifetimeValue = &mut view;
+            child.value++;
+        }
+        view.value++;
+        test::assert_eq_i32("parent_resumes_after_reborrow", view.value, 5);
+    }
+    test::assert_eq_i32("owner_resumes_after_scope", owner.value, 5);
+
+    if (true)
+    {
+        var owner: &LifetimeValue = &owner;
+        test::assert_eq_i32("shadow_borrow_targets_outer", owner.value, 5);
+    }
+
+    for (var view: &mut LifetimeValue = &mut owner; view.value < 7; view.value++) {}
+    test::assert_eq_i32("for_loan_ends_with_loop", owner.value, 7);
+
+    var copied: LifetimeValue = copy_lifetime();
+    test::assert_eq_i32("borrowed_value_copied_before_owner_drop", copied.value, 9);
+}

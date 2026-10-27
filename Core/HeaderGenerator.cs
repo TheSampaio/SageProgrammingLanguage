@@ -11,6 +11,8 @@ namespace Sage.Core
     public class HeaderGenerator : IAstVisitor<string>
     {
         private readonly HashSet<string> _requiredHeaders = [];
+        private readonly List<string> _resourceDeclarations = [];
+        private readonly List<string> _handleDeclarations = [];
 
         /// <summary>
         /// Generates the full content of a C header file based on the provided AST.
@@ -20,6 +22,8 @@ namespace Sage.Core
         public string Generate(ProgramNode ast)
         {
             _requiredHeaders.Clear();
+            _resourceDeclarations.Clear();
+            _handleDeclarations.Clear();
 
             // Collect all declarations and dependencies by visiting the AST
             string declarations = ast.Accept(this);
@@ -40,6 +44,8 @@ namespace Sage.Core
 
             sb.AppendLine();
             sb.AppendLine("/* --- Declarations --- */");
+            foreach (var handle in _handleDeclarations) sb.Append(handle);
+            foreach (var resource in _resourceDeclarations) sb.Append(resource);
             sb.Append(declarations);
 
             return sb.ToString();
@@ -79,18 +85,19 @@ namespace Sage.Core
         private void AddHeader(string header)
         {
             if (string.IsNullOrWhiteSpace(header)) return;
-
-            string normalized = (header.StartsWith('<') || header.StartsWith('"'))
-                ? header
-                : $"<{header}>";
-
-            _requiredHeaders.Add(normalized);
+            _requiredHeaders.Add(IncludeTarget(header));
         }
+
+        /// <summary>The <c>#include</c> operand for a declared header: quoted/angled forms are kept, bare names become <c>&lt;name&gt;</c>.</summary>
+        public static string IncludeTarget(string header) =>
+            (header.StartsWith('<') || header.StartsWith('"')) ? header : $"<{header}>";
 
         public string Visit(ProgramNode node)
         {
             var sb = new StringBuilder();
-            foreach (var stmt in node.Statements)
+            // Parameter contracts may reference a struct declared later in the source.
+            foreach (var stmt in node.Statements.OfType<StructDeclarationNode>().Cast<AstNode>()
+                .Concat(node.Statements.Where(statement => statement is not StructDeclarationNode)))
             {
                 string res = stmt.Accept(this);
                 if (!string.IsNullOrEmpty(res)) sb.Append(res);
@@ -122,7 +129,11 @@ namespace Sage.Core
 
             string paramsStr = (isMain || node.Parameters.Count == 0)
                 ? "void"
-                : string.Join(", ", node.Parameters.Select(p => TypeSystem.FormatCParameter(p.Name, p.Type)));
+                : string.Join(", ", node.Parameters.Select(p => node.IsExtern ? TypeSystem.FormatCParameter(p.Name, p.Type)
+                    : TypeSystem.FormatSageParameter(p.Name, p.Type)));
+
+            if (!node.IsExtern && node.Parameters.Any(parameter => TypeSystem.IsArrayType(parameter.Type))) AddHeader("string.h");
+            if (!node.IsExtern && node.Parameters.Any(parameter => TypeSystem.IsNativeResource(parameter.Type))) AddHeader("stddef.h");
 
             string prefix = node.IsExtern ? "extern " : "";
             return $"{prefix}{cReturnType} {cName}({paramsStr});\n";
@@ -130,11 +141,12 @@ namespace Sage.Core
 
         public string Visit(StructDeclarationNode node)
         {
+            if (node.Fields.Any(field => TypeSystem.IsNativeResource(field.Type))) AddHeader("stddef.h");
             var sb = new StringBuilder();
             sb.AppendLine($"typedef struct {node.Name} {{");
             foreach (var field in node.Fields)
             {
-                sb.AppendLine($"    {TypeSystem.ToCType(field.Type)} {field.Name};");
+                sb.AppendLine($"    {TypeSystem.FormatCParameter(field.Name, field.Type)};");
             }
             sb.AppendLine($"}} {node.Name};\n");
             return sb.ToString();
@@ -142,8 +154,24 @@ namespace Sage.Core
 
         public string Visit(ExternBlockNode node)
         {
-            AddHeader(node.Header);
-            foreach (var decl in node.Declarations) decl.Accept(this);
+            // A C++ header is only visible to the generated adapters; C sees handles and adapter prototypes.
+            // stddef.h supplies size_t/ptrdiff_t that the C++ header would otherwise have provided.
+            AddHeader(node.IsCpp ? "stddef.h" : node.Header);
+            var declarations = new StringBuilder();
+            foreach (var decl in node.Declarations)
+            {
+                string result = decl.Accept(this);
+                if (decl is NativeResourceDeclarationNode || (node.IsCpp && decl is FunctionDeclarationNode)) declarations.Append(result);
+                if (decl is ExternTypeNode { CppClass: not null } handle)
+                    _handleDeclarations.Add($"typedef struct {CNaming.CppHandleTag(node.Alias, handle.Name)} {handle.Name};\n");
+            }
+            return declarations.ToString();
+        }
+
+        public string Visit(NativeResourceDeclarationNode node)
+        {
+            // Borrowed prototypes may appear before their resource declaration in source.
+            _resourceDeclarations.Add($"typedef struct {node.Name} {{ {TypeSystem.ToCType(node.NativeType)} _sage_handle; }} {node.Name};\n");
             return "";
         }
 
@@ -151,6 +179,7 @@ namespace Sage.Core
         public string Visit(ExternTypeNode node) => "";
 
         public string Visit(UnsafeBlockNode node) { node.Body.Accept(this); return ""; }
+        public string Visit(BorrowExpressionNode node) { node.Target.Accept(this); return ""; }
 
         // 'new' and 'delete' lower to malloc/free, which require stdlib.h.
         public string Visit(NewExpressionNode node)
@@ -179,6 +208,14 @@ namespace Sage.Core
             return "";
         }
 
+        public string Visit(MethodCallNode node)
+        {
+            if (node.Lowered != null) return node.Lowered.Accept(this);
+            node.Receiver.Accept(this);
+            foreach (var arg in node.Arguments) arg.Accept(this);
+            return "";
+        }
+
         public string Visit(InterpolatedStringNode node)
         {
             // String interpolation is transpiled to snprintf, requiring stdio.h
@@ -189,18 +226,37 @@ namespace Sage.Core
 
         // --- AST Traversal Implementation ---
         public string Visit(BlockNode node) { foreach (var s in node.Statements) s.Accept(this); return ""; }
-        public string Visit(VariableDeclarationNode node) { node.Initializer?.Accept(this); return ""; }
-        public string Visit(AssignmentNode node) { node.Target.Accept(this); node.Expression.Accept(this); return ""; }
+        public string Visit(VariableDeclarationNode node)
+        {
+            if (TypeSystem.IsNativeResource(node.Type) || TypeSystem.IsNativeResourceArray(node.Type)) AddHeader("stddef.h");
+            if (TypeSystem.IsArrayType(node.Type) && node.Initializer != null && node.Initializer is not ArrayInitializationNode) AddHeader("string.h");
+            node.Initializer?.Accept(this); return "";
+        }
+        public string Visit(AssignmentNode node)
+        {
+            if (node.VariableType != null && TypeSystem.IsArrayType(node.VariableType)) AddHeader("string.h");
+            node.Target.Accept(this); node.Expression.Accept(this); return "";
+        }
         public string Visit(ReturnNode node) { node.Expression.Accept(this); return ""; }
         public string Visit(ExpressionStatementNode node) { node.Expression.Accept(this); return ""; }
         public string Visit(IfNode node) { node.Condition.Accept(this); node.ThenBranch.Accept(this); node.ElseBranch?.Accept(this); return ""; }
         public string Visit(WhileNode node) { node.Condition.Accept(this); node.Body.Accept(this); return ""; }
         public string Visit(ForNode node) { node.Initializer?.Accept(this); node.Condition?.Accept(this); node.Increment?.Accept(this); node.Body.Accept(this); return ""; }
-        public string Visit(BinaryExpressionNode node) { node.Left.Accept(this); node.Right.Accept(this); return ""; }
+        public string Visit(BinaryExpressionNode node)
+        {
+            if (node.IsResourceNullComparison) AddHeader("stddef.h");
+            node.Left.Accept(this); node.Right.Accept(this); return "";
+        }
         public string Visit(UnaryExpressionNode node) { node.Operand.Accept(this); return ""; }
         public string Visit(CastExpressionNode node) { node.Expression.Accept(this); return ""; }
         public string Visit(MemberAccessNode node) { node.Object.Accept(this); return ""; }
-        public string Visit(ArrayAccessNode node) { node.Array.Accept(this); node.Index.Accept(this); return ""; }
+        public string Visit(ArrayAccessNode node)
+        {
+            if (node.CheckedLength != null) { AddHeader("stdio.h"); AddHeader("stdlib.h"); }
+            node.Array.Accept(this);
+            node.Index.Accept(this);
+            return "";
+        }
         public string Visit(StructInitializationNode node) { foreach (var f in node.Fields.Values) f.Accept(this); return ""; }
         public string Visit(ArrayInitializationNode node) { foreach (var e in node.Elements) e.Accept(this); return ""; }
 

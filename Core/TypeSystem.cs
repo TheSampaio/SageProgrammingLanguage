@@ -55,6 +55,17 @@ namespace Sage.Core
         /// They carry no Sage-side layout; the name is emitted verbatim to C.
         /// </summary>
         private static readonly HashSet<string> OpaqueTypes = [];
+        private static readonly Dictionary<string, NativeResourceContract> NativeResources = new(StringComparer.Ordinal);
+
+        /// <summary>Whether a type has a validated native resource declaration.</summary>
+        public static bool IsNativeResource(string type) => NativeResources.ContainsKey(type);
+        /// <summary>True for a fixed array whose elements are native resource owners.</summary>
+        public static bool IsNativeResourceArray(string type) =>
+            IsArrayType(type) && IsNativeResource(GetArrayBaseType(type));
+        /// <summary>Returns the validated native origin, representation, and local-owner destructor contract.</summary>
+        public static NativeResourceContract? GetNativeResource(string type) => NativeResources.GetValueOrDefault(type);
+        /// <summary>Publishes a contract only after the complete declaration pass has validated it.</summary>
+        internal static void RegisterNativeResource(NativeResourceContract contract) => NativeResources[contract.Name] = contract;
 
         /// <summary>Registers an opaque C type (declared via <c>type Name;</c> in an extern block).</summary>
         public static void RegisterOpaqueType(string name) => OpaqueTypes.Add(name);
@@ -66,7 +77,11 @@ namespace Sage.Core
         public static bool IsCInteropType(string name) => CInteropTypes.ContainsKey(name);
 
         /// <summary>Clears run-scoped registrations. Useful when the compiler processes several inputs in-process.</summary>
-        public static void Reset() => OpaqueTypes.Clear();
+        public static void Reset()
+        {
+            OpaqueTypes.Clear();
+            NativeResources.Clear();
+        }
 
         /// <summary>
         /// Converts a Sage type identifier to its corresponding C language type.
@@ -75,6 +90,8 @@ namespace Sage.Core
         public static string ToCType(string sageType)
         {
             if (string.IsNullOrEmpty(sageType)) return "void";
+            if (IsBorrowType(sageType))
+                return $"{(GetBorrowKind(sageType) == BorrowKind.Shared ? "const " : "")}{ToCType(GetBorrowedType(sageType))}*";
 
             // Recursive pointer handling (e.g. i32*, none**, c_char*).
             if (sageType.EndsWith('*'))
@@ -155,10 +172,25 @@ namespace Sage.Core
         /// </summary>
         public static string FormatCParameter(string name, string type)
         {
+            if (IsBorrowType(type)) return $"{ToCType(type)} {name}";
             if (IsArrayType(type))
                 return $"{ToCType(GetArrayBaseType(type))} {name}[{GetArraySize(type)}]";
             return $"{ToCType(type)} {name}";
         }
+
+        /// <summary>Sage array parameters read an incoming array into independent local storage.</summary>
+        public static string FormatSageParameter(string name, string type) =>
+            IsArrayType(type) && !IsBorrowType(type) ? $"const {FormatCParameter(name, type)}" : FormatCParameter(name, type);
+
+        public static bool IsBorrowType(string type) => type.StartsWith('&');
+        public static BorrowKind GetBorrowKind(string type) => !IsBorrowType(type) ? BorrowKind.None
+            : type.StartsWith("&mut ", StringComparison.Ordinal) ? BorrowKind.Mutable : BorrowKind.Shared;
+        public static string GetBorrowedType(string type) => GetBorrowKind(type) switch
+        {
+            BorrowKind.Mutable => type[5..],
+            BorrowKind.Shared => type[1..],
+            _ => type
+        };
 
         /// <summary>True if the type is a fixed-size array such as <c>i32[4]</c>.</summary>
         public static bool IsArrayType(string type) => type.Contains('[') && type.EndsWith(']');

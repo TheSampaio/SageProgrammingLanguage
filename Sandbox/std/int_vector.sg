@@ -1,0 +1,125 @@
+/// Standard Library: Int Vector
+/// An owned, growable sequence of i32 with a fixed maximum length (limit).
+/// Access is bounds-checked, growth reports explicit outcomes, cleanup is automatic.
+struct IntRead { value: i32; has_value: b8; }
+struct VectorGrow { ok: b8; full: b8; out_of_memory: b8; }
+
+module int_vector
+{
+    extern int_vector_native("sage_int_vector.h")
+    {
+        type SageIntVectorState;
+        func sage_int_vector_create(limit: c_size_t): SageIntVectorState*;
+        func sage_int_vector_length(value: SageIntVectorState*): c_size_t;
+        func sage_int_vector_capacity(value: SageIntVectorState*): c_size_t;
+        func sage_int_vector_limit(value: SageIntVectorState*): c_size_t;
+        func sage_int_vector_reserve(value: SageIntVectorState*, capacity: c_size_t): c_int;
+        func sage_int_vector_push(value: SageIntVectorState*, element: c_int): c_int;
+        func sage_int_vector_has(value: SageIntVectorState*, index: c_size_t): c_int;
+        func sage_int_vector_get(value: SageIntVectorState*, index: c_size_t): c_int;
+        func sage_int_vector_set(value: SageIntVectorState*, index: c_size_t, element: c_int): c_int;
+        func sage_int_vector_pop(value: SageIntVectorState*): c_int;
+        func sage_int_vector_clear(value: SageIntVectorState*): none;
+        func sage_int_vector_drop(value: SageIntVectorState*): none;
+        resource IntVector: SageIntVectorState* drop sage_int_vector_drop;
+    }
+
+    /// Empty vector holding at most limit elements. Element storage is allocated on
+    /// demand by push/reserve. Returns an empty owner if the owner cannot be allocated.
+    func create(limit: u32): IntVector
+    {
+        unsafe
+        {
+            var owner: IntVector = int_vector_native::sage_int_vector_create(limit as c_size_t) as IntVector;
+            return owner;
+        }
+    }
+
+    func empty(): IntVector
+    {
+        unsafe
+        {
+            var owner: IntVector = (0 as SageIntVectorState*) as IntVector;
+            return owner;
+        }
+    }
+
+    // Native status: 0 ok, 1 limit reached, 2 allocation failed, 3 empty owner.
+    func outcome(status: i32): VectorGrow
+    {
+        return { ok = status == 0, full = status == 1, out_of_memory = status == 2 };
+    }
+
+    method func is_allocated(value: &IntVector): b8 { return value != null; }
+
+    method func length(value: &IntVector): u32
+    {
+        unsafe { return int_vector_native::sage_int_vector_length(value as SageIntVectorState*) as u32; }
+    }
+
+    /// Allocated element slots; grows on demand and never exceeds limit.
+    method func capacity(value: &IntVector): u32
+    {
+        unsafe { return int_vector_native::sage_int_vector_capacity(value as SageIntVectorState*) as u32; }
+    }
+
+    method func limit(value: &IntVector): u32
+    {
+        unsafe { return int_vector_native::sage_int_vector_limit(value as SageIntVectorState*) as u32; }
+    }
+
+    /// Ensures capacity for at least the given count. Failure preserves contents.
+    /// All flags are false for an empty owner.
+    method func reserve(value: &mut IntVector, capacity: u32): VectorGrow
+    {
+        unsafe { return int_vector::outcome(int_vector_native::sage_int_vector_reserve(value as SageIntVectorState*, capacity as c_size_t) as i32); }
+    }
+
+    /// Appends one element, growing storage. full=true at the limit,
+    /// out_of_memory=true when allocation fails; both preserve the contents.
+    method func push(value: &mut IntVector, element: i32): VectorGrow
+    {
+        unsafe { return int_vector::outcome(int_vector_native::sage_int_vector_push(value as SageIntVectorState*, element as c_int) as i32); }
+    }
+
+    /// has_value=false (value 0) for an empty owner or index >= length.
+    method func get(value: &IntVector, index: u32): IntRead
+    {
+        unsafe
+        {
+            var vector: SageIntVectorState* = value as SageIntVectorState*;
+            if (int_vector_native::sage_int_vector_has(vector, index as c_size_t) == 0) { return { value = 0, has_value = false }; }
+            return { value = int_vector_native::sage_int_vector_get(vector, index as c_size_t) as i32, has_value = true };
+        }
+    }
+
+    /// Replaces an existing element only; failure preserves contents.
+    method func set(value: &mut IntVector, index: u32, element: i32): b8
+    {
+        unsafe { return int_vector_native::sage_int_vector_set(value as SageIntVectorState*, index as c_size_t, element as c_int) != 0; }
+    }
+
+    /// Removes and returns the last element; has_value=false when empty.
+    method func pop(value: &mut IntVector): IntRead
+    {
+        unsafe
+        {
+            var vector: SageIntVectorState* = value as SageIntVectorState*;
+            var count: u32 = int_vector_native::sage_int_vector_length(vector) as u32;
+            if (count == 0) { return { value = 0, has_value = false }; }
+            var index: u32 = count - 1;
+            var last: i32 = int_vector_native::sage_int_vector_get(vector, index as c_size_t) as i32;
+            int_vector_native::sage_int_vector_pop(vector);
+            return { value = last, has_value = true };
+        }
+    }
+
+    /// Resets length to zero, keeping allocated capacity.
+    method func clear(value: &mut IntVector): none
+    {
+        unsafe { int_vector_native::sage_int_vector_clear(value as SageIntVectorState*); }
+    }
+
+    /// Consumes ownership; the parameter's automatic cleanup frees storage once.
+    func release(value: IntVector): none {}
+}

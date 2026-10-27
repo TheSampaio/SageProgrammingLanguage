@@ -1,0 +1,98 @@
+extern trace("@TRACKER_HEADER@")
+{
+    type ResourceHandle;
+    func resource_open(id: c_int): ResourceHandle*;
+    func resource_close(handle: ResourceHandle*): c_int;
+    func resource_outstanding(): c_int;
+    func resource_release_order(): c_int;
+    func resource_drop_calls(): c_int;
+    func resource_reset(): none;
+    func resource_check(condition: b8, name: str): none;
+    resource OwnedHandle: ResourceHandle* drop resource_close;
+}
+
+struct Inner { first: OwnedHandle; value: i32; }
+struct Outer { nested: Inner; last: OwnedHandle; value: i32; }
+struct Deep { outer: Outer; extra: OwnedHandle; }
+
+func produce(id: i32): OwnedHandle
+{
+    unsafe
+    {
+        var owner: OwnedHandle = trace::resource_open(id as c_int) as OwnedHandle;
+        return owner;
+    }
+}
+
+func early(): i32
+{
+    var first: OwnedHandle = produce(4);
+    var deep: Deep = { outer = { nested = { first = first, value = 8 } } };
+    return deep.outer.nested.value;
+}
+
+func replace_early(): i32
+{
+    var deep: Deep = {};
+    var replacement: OwnedHandle = produce(5);
+    deep.outer.nested.first = replacement;
+    return deep.outer.nested.value;
+}
+
+unsafe func main(): none
+{
+    trace::resource_reset();
+    if (true)
+    {
+        var first: OwnedHandle = produce(1);
+        var last: OwnedHandle = produce(2);
+        var extra: OwnedHandle = produce(3);
+        var deep: Deep = {
+            outer = { nested = { first = first, value = 7 }, last = last, value = 9 },
+            extra = extra
+        };
+        trace::resource_check(deep.outer.nested.value == 7 && deep.outer.value == 9, "nested_scalar_access");
+        trace::resource_check(trace::resource_outstanding() == 3, "nested_fields_live");
+    }
+    trace::resource_check(trace::resource_outstanding() == 0, "nested_fields_cleaned");
+    trace::resource_check(trace::resource_release_order() == 321, "recursive_reverse_cleanup_order");
+    trace::resource_check(trace::resource_drop_calls() == 3, "each_nested_field_dropped_once");
+
+    trace::resource_reset();
+    var result: i32 = early();
+    trace::resource_check(result == 8, "nested_early_return_value");
+    trace::resource_check(trace::resource_outstanding() == 0, "nested_early_return_cleanup");
+    trace::resource_check(trace::resource_release_order() == 4 && trace::resource_drop_calls() == 1,
+        "partial_nested_cleanup_once");
+
+    trace::resource_reset();
+    if (true)
+    {
+        var empty: Deep = {};
+        trace::resource_check(empty.outer.nested.value == 0, "empty_nested_struct_zeroed");
+    }
+    trace::resource_check(trace::resource_drop_calls() == 0, "empty_nested_struct_skips_destructors");
+
+    trace::resource_reset();
+    if (true)
+    {
+        var first: OwnedHandle = produce(1);
+        var extra: OwnedHandle = produce(2);
+        var deep: Deep = { outer = { nested = { first = first } }, extra = extra };
+        var replacement: OwnedHandle = produce(3);
+        deep.outer.nested.first = replacement;
+        trace::resource_check(trace::resource_outstanding() == 2, "nested_replacement_old_field_released");
+        trace::resource_check(trace::resource_release_order() == 1, "nested_replacement_old_field_first");
+        trace::resource_check(trace::resource_drop_calls() == 1, "nested_replacement_old_field_once");
+    }
+    trace::resource_check(trace::resource_outstanding() == 0, "nested_replacement_scope_cleanup");
+    trace::resource_check(trace::resource_release_order() == 123, "nested_replacement_recursive_order");
+    trace::resource_check(trace::resource_drop_calls() == 3, "nested_replacement_total_drops");
+
+    trace::resource_reset();
+    var replaced_result: i32 = replace_early();
+    trace::resource_check(replaced_result == 0, "empty_nested_field_return_value");
+    trace::resource_check(trace::resource_outstanding() == 0, "empty_nested_field_early_cleanup");
+    trace::resource_check(trace::resource_release_order() == 5 && trace::resource_drop_calls() == 1,
+        "empty_nested_field_replacement_dropped_once");
+}

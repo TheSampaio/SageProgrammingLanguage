@@ -1,4 +1,5 @@
-/// Unit tests: safe heap allocation with new / delete.
+/// Unit tests: `new` / `delete` are manual memory management and live behind `unsafe`.
+/// Safe code uses plain struct values instead (see `value_account`).
 use test;
 
 struct Account
@@ -8,7 +9,7 @@ struct Account
     owner: str;
 }
 
-func main(): none
+unsafe func heap_account(): f64
 {
     var acc: Account = new Account { id = 1, balance = 100.50, owner = "Alice" };
     test::assert_eq_i32("ref_id", acc.id, 1);
@@ -17,7 +18,23 @@ func main(): none
 
     acc.balance = 250.75;
     test::assert_eq_f64("ref_mutate", acc.balance, 250.75);
-
+    var balance: f64 = acc.balance;
     delete acc;
-    test::assert_true("new_delete_ok", true);
+    return balance;
+}
+
+func value_account(): f64
+{
+    var acc: Account = { id = 2, balance = 10.25, owner = "Bob" };
+    acc.balance = acc.balance * 2.0;
+    return acc.balance;
+}
+
+func main(): none
+{
+    unsafe
+    {
+        test::assert_eq_f64("unsafe_new_delete", heap_account(), 250.75);
+    }
+    test::assert_eq_f64("safe_value_replacement", value_account(), 20.5);
 }

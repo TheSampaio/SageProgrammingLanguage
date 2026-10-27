@@ -1,0 +1,30 @@
+use test;
+
+struct ContractValue { value: i32; }
+
+func main(): none
+{
+    test::assert_eq_i32("argument_contract", add(2, 3), 5);
+    test::assert_eq_i32("branch_return_contract", choose(false), 2);
+    test::assert_eq_i64("literal_argument_promotion", widen(7), 7);
+
+    var original: ContractValue = { value = 4 };
+    test::assert_eq_i32("value_parameter_copy", change_copy(original), 5);
+    test::assert_eq_i32("value_parameter_preserves_source", original.value, 4);
+
+    var returned: ContractValue = make_value();
+    test::assert_eq_i32("struct_return_contract", returned.value, 8);
+}
+
+func add(left: i32, right: i32): i32 { return left + right; }
+func choose(flag: b8): i32
+{
+    if (flag) { return 1; } else { return 2; }
+}
+func widen(value: i64): i64 { return value; }
+func change_copy(value: ContractValue): i32
+{
+    value.value = 5;
+    return value.value;
+}
+func make_value(): ContractValue { return { value = 8 }; }

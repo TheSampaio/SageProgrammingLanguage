@@ -1,0 +1,65 @@
+use test;
+
+extern native_heap("stdlib.h")
+{
+    func malloc(size: c_size_t): c_void*;
+    func free(value: c_void*): none;
+    resource NativeAllocation: c_void* drop free;
+}
+
+func resource_is_empty(value: &NativeAllocation): b8
+{
+    return value == null;
+}
+
+func resource_visit(value: &mut NativeAllocation): b8
+{
+    return resource_is_empty(&value);
+}
+
+func empty_resource(): NativeAllocation
+{
+    unsafe
+    {
+        const owner: NativeAllocation = (0 as c_void*) as NativeAllocation;
+        return owner;
+    }
+}
+
+func resource_identity(value: NativeAllocation): NativeAllocation { return value; }
+
+func resource_consume(value: NativeAllocation): none {}
+
+func main(): none
+{
+    unsafe
+    {
+        const first: NativeAllocation = native_heap::malloc(1 as c_size_t) as NativeAllocation;
+        var second: NativeAllocation = first;
+        var raw: c_void* = second as c_void*;
+        // Both allocation outcomes are legal: NULL is an empty owner.
+        test::assert_true("resource_named_handle_access", raw == (second as c_void*));
+        test::assert_true("resource_presence_matches_native_handle", (second == null) == (raw == (0 as c_void*)));
+    }
+    test::assert_true("resource_scope_completed", true);
+    unsafe
+    {
+        var empty: NativeAllocation = (0 as c_void*) as NativeAllocation;
+        if (true)
+        {
+            var view: &NativeAllocation = &empty;
+            test::assert_true("resource_shared_borrow", resource_is_empty(&view));
+        }
+        test::assert_true("resource_mutable_borrow", resource_visit(&mut empty));
+        var moved: NativeAllocation = empty;
+        test::assert_true("resource_move_after_loan", resource_is_empty(&moved));
+    }
+    test::assert_true("resource_empty_move_completed", true);
+    const returned: NativeAllocation = empty_resource();
+    test::assert_true("resource_factory_return", resource_is_empty(&returned));
+    test::assert_true("resource_contextual_null", null == returned);
+    var roundtrip: NativeAllocation = resource_identity(returned);
+    test::assert_true("resource_owning_parameter_return", resource_is_empty(&roundtrip));
+    resource_consume(roundtrip);
+    test::assert_true("resource_consuming_parameter_completed", true);
+}

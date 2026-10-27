@@ -1,0 +1,215 @@
+/// Owned, seekable binary files with explicit write capability.
+/// Byte and Text paths support bounded printable ASCII; legacy str acquisition is unsafe.
+use byte_buffer;
+use text;
+
+struct ByteRead { value: u8; has_value: b8; failed: b8; }
+struct ByteTransfer { count: u32; eof: b8; failed: b8; }
+
+module byte_file
+{
+    extern byte_file_native("sage_byte_file.h")
+    {
+        type SageByteFileState;
+        func sage_byte_file_create(path: c_char*): SageByteFileState*;
+        func sage_byte_file_create_bytes(path: u8[260], length: c_size_t): SageByteFileState*;
+        func sage_byte_file_is_open(value: SageByteFileState*): c_int;
+        func sage_byte_file_can_write(value: SageByteFileState*): c_int;
+        func sage_byte_file_read(value: SageByteFileState*): c_int;
+        func sage_byte_file_write(value: SageByteFileState*, byte: c_uchar): c_int;
+        func sage_byte_file_seek_start(value: SageByteFileState*): c_int;
+        func sage_byte_file_flush(value: SageByteFileState*): c_int;
+        func sage_byte_file_close(value: SageByteFileState*): c_int;
+        func sage_byte_file_drop(value: SageByteFileState*): none;
+        resource ByteFile: SageByteFileState* drop sage_byte_file_drop;
+    }
+
+    extern byte_file_read_only_native("sage_byte_file_read_only.h")
+    {
+        func sage_byte_file_open_read_bytes(path: u8[260], length: c_size_t): SageByteFileState*;
+    }
+
+    extern byte_file_buffer_native("sage_byte_file_buffer.h")
+    {
+        func sage_byte_file_read_buffer(value: SageByteFileState*, buffer: SageByteBufferState*, limit: c_size_t): c_size_t;
+        func sage_byte_file_write_buffer(value: SageByteFileState*, buffer: SageByteBufferState*, limit: c_size_t): c_size_t;
+        func sage_byte_file_transfer_eof(value: SageByteFileState*): c_int;
+        func sage_byte_file_transfer_failed(value: SageByteFileState*): c_int;
+    }
+
+    /// Creates/truncates a binary update file. A valid NUL-terminated path is
+    /// required. Failure returns an empty owner; no native pointer is returned.
+    unsafe func create(path: str): ByteFile
+    {
+        var owner: ByteFile = byte_file_native::sage_byte_file_create(path as c_char*) as ByteFile;
+        return owner;
+    }
+
+    /// Creates/truncates a file using 1..259 printable ASCII bytes from path.
+    /// Rejects invalid prefixes before opening; ignores the remaining array bytes.
+    /// Returns an empty owner on validation, allocation, or native open failure.
+    func create_bytes(path: u8[260], length: u16): ByteFile
+    {
+        unsafe
+        {
+            var owner: ByteFile = byte_file_native::sage_byte_file_create_bytes(path, length as c_size_t) as ByteFile;
+            return owner;
+        }
+    }
+
+    func empty(): ByteFile
+    {
+        unsafe
+        {
+            var owner: ByteFile = (0 as SageByteFileState*) as ByteFile;
+            return owner;
+        }
+    }
+
+    /// Opens an existing binary file for reading without creating/truncating it.
+    /// Same bounded printable ASCII path contract as create_bytes. Empty on failure.
+    func open_read_bytes(path: u8[260], length: u16): ByteFile
+    {
+        unsafe
+        {
+            var owner: ByteFile = byte_file_read_only_native::sage_byte_file_open_read_bytes(path, length as c_size_t) as ByteFile;
+            return owner;
+        }
+    }
+
+    func is_open(value: &ByteFile): b8
+    {
+        if (value == null) { return false; }
+        unsafe { return byte_file_native::sage_byte_file_is_open(value as SageByteFileState*) != 0; }
+    }
+
+    /// Whether this open handle's mode permits output; not a promise of I/O success.
+    func can_write(value: &ByteFile): b8
+    {
+        if (value == null) { return false; }
+        unsafe { return byte_file_native::sage_byte_file_can_write(value as SageByteFileState*) != 0; }
+    }
+
+    /// EOF: has_value=false, failed=false. Failure: has_value=false, failed=true.
+    /// value is meaningful only when has_value=true.
+    func read_byte(value: &mut ByteFile): ByteRead
+    {
+        if (value == null) { return { value = 0, has_value = false, failed = true }; }
+        unsafe
+        {
+            var result: c_int = byte_file_native::sage_byte_file_read(value as SageByteFileState*);
+            if (result >= 0) { return { value = result as u8, has_value = true, failed = false }; }
+            return { value = 0, has_value = false, failed = result != -1 };
+        }
+    }
+
+    func write_byte(value: &mut ByteFile, byte: u8): b8
+    {
+        if (value == null) { return false; }
+        unsafe { return byte_file_native::sage_byte_file_write(value as SageByteFileState*, byte as c_uchar) != 0; }
+    }
+
+    /// Replaces buffer contents with up to limit bytes, bounded by capacity.
+    /// Zero limit is a no-op. Invalid owners/limits and positioning failures
+    /// preserve the buffer; after native input begins, length becomes count.
+    func read_buffer(value: &mut ByteFile, buffer: &mut ByteBuffer, limit: u32): ByteTransfer
+    {
+        if (value == null || buffer == null) { return { count = 0, eof = false, failed = true }; }
+        unsafe
+        {
+            var count: c_size_t = byte_file_buffer_native::sage_byte_file_read_buffer(value as SageByteFileState*, buffer as SageByteBufferState*, limit as c_size_t);
+            var ended: b8 = byte_file_buffer_native::sage_byte_file_transfer_eof(value as SageByteFileState*) != 0;
+            var failed: b8 = byte_file_buffer_native::sage_byte_file_transfer_failed(value as SageByteFileState*) != 0;
+            return { count = count as u32, eof = ended, failed = failed };
+        }
+    }
+
+    /// Writes up to limit initialized prefix bytes. Does not mutate the buffer.
+    /// Count can be nonzero on failure; successful writes can still be buffered.
+    func write_buffer(value: &mut ByteFile, buffer: &ByteBuffer, limit: u32): ByteTransfer
+    {
+        if (value == null || buffer == null) { return { count = 0, eof = false, failed = true }; }
+        unsafe
+        {
+            var count: c_size_t = byte_file_buffer_native::sage_byte_file_write_buffer(value as SageByteFileState*, buffer as SageByteBufferState*, limit as c_size_t);
+            var failed: b8 = byte_file_buffer_native::sage_byte_file_transfer_failed(value as SageByteFileState*) != 0;
+            return { count = count as u32, eof = false, failed = failed };
+        }
+    }
+
+    func seek_start(value: &mut ByteFile): b8
+    {
+        if (value == null) { return false; }
+        unsafe { return byte_file_native::sage_byte_file_seek_start(value as SageByteFileState*) != 0; }
+    }
+
+    func flush(value: &mut ByteFile): b8
+    {
+        if (value == null) { return false; }
+        unsafe { return byte_file_native::sage_byte_file_flush(value as SageByteFileState*) != 0; }
+    }
+
+    /// Consumes ownership even on failure. Reports fclose status; automatic drop
+    /// then frees the native state without attempting fclose again.
+    func close(value: ByteFile): b8
+    {
+        if (value == null) { return false; }
+        unsafe { return byte_file_native::sage_byte_file_close(value as SageByteFileState*) == 0; }
+    }
+
+    // --- Owned Text paths and contents ---
+
+    extern byte_file_text_native("sage_byte_file_text.h")
+    {
+        func sage_byte_file_create_text(path: SageTextState*): SageByteFileState*;
+        func sage_byte_file_open_read_text(path: SageTextState*): SageByteFileState*;
+        func sage_byte_file_write_text(value: SageByteFileState*, text: SageTextState*): c_size_t;
+        func sage_byte_file_read_text(value: SageByteFileState*, text: SageTextState*): c_size_t;
+    }
+
+    /// Creates/truncates a file named by 1..259 printable ASCII bytes of path.
+    /// Empty owner on invalid path, allocation, or native open failure.
+    func create_text(path: &Text): ByteFile
+    {
+        unsafe
+        {
+            var owner: ByteFile = byte_file_text_native::sage_byte_file_create_text(path as SageTextState*) as ByteFile;
+            return owner;
+        }
+    }
+
+    /// Opens an existing file read-only (no create/truncate); same path contract.
+    func open_read_text(path: &Text): ByteFile
+    {
+        unsafe
+        {
+            var owner: ByteFile = byte_file_text_native::sage_byte_file_open_read_text(path as SageTextState*) as ByteFile;
+            return owner;
+        }
+    }
+
+    /// Writes every byte of text at the current position. Count can be partial on failure.
+    func write_text(value: &mut ByteFile, text: &Text): ByteTransfer
+    {
+        if (value == null) { return { count = 0, eof = false, failed = true }; }
+        unsafe
+        {
+            var count: c_size_t = byte_file_text_native::sage_byte_file_write_text(value as SageByteFileState*, text as SageTextState*);
+            var failed: b8 = byte_file_buffer_native::sage_byte_file_transfer_failed(value as SageByteFileState*) != 0;
+            return { count = count as u32, eof = false, failed = failed };
+        }
+    }
+
+    /// Replaces text with up to its capacity bytes read from the current position.
+    func read_text(value: &mut ByteFile, text: &mut Text): ByteTransfer
+    {
+        if (value == null) { return { count = 0, eof = false, failed = true }; }
+        unsafe
+        {
+            var count: c_size_t = byte_file_text_native::sage_byte_file_read_text(value as SageByteFileState*, text as SageTextState*);
+            var ended: b8 = byte_file_buffer_native::sage_byte_file_transfer_eof(value as SageByteFileState*) != 0;
+            var failed: b8 = byte_file_buffer_native::sage_byte_file_transfer_failed(value as SageByteFileState*) != 0;
+            return { count = count as u32, eof = ended, failed = failed };
+        }
+    }
+}

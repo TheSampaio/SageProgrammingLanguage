@@ -1,0 +1,73 @@
+use test;
+use text;
+
+func consume(value: Text): u32 { return value.length(); }
+
+func main(): none
+{
+    var greeting: Text = text::from("Hello");
+    test::assert_true("text_from_allocated", greeting.is_allocated());
+    test::assert_true("text_from_length", greeting.length() == 5);
+    test::assert_true("text_from_exact_capacity", greeting.capacity() == 5);
+    test::assert_true("text_equals_str", greeting.equals_str("Hello"));
+    test::assert_false("text_equals_str_prefix", greeting.equals_str("Hell"));
+    test::assert_false("text_full_append_fails", greeting.append_str("!"));
+    test::assert_true("text_failed_append_preserves", greeting.equals_str("Hello"));
+
+    var message: Text = text::create(32);
+    test::assert_true("text_create_empty", message.length() == 0 && message.capacity() == 32);
+    test::assert_true("text_append_owner", message.append(&greeting));
+    test::assert_true("text_append_str", message.append_str(", Sage"));
+    test::assert_true("text_push_byte", message.push(33));
+    test::assert_true("text_appended_contents", message.equals_str("Hello, Sage!"));
+    test::assert_true("text_qualified_matches_method", text::length(&message) == message.length());
+
+    var first: TextByte = message.byte_at(0);
+    test::assert_true("text_byte_at_first", first.has_value && first.value == 72);
+    var end: u32 = message.length();
+    var outside: TextByte = message.byte_at(end);
+    test::assert_false("text_byte_at_length_unavailable", outside.has_value);
+    test::assert_true("text_byte_at_missing_zero", outside.value == 0);
+
+    var too_long: Text = text::create(3);
+    test::assert_false("text_append_over_capacity_fails", too_long.append_str("abcd"));
+    test::assert_true("text_append_all_or_nothing", too_long.length() == 0);
+    test::assert_true("text_append_exact_fit", too_long.append_str("abc"));
+    test::assert_false("text_push_when_full_fails", too_long.push(100));
+
+    var apple: Text = text::from("apple");
+    var banana: Text = text::from("banana");
+    var app: Text = text::from("app");
+    test::assert_eq_i32("text_compare_less", apple.compare(&banana), -1);
+    test::assert_eq_i32("text_compare_greater", banana.compare(&apple), 1);
+    test::assert_eq_i32("text_compare_prefix_shorter", app.compare(&apple), -1);
+    var apple_again: Text = apple.copy();
+    test::assert_true("text_copy_equal", apple_again.equals(&apple));
+    test::assert_true("text_copy_independent", apple_again.append_str("") && apple_again.capacity() == 5);
+    apple_again.clear();
+    test::assert_true("text_clear_resets_length", apple_again.length() == 0 && apple_again.capacity() == 5);
+    test::assert_true("text_copy_source_unchanged", apple.equals_str("apple"));
+
+    var moved: Text = message;
+    test::assert_true("text_move_preserves_contents", moved.equals_str("Hello, Sage!"));
+    test::assert_true("text_consuming_parameter", consume(moved) == 12);
+
+    var zero: Text = text::create(0);
+    test::assert_true("text_zero_capacity_allocated", zero != null);
+    test::assert_true("text_zero_capacity_empty_append", zero.append_str(""));
+    test::assert_false("text_zero_capacity_push_fails", zero.push(1));
+
+    var absent: Text = text::empty();
+    test::assert_false("text_empty_not_allocated", absent.is_allocated());
+    test::assert_true("text_empty_reads_as_empty", absent.length() == 0 && absent.equals_str(""));
+    test::assert_false("text_empty_append_fails", absent.append_str("x"));
+    test::assert_false("text_append_from_empty_fails", zero.append(&absent));
+    var absent_copy: Text = absent.copy();
+    test::assert_false("text_copy_of_empty_is_empty", absent_copy.is_allocated());
+    var line: LineRead = absent.read_line();
+    test::assert_true("text_read_line_empty_owner_fails", line.failed && line.count == 0);
+
+    test::assert_true("text_print", greeting.print());
+    test::assert_true("text_print_line", greeting.print_line());
+    text::release(greeting);
+}

@@ -2,6 +2,7 @@
 using System.Text.Json.Serialization;
 using Sage.Ast;
 using Sage.Interfaces;
+using Sage.Core;
 
 namespace Sage.Utilities
 {
@@ -12,6 +13,12 @@ namespace Sage.Utilities
     /// </summary>
     public class AstPrinter : IAstVisitor<object>
     {
+        public object Visit(NativeResourceDeclarationNode node) => new
+        {
+            Type = "NativeResourceDeclaration", node.Name, node.NativeType, node.DestructorName,
+            ResolvedDestructor = TypeSystem.GetNativeResource(node.Name)?.DestructorBinding,
+            DestructorReturnType = TypeSystem.GetNativeResource(node.Name)?.DestructorReturnType
+        };
         private readonly JsonSerializerOptions _options = new()
         {
             WriteIndented = true,
@@ -42,7 +49,8 @@ namespace Sage.Utilities
         {
             Type = "Module",
             node.Name,
-            Functions = node.Functions.Select(f => f.Accept(this))
+            Functions = node.Functions.Select(f => f.Accept(this)),
+            ExternBlocks = node.Members.OfType<ExternBlockNode>().Select(external => external.Accept(this))
         };
 
         /// <summary>Visits a function declaration including signature and body.</summary>
@@ -51,6 +59,7 @@ namespace Sage.Utilities
             Type = "FunctionDeclaration",
             node.Name,
             node.IsExtern,
+            node.IsMethod,
             node.ReturnType,
             Parameters = node.Parameters.Select(p => new { p.Name, p.Type }),
             Body = node.Body?.Accept(this)
@@ -132,6 +141,7 @@ namespace Sage.Utilities
         public object Visit(BinaryExpressionNode node) => new
         {
             Type = "BinaryExpression",
+            node.IsResourceNullComparison,
             Left = node.Left.Accept(this),
             node.Operator,
             Right = node.Right.Accept(this)
@@ -159,6 +169,17 @@ namespace Sage.Utilities
         {
             Type = "FunctionCall",
             FunctionName = node.Name,
+            node.ResolvedName,
+            Arguments = node.Arguments.Select(a => a.Accept(this))
+        };
+
+        /// <summary>Visits an extension-method call and the module function it resolved to.</summary>
+        public object Visit(MethodCallNode node) => new
+        {
+            Type = "MethodCall",
+            MethodName = node.Name,
+            ResolvedName = node.Lowered?.ResolvedName,
+            Receiver = node.Receiver.Accept(this),
             Arguments = node.Arguments.Select(a => a.Accept(this))
         };
 
@@ -174,7 +195,15 @@ namespace Sage.Utilities
         public object Visit(IdentifierNode node) => new
         {
             Type = "Identifier",
-            node.Name
+            node.Name,
+            node.IsBorrowedValue
+        };
+
+        public object Visit(BorrowExpressionNode node) => new
+        {
+            Type = "Borrow",
+            node.IsMutable,
+            Target = node.Target.Accept(this)
         };
 
         /// <summary>Visits a 'use' directive for module imports.</summary>
@@ -242,6 +271,7 @@ namespace Sage.Utilities
         public object Visit(ArrayAccessNode node) => new
         {
             Type = "ArrayAccess",
+            CheckedLength = node.CheckedLength,
             Array = node.Array.Accept(this),
             Index = node.Index.Accept(this)
         };

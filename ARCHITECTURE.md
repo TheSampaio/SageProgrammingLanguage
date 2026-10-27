@@ -18,7 +18,7 @@ The Sage compilation process is divided into six sequential stages. Each stage t
 ### C. Backend (Synthesis)
 
 4. **Code Generator:** Traverses the AST and emits optimized, standards-compliant C11 source code. It handles the translation of Sage features (like string interpolation) into C-compatible logic.
-5. **Native Compiler (GCC):** The native toolchain transforms the generated C code into a functional standalone binary (`.exe`).
+5. **Native Compiler (GCC):** `Core/Build/NativeBuilder` compiles each generated C module separately (`gcc -c` into `obj/<module>.o`, in parallel) and links the objects with the `extern` link libraries into a standalone binary (`.exe`). Unchanged objects and executables are reused from a content-addressed cache. See [incremental builds](docs/incremental-build.md).
 6. **Process Executor:** Manages the secure execution and cleanup of the final program within the host environment.
 
 ## 2. Project Structure
@@ -58,14 +58,54 @@ Sage utilizes a **Static Typing** system with a focus on ABI safety and predicta
 
 ### Memory Safety Model
 
-Sage is memory-safe by default. The `SemanticAnalyzer` tracks an **unsafe context depth** and rejects raw pointer usage outside it:
+The current compiler restricts some raw pointer operations through an **unsafe context depth** in `SemanticAnalyzer`. It also tracks local heap-reference transfers and deletion across branches through `OwnershipState`. See [implemented memory semantics](docs/memory.md) for exact guarantees and [the target model](docs/memory-model-proposal.md) for subsequent work.
 
-* **Raw pointers** (`T*`, including `none*`) may only be *declared*, *cast to*, or *dereferenced/indexed* inside an `unsafe { }` block or an `unsafe func`. `str` is a first-class safe string, not a raw pointer.
+* **Raw pointers** (`T*`, including `none*`) may only be *declared*, *cast to*, or *dereferenced/indexed* inside an `unsafe { }` block or an `unsafe func`. `str` is a distinct surface type, but its generated `char*` lifetime is not checked.
 * **`extern` is implicitly unsafe**: FFI signatures may traffic in raw pointers without extra annotation.
-* **`new` / `delete`**: `new T { ... }` allocates on the heap and yields a *safe reference* — surface type `T`, but represented as `T*` in C (member access lowers to `->`). References carry no pointer arithmetic and are released with `delete` (→ `free`). The reference-ness of a value is tracked via the `AstNode.IsReference` annotation and `SymbolMetadata.IsReference`.
+* **`new` / `delete`** (unsafe-only since v0.32.2, S133): `new T { ... }` allocates on the heap and yields a reference with surface type `T`, represented as `T*` in C (member access lowers to `->`). `SymbolMetadata.Ownership` records availability, transfer, and deletion by binding identity. The analyzer snapshots and merges these states across conditional branches; the backend clears moved and deleted pointers and uses typed GCC cleanup helpers for scope exit and early return.
 * **`const` is enforced**: reassigning a constant is a compile error (`SymbolMetadata.IsConstant`).
 
 ### Scope Management (`SymbolTable`)
+
+Callable origin and module-scoping rules are documented in [module resolution](docs/modules.md).
+Argument, return, and native-alias checks are documented in [function contracts](docs/function-contracts.md).
+The initial borrowed-parameter model and its lifetime boundary are documented in [borrowing](docs/borrowing.md).
+Recursive checks of struct and fixed-array literals are documented in [aggregate contracts](docs/aggregate-contracts.md).
+Fixed-array access checks and runtime failure behavior are documented in [array bounds](docs/array-bounds.md).
+Inferred copy capabilities and fixed-array value passing are documented in [value copies](docs/value-copy.md).
+Explicit `extern` call contexts and the stdlib migration are documented in [native boundaries](docs/native-boundaries.md).
+The post-discovery native resource declaration pass is documented in [resource contracts](docs/native-resource-contracts.md).
+Resource locals share binding-identity move/branch tracking with heap owners;
+typed GCC cleanup helpers call the declared destructor once for non-null handles.
+Native adoption and raw-handle access are trusted unsafe boundaries. Resource
+borrows reuse the lexical loan/call conflict checks and never adopt ownership.
+Resource returns move a named owner, clearing it before callee cleanup; their
+call results must directly initialize local owners. Resource value parameters
+consume named owners; the callee adopts them into cleanup locals before the body.
+Calls reject consuming/borrowing the same resource and require stable other
+arguments to avoid depending on C argument evaluation order. Resource arrays and
+fields remain disabled.
+Resource null comparisons are validated on named owners/borrows and marked in
+the AST. The C backend reads the private handle without exposing a raw pointer.
+Contextual `null` does not construct resources or add a general raw-pointer null
+literal. Presence arguments in consuming calls require prior local evaluation.
+The bounded [byte-file stdlib API](docs/byte-files.md) owns a native stream state,
+uses mutable borrows for byte I/O, and consumes ownership for fallible close.
+Its native helper header ships in the compiler's `Runtime/include` directory,
+resolved relative to the executable. Standard-library directories contain only `.sg`.
+Bounded printable ASCII paths use `create_bytes(u8[260], u16)` with prefix
+validation and native termination; legacy `create(str)` remains unsafe.
+`open_read_bytes` uses the same bounded path contract for existing input files
+without truncation. The native handle retains a write capability fixed by its
+constructor; incompatible byte/block writes and flush are rejected before stdio.
+The [byte-buffer API](docs/byte-buffers.md) uses the same resource/borrow contracts
+for exclusive fixed-capacity storage. Native bounds checks expose only the
+initialized prefix; push initializes before extending length, and clear hides
+previous contents without freeing the allocation. No raw buffer escapes.
+Block file reads replace the buffer's initialized prefix with the actual count;
+block writes borrow only initialized source bytes. Per-file native transfer
+flags are captured while the exclusive file borrow is held and returned as an
+ordinary `ByteTransfer` value with independent count, EOF and failure fields.
 
 The `SymbolTable` uses a `Stack<Dictionary<string, Symbol>>` to represent **Lexical Scoping**.
 
@@ -78,6 +118,6 @@ The `SymbolTable` uses a `Stack<Dictionary<string, Symbol>>` to represent **Lexi
 1. **Single Responsibility**: Each class has one job (e.g., `Lexer` only knows about characters and tokens).
 2. **Open/Closed Principle**: The Visitor Pattern allows us to add new operations (like a Linter or Formatter) without modifying existing AST nodes.
 3. **Immutability**: Once an AST node is created by the parser, its state is frozen to prevent side effects during analysis.
-4. **Standardized Diagnostics**: All errors follow the `file(line,col): error CODE: Message` format for IDE compatibility (e.g., VS Code problem matchers).
+4. **Standardized Diagnostics**: All errors follow the `file(line,col): error CODE: Message` format for IDE compatibility (e.g., VS Code problem matchers). `--diagnostics json` emits one structured object per diagnostic (rule, related locations, suggestion); see [diagnostics](docs/diagnostics.md).
 
 © 2026 Kellvyn Sampaio — Sage Language Project

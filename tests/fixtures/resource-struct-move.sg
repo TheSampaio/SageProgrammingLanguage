@@ -1,0 +1,198 @@
+extern trace("@TRACKER_HEADER@")
+{
+    type ResourceHandle;
+    func resource_open(id: c_int): ResourceHandle*;
+    func resource_close(handle: ResourceHandle*): c_int;
+    func resource_outstanding(): c_int;
+    func resource_release_order(): c_int;
+    func resource_drop_calls(): c_int;
+    func resource_reset(): none;
+    func resource_check(condition: b8, name: str): none;
+    resource OwnedHandle: ResourceHandle* drop resource_close;
+}
+
+struct Pair
+{
+    first: OwnedHandle;
+    second: OwnedHandle;
+    value: i32;
+}
+
+struct Outer
+{
+    nested: Pair;
+    last: OwnedHandle;
+}
+
+func produce(id: i32): OwnedHandle
+{
+    unsafe
+    {
+        var owner: OwnedHandle = trace::resource_open(id as c_int) as OwnedHandle;
+        return owner;
+    }
+}
+
+func build(id: i32): Pair
+{
+    var handle: OwnedHandle = produce(id);
+    var pair: Pair = { first = handle, value = id };
+    return pair;
+}
+
+func build_literal(id: i32): Pair
+{
+    var handle: OwnedHandle = produce(id);
+    return { second = handle, value = id };
+}
+
+func consume(pair: Pair): i32
+{
+    return pair.value;
+}
+
+func forward(pair: Pair): Pair
+{
+    return pair;
+}
+
+func consume_early(pair: Pair, stop: b8): i32
+{
+    if (stop)
+    {
+        return 1;
+    }
+    var other: Pair = pair;
+    return other.value;
+}
+
+func maybe_consume(pair: Pair, take: b8): none
+{
+    if (take)
+    {
+        var sink: i32 = consume(pair);
+    }
+}
+
+unsafe func main(): none
+{
+    trace::resource_reset();
+    if (true)
+    {
+        var handle: OwnedHandle = produce(1);
+        var source: Pair = { first = handle, value = 4 };
+        var target: Pair = source;
+        trace::resource_check(target.value == 4, "local_move_keeps_fields");
+        trace::resource_check(trace::resource_outstanding() == 1, "local_move_keeps_handle_live");
+    }
+    trace::resource_check(trace::resource_outstanding() == 0 && trace::resource_drop_calls() == 1, "local_move_drops_once");
+
+    trace::resource_reset();
+    if (true)
+    {
+        var handle: OwnedHandle = produce(2);
+        var pair: Pair = { first = handle, value = 6 };
+        var value: i32 = consume(pair);
+        trace::resource_check(value == 6, "parameter_reads_moved_value");
+        trace::resource_check(trace::resource_outstanding() == 0, "parameter_cleanup_in_callee");
+    }
+    trace::resource_check(trace::resource_drop_calls() == 1, "parameter_move_drops_once");
+
+    trace::resource_reset();
+    if (true)
+    {
+        var built: Pair = build(3);
+        var literal: Pair = build_literal(4);
+        trace::resource_check(built.value == 3 && literal.value == 4, "returned_values_preserved");
+        trace::resource_check(trace::resource_outstanding() == 2 && trace::resource_drop_calls() == 0, "returned_handles_live");
+        var forwarded: Pair = forward(built);
+        trace::resource_check(forwarded.value == 3 && trace::resource_outstanding() == 2, "forwarded_handle_live");
+    }
+    trace::resource_check(trace::resource_outstanding() == 0, "returned_handles_cleaned");
+    trace::resource_check(trace::resource_release_order() == 34 && trace::resource_drop_calls() == 2, "returned_cleanup_order");
+
+    trace::resource_reset();
+    if (true)
+    {
+        var a: OwnedHandle = produce(1);
+        var b: OwnedHandle = produce(2);
+        var target: Pair = { first = a, value = 1 };
+        var source: Pair = { first = b, value = 2 };
+        target = source;
+        trace::resource_check(target.value == 2, "assignment_moves_fields");
+        trace::resource_check(trace::resource_release_order() == 1 && trace::resource_outstanding() == 1, "assignment_drops_old_value");
+        target = {};
+        trace::resource_check(trace::resource_release_order() == 12 && trace::resource_outstanding() == 0, "literal_assignment_drops_old_value");
+        var c: OwnedHandle = produce(3);
+        target = { second = c, value = 3 };
+        trace::resource_check(target.value == 3 && trace::resource_outstanding() == 1, "literal_assignment_moves_owner");
+    }
+    trace::resource_check(trace::resource_release_order() == 123 && trace::resource_drop_calls() == 3, "assignment_cleanup_once");
+
+    trace::resource_reset();
+    if (true)
+    {
+        var a: OwnedHandle = produce(1);
+        var b: OwnedHandle = produce(2);
+        var c: OwnedHandle = produce(3);
+        var inner: Pair = { first = a };
+        var outer: Outer = { nested = inner, last = b };
+        var replacement: Pair = { second = c };
+        outer.nested = replacement;
+        trace::resource_check(trace::resource_release_order() == 1 && trace::resource_outstanding() == 2, "nested_struct_replacement");
+    }
+    trace::resource_check(trace::resource_release_order() == 123 && trace::resource_drop_calls() == 3, "nested_struct_cleanup");
+
+    trace::resource_reset();
+    if (true)
+    {
+        var a: OwnedHandle = produce(1);
+        var b: OwnedHandle = produce(2);
+        var first: Pair = { first = a };
+        var second: Pair = { first = b };
+        var items: Pair[2] = { first, second };
+        var c: OwnedHandle = produce(3);
+        var third: Pair = { first = c };
+        items[1] = third;
+        trace::resource_check(trace::resource_release_order() == 2 && trace::resource_outstanding() == 2, "element_replacement_drops_old");
+        var d: OwnedHandle = produce(4);
+        var index: i32 = 0;
+        items[index].second = d;
+        trace::resource_check(trace::resource_outstanding() == 3 && trace::resource_drop_calls() == 1, "element_field_replacement");
+        var e: OwnedHandle = produce(5);
+        items[0].first = e;
+        trace::resource_check(trace::resource_release_order() == 21 && trace::resource_outstanding() == 3, "element_field_drops_old");
+        var f: OwnedHandle = produce(6);
+        var handles: OwnedHandle[2] = {};
+        handles[1] = f;
+        var g: OwnedHandle = produce(7);
+        handles[1] = g;
+        trace::resource_check(trace::resource_release_order() == 216 && trace::resource_outstanding() == 4, "resource_element_replacement");
+    }
+    trace::resource_check(trace::resource_outstanding() == 0 && trace::resource_drop_calls() == 7, "array_replacement_cleanup_once");
+
+    trace::resource_reset();
+    if (true)
+    {
+        var a: OwnedHandle = produce(1);
+        var pair: Pair = { first = a, value = 9 };
+        var result: i32 = consume_early(pair, true);
+        var b: OwnedHandle = produce(2);
+        var other: Pair = { first = b, value = 8 };
+        var later: i32 = consume_early(other, false);
+        trace::resource_check(result == 1 && later == 8, "early_return_values");
+        trace::resource_check(trace::resource_outstanding() == 0 && trace::resource_drop_calls() == 2, "early_return_parameter_cleanup");
+    }
+
+    trace::resource_reset();
+    if (true)
+    {
+        var a: OwnedHandle = produce(1);
+        var kept: Pair = { first = a };
+        maybe_consume(kept, false);
+        var b: OwnedHandle = produce(2);
+        var taken: Pair = { first = b };
+        maybe_consume(taken, true);
+        trace::resource_check(trace::resource_outstanding() == 0 && trace::resource_drop_calls() == 2, "conditional_move_cleanup_once");
+    }
+}

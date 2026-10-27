@@ -1,0 +1,159 @@
+/// Standard Library: Text
+/// Owned, fixed-capacity byte text. Creation, append, compare, print and bounded
+/// line input need no unsafe code. Moves invalidate the source; cleanup is automatic.
+struct TextByte { value: u8; has_value: b8; }
+struct LineRead { count: u32; eof: b8; truncated: b8; failed: b8; }
+
+module text
+{
+    extern text_native("sage_text.h")
+    {
+        type SageTextState;
+        func sage_text_create(capacity: c_size_t): SageTextState*;
+        func sage_text_from_cstr(value: c_char*): SageTextState*;
+        func sage_text_copy(source: SageTextState*): SageTextState*;
+        func sage_text_length(value: SageTextState*): c_size_t;
+        func sage_text_capacity(value: SageTextState*): c_size_t;
+        func sage_text_byte_at(value: SageTextState*, index: c_size_t): c_int;
+        func sage_text_append_cstr(value: SageTextState*, other: c_char*): c_int;
+        func sage_text_append(value: SageTextState*, other: SageTextState*): c_int;
+        func sage_text_push(value: SageTextState*, byte: c_uchar): c_int;
+        func sage_text_clear(value: SageTextState*): none;
+        func sage_text_compare(left: SageTextState*, right: SageTextState*): c_int;
+        func sage_text_compare_cstr(left: SageTextState*, right: c_char*): c_int;
+        func sage_text_print(value: SageTextState*, newline: c_int): c_int;
+        func sage_text_read_line(value: SageTextState*): c_int;
+        func sage_text_drop(value: SageTextState*): none;
+        resource Text: SageTextState* drop sage_text_drop;
+    }
+
+    /// Empty text with a fixed byte capacity (zero is valid). Empty owner on failure.
+    func create(capacity: u32): Text
+    {
+        unsafe
+        {
+            var owner: Text = text_native::sage_text_create(capacity as c_size_t) as Text;
+            return owner;
+        }
+    }
+
+    /// Copies a string's bytes; capacity equals its length. Empty owner on failure.
+    /// The legacy str contract (a valid terminated string) is trusted here.
+    func from(value: str): Text
+    {
+        unsafe
+        {
+            var owner: Text = text_native::sage_text_from_cstr(value as c_char*) as Text;
+            return owner;
+        }
+    }
+
+    /// Independent owner with the same contents and capacity. Empty on failure.
+    method func copy(value: &Text): Text
+    {
+        unsafe
+        {
+            var owner: Text = text_native::sage_text_copy(value as SageTextState*) as Text;
+            return owner;
+        }
+    }
+
+    func empty(): Text
+    {
+        unsafe
+        {
+            var owner: Text = (0 as SageTextState*) as Text;
+            return owner;
+        }
+    }
+
+    method func is_allocated(value: &Text): b8 { return value != null; }
+
+    /// Number of initialized bytes. Empty owners report zero.
+    method func length(value: &Text): u32
+    {
+        unsafe { return text_native::sage_text_length(value as SageTextState*) as u32; }
+    }
+
+    method func capacity(value: &Text): u32
+    {
+        unsafe { return text_native::sage_text_capacity(value as SageTextState*) as u32; }
+    }
+
+    /// has_value=false (value 0) for an empty owner or index >= length.
+    method func byte_at(value: &Text, index: u32): TextByte
+    {
+        unsafe
+        {
+            var result: c_int = text_native::sage_text_byte_at(value as SageTextState*, index as c_size_t);
+            if (result < 0) { return { value = 0, has_value = false }; }
+            return { value = result as u8, has_value = true };
+        }
+    }
+
+    /// All-or-nothing append within capacity. Failure preserves the contents.
+    method func append_str(value: &mut Text, other: str): b8
+    {
+        unsafe { return text_native::sage_text_append_cstr(value as SageTextState*, other as c_char*) != 0; }
+    }
+
+    /// Appends another owner's bytes; an empty source owner fails.
+    method func append(value: &mut Text, other: &Text): b8
+    {
+        unsafe { return text_native::sage_text_append(value as SageTextState*, other as SageTextState*) != 0; }
+    }
+
+    method func push(value: &mut Text, byte: u8): b8
+    {
+        unsafe { return text_native::sage_text_push(value as SageTextState*, byte as c_uchar) != 0; }
+    }
+
+    /// Resets length, keeping capacity. Does not securely erase storage.
+    method func clear(value: &mut Text): none
+    {
+        unsafe { text_native::sage_text_clear(value as SageTextState*); }
+    }
+
+    /// Byte-wise lexicographic order: -1, 0 or 1. Empty owners read as "".
+    method func compare(value: &Text, other: &Text): i32
+    {
+        unsafe { return text_native::sage_text_compare(value as SageTextState*, other as SageTextState*) as i32; }
+    }
+
+    method func equals(value: &Text, other: &Text): b8
+    {
+        return text::compare(&value, &other) == 0;
+    }
+
+    method func equals_str(value: &Text, other: str): b8
+    {
+        unsafe { return text_native::sage_text_compare_cstr(value as SageTextState*, other as c_char*) == 0; }
+    }
+
+    /// Writes the bytes to standard output. Returns false on output failure.
+    method func print(value: &Text): b8
+    {
+        unsafe { return text_native::sage_text_print(value as SageTextState*, 0) != 0; }
+    }
+
+    method func print_line(value: &Text): b8
+    {
+        unsafe { return text_native::sage_text_print(value as SageTextState*, 1) != 0; }
+    }
+
+    /// Replaces the contents with one standard-input line (terminator removed).
+    /// Bytes beyond capacity are consumed and discarded: truncated=true. eof=true
+    /// when input ended before a newline; failed=true for an empty owner or error.
+    method func read_line(value: &mut Text): LineRead
+    {
+        unsafe
+        {
+            var flags: i32 = text_native::sage_text_read_line(value as SageTextState*) as i32;
+            var count: u32 = text_native::sage_text_length(value as SageTextState*) as u32;
+            return { count = count, eof = flags % 2 == 1, truncated = (flags / 2) % 2 == 1, failed = (flags / 4) % 2 == 1 };
+        }
+    }
+
+    /// Consumes ownership; the parameter's automatic cleanup frees storage once.
+    func release(value: Text): none {}
+}

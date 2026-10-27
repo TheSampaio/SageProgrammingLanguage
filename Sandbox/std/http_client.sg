@@ -1,0 +1,105 @@
+/// Standard Library: HTTP Client
+/// Consume HTTP(S) APIs through the system `curl` binary (Windows 10+ ships it),
+/// so no extra libraries need to be linked.
+///
+/// The safe API (`get`, `post`, `download`) takes owned `Text` values and starts
+/// curl directly as a process, never through a command shell: arguments are
+/// quoted with the Windows argv rules, URLs must be http(s) with visible ASCII,
+/// POST bodies travel over stdin, and responses are bounded by the target's
+/// capacity. Only the Windows process backend exists; elsewhere calls report
+/// `unavailable`. HTTP error statuses (404, 500, ...) are not curl failures.
+///
+/// The legacy `str` helpers below build shell commands without escaping and
+/// remain `unsafe func`; prefer the Text API.
+use console;
+use text;
+
+/// ok: curl ran and exited with 0. exit_code: curl's status, -1 if it did not run.
+/// truncated: the response exceeded the target capacity (excess was discarded).
+/// rejected: invalid URL/path/owner, nothing was started. unavailable: curl could
+/// not be started or this platform has no process backend.
+struct HttpResult { ok: b8; exit_code: i32; truncated: b8; rejected: b8; unavailable: b8; }
+
+module http_client
+{
+    extern libc_stdio("stdio.h")
+    {
+        type FILE;
+
+        func popen(command: c_char*, mode: c_char*): FILE*;
+        func pclose(stream: FILE*): c_int;
+        func fread(buffer: c_void*, size: c_size_t, count: c_size_t, stream: FILE*): c_size_t;
+    }
+
+    extern http_client_native("sage_http_client.h")
+    {
+        func sage_http_get(url: SageTextState*, response: SageTextState*): c_int;
+        func sage_http_post(url: SageTextState*, data: SageTextState*, response: SageTextState*): c_int;
+        func sage_http_download(url: SageTextState*, path: SageTextState*): c_int;
+    }
+
+    // Native status: >= 0 curl exit status (+256 when truncated), -1 rejected,
+    // -2 curl could not start, -3 unsupported platform.
+    func outcome(status: i32): HttpResult
+    {
+        if (status == -1) { return { ok = false, exit_code = -1, truncated = false, rejected = true, unavailable = false }; }
+        if (status < 0) { return { ok = false, exit_code = -1, truncated = false, rejected = false, unavailable = true }; }
+        var code: i32 = status % 256;
+        return { ok = code == 0, exit_code = code, truncated = status >= 256, rejected = false, unavailable = false };
+    }
+
+    /// GET url; replaces response with up to its capacity bytes of the body.
+    func get(url: &Text, response: &mut Text): HttpResult
+    {
+        unsafe { return http_client::outcome(http_client_native::sage_http_get(url as SageTextState*, response as SageTextState*) as i32); }
+    }
+
+    /// POST data (sent verbatim, any bytes) to url; captures the response body.
+    func post(url: &Text, data: &Text, response: &mut Text): HttpResult
+    {
+        unsafe { return http_client::outcome(http_client_native::sage_http_post(url as SageTextState*, data as SageTextState*, response as SageTextState*) as i32); }
+    }
+
+    /// Saves the body of url to path (1..259 printable ASCII bytes, not starting with '-').
+    func download(url: &Text, path: &Text): HttpResult
+    {
+        unsafe { return http_client::outcome(http_client_native::sage_http_download(url as SageTextState*, path as SageTextState*) as i32); }
+    }
+
+    // --- Legacy shell-based helpers (unsafe: no escaping of caller data) ---
+
+    /// Performs a GET request and prints the response body to standard output.
+    unsafe func fetch(url: str): none
+    {
+        console::run("curl -s \"{url}\"");
+    }
+
+    /// Performs a POST request with a raw body and prints the response.
+    /// Renamed from `post` in v0.33.3; the safe `post` takes Text values.
+    unsafe func post_shell(url: str, data: str): none
+    {
+        console::run("curl -s -X POST -d \"{data}\" \"{url}\"");
+    }
+
+    /// Downloads a URL into a local file path.
+    /// Renamed from `download` in v0.33.3; the safe `download` takes Text values.
+    unsafe func download_shell(url: str, path: str): none
+    {
+        console::run("curl -s -o \"{path}\" \"{url}\"");
+    }
+
+    /// Performs a GET request and captures up to `max` bytes of the body into
+    /// `buffer` (which must hold at least `max` + 1 bytes). Returns the byte count.
+    unsafe func get_into(url: str, buffer: str, max: u64): u64
+    {
+        var handle: FILE* = libc_stdio::popen("curl -s \"{url}\"", "r");
+        var read: u64 = libc_stdio::fread(buffer, 1, max, handle) as u64;
+        libc_stdio::pclose(handle);
+
+        // Null-terminate the captured body so it is a valid C string.
+        var bytes: c_char* = buffer as c_char*;
+        bytes[read] = 0;
+
+        return read;
+    }
+}

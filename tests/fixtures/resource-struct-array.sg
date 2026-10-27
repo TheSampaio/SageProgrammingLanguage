@@ -1,0 +1,77 @@
+extern trace("@TRACKER_HEADER@")
+{
+    type ResourceHandle;
+    func resource_open(id: c_int): ResourceHandle*;
+    func resource_close(handle: ResourceHandle*): c_int;
+    func resource_outstanding(): c_int;
+    func resource_release_order(): c_int;
+    func resource_drop_calls(): c_int;
+    func resource_reset(): none;
+    func resource_check(condition: b8, name: str): none;
+    resource OwnedHandle: ResourceHandle* drop resource_close;
+}
+
+struct Inner { owner: OwnedHandle; value: i32; }
+struct Item { inner: Inner; tail: OwnedHandle; value: i32; }
+
+func produce(id: i32): OwnedHandle
+{
+    unsafe
+    {
+        var owner: OwnedHandle = trace::resource_open(id as c_int) as OwnedHandle;
+        return owner;
+    }
+}
+
+func early(): i32
+{
+    var owner: OwnedHandle = produce(4);
+    var items: Item[2] = { { inner = { owner = owner, value = 8 } } };
+    return items[0].inner.value;
+}
+
+unsafe func main(): none
+{
+    trace::resource_reset();
+    if (true)
+    {
+        var first: OwnedHandle = produce(1);
+        var second: OwnedHandle = produce(2);
+        var third: OwnedHandle = produce(3);
+        var items: Item[3] = {
+            { inner = { owner = first, value = 7 }, tail = second, value = 9 },
+            { inner = { owner = third, value = 8 } }
+        };
+        trace::resource_check(items[0].inner.value == 7 && items[0].value == 9, "struct_array_scalar_access");
+        trace::resource_check(items[1].inner.value == 8, "second_struct_array_element");
+        trace::resource_check(trace::resource_outstanding() == 3, "struct_array_handles_live");
+    }
+    trace::resource_check(trace::resource_outstanding() == 0, "struct_array_scope_cleanup");
+    trace::resource_check(trace::resource_release_order() == 321, "index_then_field_reverse_cleanup");
+    trace::resource_check(trace::resource_drop_calls() == 3, "struct_array_handles_dropped_once");
+
+    trace::resource_reset();
+    var result: i32 = early();
+    trace::resource_check(result == 8, "struct_array_early_return_value");
+    trace::resource_check(trace::resource_outstanding() == 0, "struct_array_early_return_cleanup");
+    trace::resource_check(trace::resource_release_order() == 4 && trace::resource_drop_calls() == 1,
+        "partial_struct_array_dropped_once");
+
+    trace::resource_reset();
+    if (true)
+    {
+        var empty: Item[2];
+        var partly_empty: Item[2] = { {} };
+    }
+    trace::resource_check(trace::resource_drop_calls() == 0, "empty_struct_arrays_skip_destructors");
+
+    trace::resource_reset();
+    for (var i: i32 = 0; i < 2; i++)
+    {
+        var owner: OwnedHandle = produce(i + 5);
+        const items: Item[1] = { { inner = { owner = owner } } };
+    }
+    trace::resource_check(trace::resource_outstanding() == 0, "struct_array_iteration_cleanup");
+    trace::resource_check(trace::resource_release_order() == 56 && trace::resource_drop_calls() == 2,
+        "const_struct_array_iteration_dropped_once");
+}

@@ -1,0 +1,22 @@
+use text;
+use console;
+
+// Echoes each stdin line with its outcome flags until input ends.
+func main(): none
+{
+    var line: Text = text::create(5);
+    var reading: b8 = true;
+    while (reading)
+    {
+        var result: LineRead = line.read_line();
+        if (result.eof && result.count == 0) { reading = false; }
+        else
+        {
+            console::print("[");
+            line.print();
+            console::print_line("] count={result.count} eof={result.eof} truncated={result.truncated} failed={result.failed}");
+            reading = !result.eof;
+        }
+    }
+    console::print_line("done");
+}

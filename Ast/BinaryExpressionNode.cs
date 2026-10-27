@@ -27,6 +27,9 @@ namespace Sage.Ast
         /// </summary>
         public AstNode Right { get; } = right;
 
+        /// <summary>True after validating a named resource comparison against contextual null.</summary>
+        public bool IsResourceNullComparison { get; set; }
+
         /// <summary>
         /// Dispatches the visitor to the appropriate visit method for this node.
         /// </summary>

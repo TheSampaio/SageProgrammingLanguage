@@ -1,0 +1,19 @@
+use test;
+
+extern native_math("stdlib.h")
+{
+    func llabs(value: c_longlong): c_longlong;
+}
+
+// Every i32 input fits in c_longlong, including the magnitude of i32's minimum.
+func native_magnitude(value: i32): i64
+{
+    unsafe { return native_math::llabs(value as c_longlong) as i64; }
+}
+
+func main(): none
+{
+    test::assert_eq_i64("native_wrapper_negative", native_magnitude(-7), 7);
+    test::assert_eq_i64("native_wrapper_zero", native_magnitude(0), 0);
+    test::assert_eq_i64("native_wrapper_i32_minimum", native_magnitude(-2147483648), 2147483648);
+}

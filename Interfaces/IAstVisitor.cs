@@ -53,6 +53,9 @@ namespace Sage.Interfaces
         /// <summary>Visits an opaque C type declaration (<c>type Name;</c>) inside an extern block.</summary>
         T Visit(ExternTypeNode node);
 
+        /// <summary>Visits an explicit native resource representation/destructor declaration.</summary>
+        T Visit(NativeResourceDeclarationNode node);
+
         // --- Control Flow Nodes ---
 
         /// <summary>Visits an if-else conditional branching structure.</summary>
@@ -75,8 +78,14 @@ namespace Sage.Interfaces
         /// <summary>Visits an explicit type cast expression.</summary>
         T Visit(CastExpressionNode node);
 
+        /// <summary>Visits an explicit borrow used as a function argument.</summary>
+        T Visit(BorrowExpressionNode node);
+
         /// <summary>Visits a function call expression including arguments.</summary>
         T Visit(FunctionCallNode node);
+
+        /// <summary>Visits an extension-method call resolved statically to a module function.</summary>
+        T Visit(MethodCallNode node);
 
         /// <summary>Visits a member access operation (e.g., object.property).</summary>
         T Visit(MemberAccessNode node);

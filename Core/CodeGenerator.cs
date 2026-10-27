@@ -15,6 +15,14 @@ namespace Sage.Core
 
         /// <summary>Monotonic counter used to mint unique C temporary identifiers.</summary>
         private int _tempCounter = 0;
+        private readonly Dictionary<string, string> _cleanupHelpers = new();
+        private readonly Dictionary<string, string> _resourceCleanupHelpers = new();
+        private readonly Dictionary<string, string> _resourceArrayCleanupHelpers = new();
+        private readonly Dictionary<string, string> _aggregateArrayCleanupHelpers = new();
+        private readonly Dictionary<string, string> _aggregateCleanupHelpers = new();
+        private readonly List<string> _aggregateCleanupOrder = [];
+        private readonly Dictionary<string, StructDeclarationNode> _structures = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _usedNames = new(StringComparer.Ordinal);
 
         /// <summary>
         /// Gets the current indentation string based on the nesting level.
@@ -29,6 +37,17 @@ namespace Sage.Core
         /// <returns>A string containing the generated C code.</returns>
         public string Generate(ProgramNode ast, string moduleName)
         {
+            _cleanupHelpers.Clear();
+            _resourceCleanupHelpers.Clear();
+            _resourceArrayCleanupHelpers.Clear();
+            _aggregateArrayCleanupHelpers.Clear();
+            _aggregateCleanupHelpers.Clear();
+            _aggregateCleanupOrder.Clear();
+            _structures.Clear();
+            foreach (var structure in ast.Statements.OfType<StructDeclarationNode>()) _structures.Add(structure.Name, structure);
+            _tempCounter = 0;
+            _usedNames.Clear();
+            ReserveNames(ast);
             string bodyCode = ast.Accept(this);
 
             var sb = new StringBuilder();
@@ -36,6 +55,39 @@ namespace Sage.Core
 
             // The C implementation file only includes its own header contract
             sb.AppendLine($"#include \"{moduleName}.h\"");
+
+            foreach (var (type, helper) in _cleanupHelpers)
+            {
+                sb.AppendLine($"static void {helper}({type}** owner) {{ free((void*)*owner); }}");
+            }
+            foreach (var (type, helper) in _resourceCleanupHelpers)
+            {
+                var contract = TypeSystem.GetNativeResource(type)!;
+                sb.AppendLine($"static void {helper}({type}* owner) {{ if (owner->_sage_handle != NULL) {{ " +
+                    $"(void){contract.DestructorCSymbol}(owner->_sage_handle); owner->_sage_handle = NULL; }} }}");
+            }
+            foreach (var (type, helper) in _resourceArrayCleanupHelpers)
+            {
+                string elementType = TypeSystem.GetArrayBaseType(type);
+                int length = TypeSystem.GetArraySize(type);
+                sb.AppendLine($"static void {helper}({elementType} (*owner)[{length}]) {{ " +
+                    $"for (int i = {length}; i > 0; --i) {_resourceCleanupHelpers[elementType]}(&(*owner)[i - 1]); }}");
+            }
+            foreach (var type in _aggregateCleanupOrder)
+            {
+                string helper = _aggregateCleanupHelpers[type];
+                var fields = _structures[type].Fields.Where(field => TypeSystem.IsNativeResource(field.Type) || IsResourceAggregate(field.Type)).Reverse();
+                sb.AppendLine($"static void {helper}({type}* owner) {{ " +
+                    string.Join(" ", fields.Select(field =>
+                        $"{(TypeSystem.IsNativeResource(field.Type) ? _resourceCleanupHelpers[field.Type] : _aggregateCleanupHelpers[field.Type])}(&owner->{field.Name});")) + " }");
+            }
+            foreach (var (type, helper) in _aggregateArrayCleanupHelpers)
+            {
+                string elementType = TypeSystem.GetArrayBaseType(type);
+                int length = TypeSystem.GetArraySize(type);
+                sb.AppendLine($"static void {helper}({elementType} (*owner)[{length}]) {{ " +
+                    $"for (int i = {length}; i > 0; --i) {_aggregateCleanupHelpers[elementType]}(&(*owner)[i - 1]); }}");
+            }
 
             sb.AppendLine("\n/* --- Generated Logic --- */");
             sb.Append(bodyCode);
@@ -55,6 +107,10 @@ namespace Sage.Core
             string cName = CNaming.ResolveFunctionName(node);
 
             var sb = new StringBuilder();
+            var arrayParameters = node.Parameters.Where(parameter => TypeSystem.IsArrayType(parameter.Type) && !TypeSystem.IsBorrowType(parameter.Type))
+                .ToDictionary(parameter => parameter.Name, _ => MintName("_incoming"));
+            var resourceParameters = node.Parameters.Where(parameter => IsOwnedValueType(parameter.Type))
+                .ToDictionary(parameter => parameter.Name, _ => MintName("_resource_incoming"));
             sb.Append($"{Indent}{cReturnType} {cName}(");
 
             if (node.Parameters.Count == 0)
@@ -63,7 +119,8 @@ namespace Sage.Core
             }
             else
             {
-                var paramsList = node.Parameters.Select(p => TypeSystem.FormatCParameter(p.Name, p.Type));
+                var paramsList = node.Parameters.Select(p => TypeSystem.FormatSageParameter(
+                    resourceParameters.GetValueOrDefault(p.Name, arrayParameters.GetValueOrDefault(p.Name, p.Name)), p.Type));
                 sb.Append(string.Join(", ", paramsList));
             }
             sb.AppendLine(")");
@@ -71,10 +128,21 @@ namespace Sage.Core
             sb.AppendLine($"{Indent}{{");
             _indent++;
 
+            foreach (var parameter in node.Parameters.Where(parameter => resourceParameters.ContainsKey(parameter.Name)))
+            {
+                string helper = OwnedCleanupHelper(parameter.Type);
+                sb.AppendLine($"{Indent}{parameter.Type} {parameter.Name} __attribute__((cleanup({helper}))) = {resourceParameters[parameter.Name]};");
+            }
+
+            foreach (var parameter in node.Parameters.Where(parameter => arrayParameters.ContainsKey(parameter.Name)))
+            {
+                sb.AppendLine($"{Indent}{TypeSystem.FormatCParameter(parameter.Name, parameter.Type)};");
+                sb.AppendLine($"{Indent}memmove({parameter.Name}, {arrayParameters[parameter.Name]}, sizeof({parameter.Name}));");
+            }
+
             if (node.Body != null)
             {
-                foreach (var stmt in node.Body.Statements)
-                    sb.Append(stmt.Accept(this));
+                sb.Append(node.Body.Accept(this));
             }
 
             if (isMain)
@@ -91,15 +159,22 @@ namespace Sage.Core
         /// </summary>
         public string Visit(FunctionCallNode node)
         {
-            string cName = node.Name;
-            if (cName.Contains("::"))
+            string cName = CallSymbol(node);
+            var cArgs = node.Arguments.Select(a =>
             {
-                // Handle external namespace calls or internal module scoping
-                cName = node.IsExternCall ? cName.Split("::")[1] : cName.Replace("::", "_");
-            }
-            var cArgs = node.Arguments.Select(a => a.Accept(this));
+                string expression = a.Accept(this);
+                if (!node.IsExternCall && a is IdentifierNode && a.VariableType != null && IsOwnedValueType(a.VariableType))
+                    return MoveResource(expression, a.VariableType);
+                return a is ArrayInitializationNode && a.VariableType != null && TypeSystem.IsArrayType(a.VariableType)
+                    ? $"({TypeSystem.ToCType(TypeSystem.GetArrayBaseType(a.VariableType))}[{TypeSystem.GetArraySize(a.VariableType)}]){expression}"
+                    : expression;
+            });
             return $"{cName}({string.Join(", ", cArgs)})";
         }
+
+        /// <summary>An extension-method call emits the qualified call validated by semantic analysis.</summary>
+        public string Visit(MethodCallNode node) =>
+            (node.Lowered ?? throw new InvalidOperationException($"Method '{node.Name}' was not resolved.")).Accept(this);
 
         /// <summary>
         /// Transpiles a variable declaration, handling constants and arrays.
@@ -107,19 +182,103 @@ namespace Sage.Core
         public string Visit(VariableDeclarationNode node)
         {
             string prefix = node.IsConstant ? "const " : "";
-            string init = node.Initializer != null ? $" = {node.Initializer.Accept(this)}" : "";
+            string? initialValue = node.Initializer?.Accept(this);
+            string init = initialValue != null ? $" = {initialValue}" : "";
+
+            if (_structures.TryGetValue(node.Type, out var structure) && IsResourceAggregate(node.Type))
+            {
+                string helper = AggregateCleanupHelper(node.Type, structure);
+                if (node.Initializer is IdentifierNode or FunctionCallNode)
+                {
+                    // Move or receive the whole value before introducing a possibly shadowing owner name.
+                    string carrier = MintName("_resource_move");
+                    string value = node.Initializer is IdentifierNode ? MoveResource(initialValue!, node.Type) : initialValue!;
+                    return $"{Indent}{node.Type} {carrier} = {value};\n" +
+                        $"{Indent}{node.Type} {node.Name} __attribute__((cleanup({helper}))) = {carrier};\n";
+                }
+                return $"{Indent}{node.Type} {node.Name} __attribute__((cleanup({helper}))){init};\n";
+            }
+
+            if (TypeSystem.IsNativeResourceArray(node.Type))
+            {
+                string elementType = TypeSystem.GetArrayBaseType(node.Type);
+                int length = TypeSystem.GetArraySize(node.Type);
+                string helper = ResourceArrayCleanupHelper(node.Type);
+                if (string.IsNullOrEmpty(init)) init = " = {0}";
+                return $"{Indent}{elementType} {node.Name}[{length}] __attribute__((cleanup({helper}))){init};\n";
+            }
+
+            if (IsResourceAggregateArray(node.Type))
+            {
+                string elementType = TypeSystem.GetArrayBaseType(node.Type);
+                int length = TypeSystem.GetArraySize(node.Type);
+                string helper = AggregateArrayCleanupHelper(node.Type);
+                if (string.IsNullOrEmpty(init)) init = " = {0}";
+                return $"{Indent}{elementType} {node.Name}[{length}] __attribute__((cleanup({helper}))){init};\n";
+            }
+
+            if (TypeSystem.IsBorrowType(node.Type))
+            {
+                string pointerType = TypeSystem.ToCType(node.Type);
+                string temporary = MintName("_borrow");
+                string bindingConst = node.IsConstant ? "const " : "";
+                return $"{Indent}{pointerType} {temporary}{init};\n" +
+                    $"{Indent}{pointerType} {bindingConst}{node.Name} = {temporary};\n";
+            }
+
+            if (TypeSystem.IsNativeResource(node.Type))
+            {
+                string helper = ResourceCleanupHelper(node.Type);
+                string cleanup = $" __attribute__((cleanup({helper})))";
+                // The semantic const binding still needs mutable storage for move/drop bookkeeping.
+                if (node.Initializer is IdentifierNode source)
+                {
+                    string temporary = MintName("_resource_move");
+                    string name = source.Accept(this);
+                    return $"{Indent}{node.Type} {temporary} = {name};\n" +
+                        $"{Indent}{name}._sage_handle = NULL;\n" +
+                        $"{Indent}{node.Type} {node.Name}{cleanup} = {temporary};\n";
+                }
+                string adopted = MintName("_resource_adopt");
+                // Evaluate acquisition before introducing a possibly shadowing owner name.
+                return $"{Indent}{node.Type} {adopted}{init};\n" +
+                    $"{Indent}{node.Type} {node.Name}{cleanup} = {adopted};\n";
+            }
 
             // Safe heap references are represented as pointers in C.
             if (node.IsReference)
             {
                 string refType = $"{TypeSystem.ToCType(node.Type)}*";
-                return $"{Indent}{prefix}{refType} {node.Name}{init};\n";
+                string ownedType = $"{prefix}{TypeSystem.ToCType(node.Type)}";
+                if (!_cleanupHelpers.TryGetValue(ownedType, out string? helper))
+                {
+                    helper = MintName("_sage_drop_");
+                    _cleanupHelpers.Add(ownedType, helper);
+                }
+                string cleanup = $" __attribute__((cleanup({helper})))";
+                if (node.Initializer is IdentifierNode source)
+                {
+                    string temporary = MintName("_move");
+                    string name = source.Accept(this);
+                    return $"{Indent}{refType} {temporary} = {name};\n" +
+                        $"{Indent}{name} = NULL;\n" +
+                        $"{Indent}{prefix}{refType} {node.Name}{cleanup} = {temporary};\n";
+                }
+                return $"{Indent}{prefix}{refType} {node.Name}{cleanup}{init};\n";
             }
 
             if (TypeSystem.IsArrayType(node.Type))
             {
                 string baseType = TypeSystem.ToCType(TypeSystem.GetArrayBaseType(node.Type));
                 string size = TypeSystem.GetArraySize(node.Type).ToString();
+                if (node.Initializer != null && node.Initializer is not ArrayInitializationNode)
+                {
+                    string storage = MintName("_copy_storage");
+                    // Consume temporary array fields inside the memmove full expression, before their C lifetime ends.
+                    return $"{Indent}{baseType} {storage}[{size}];\n" +
+                        $"{Indent}memmove({storage}, {initialValue}, sizeof({storage}));\n" +
+                        $"{Indent}{prefix}{baseType}* const {node.Name} = {storage};\n";
+                }
                 if (string.IsNullOrEmpty(init)) init = " = {0}";
                 return $"{Indent}{prefix}{baseType} {node.Name}[{size}]{init};\n";
             }
@@ -181,11 +340,44 @@ namespace Sage.Core
         /// Generates a raw assignment expression. 
         /// Note: The semicolon and indentation are handled by ExpressionStatementNode.
         /// </summary>
-        public string Visit(AssignmentNode node) => $"{node.Target.Accept(this)} = {node.Expression.Accept(this)}";
+        public string Visit(AssignmentNode node)
+        {
+            if (node.VariableType != null && IsOwnedValueType(node.VariableType))
+            {
+                string type = node.VariableType;
+                string origin = node.Expression.Accept(this);
+                if (node.Expression is IdentifierNode) origin = MoveResource(origin, type);
+                string incoming = MintName("_resource_replacement");
+                string place = MintName("_resource_place");
+                // Take the incoming value first, evaluate the destination place once, then drop its old value.
+                return $"({{ {type} {incoming} = {origin}; {type}* {place} = &({node.Target.Accept(this)}); " +
+                    $"{OwnedCleanupHelper(type)}({place}); *{place} = {incoming}; }})";
+            }
+            if (node.VariableType == null || !TypeSystem.IsArrayType(node.VariableType))
+                return $"{node.Target.Accept(this)} = {node.Expression.Accept(this)}";
+            string target = MintName("_copy_target");
+            string value = node.Expression.Accept(this);
+            if (node.Expression is ArrayInitializationNode)
+                value = $"({TypeSystem.ToCType(TypeSystem.GetArrayBaseType(node.VariableType))}[{TypeSystem.GetArraySize(node.VariableType)}]){value}";
+            return $"({{ __auto_type {target} = {node.Target.Accept(this)}; " +
+                $"memmove({target}, {value}, sizeof(*{target}) * {TypeSystem.GetArraySize(node.VariableType)}); {target}; }})";
+        }
 
-        public string Visit(IdentifierNode node) => node.Name.Replace("::", "_");
+        public string Visit(IdentifierNode node) => node.IsBorrowedValue
+            ? $"(*{node.Name})" : node.Name.Replace("::", "_");
 
-        public string Visit(ReturnNode node) => $"{Indent}return {node.Expression.Accept(this)};\n";
+        public string Visit(BorrowExpressionNode node) => node.Target.IsReference
+            ? node.Target.Accept(this) : $"&({node.Target.Accept(this)})";
+
+        public string Visit(ReturnNode node)
+        {
+            string expression = node.Expression.Accept(this);
+            if (node.Expression is IdentifierNode && node.VariableType != null && IsOwnedValueType(node.VariableType))
+            {
+                return $"{Indent}return {MoveResource(expression, node.VariableType)};\n";
+            }
+            return $"{Indent}return {expression};\n";
+        }
 
         public string Visit(ExpressionStatementNode node) => $"{Indent}{node.Expression.Accept(this)};\n";
 
@@ -196,6 +388,7 @@ namespace Sage.Core
         public string Visit(ExternBlockNode node) => "";
 
         public string Visit(ExternTypeNode node) => "";
+        public string Visit(NativeResourceDeclarationNode node) => "";
 
         /// <summary>An unsafe block carries no runtime cost; it emits a plain scoped C block.</summary>
         public string Visit(UnsafeBlockNode node) => node.Body.Accept(this);
@@ -207,20 +400,31 @@ namespace Sage.Core
         public string Visit(NewExpressionNode node)
         {
             string cType = TypeSystem.ToCType(node.TypeName);
-            string tmp = $"_new{_tempCounter++}";
+            string tmp = MintName("_new");
 
             string initList = node.Fields.Count > 0
                 ? "{ " + string.Join(", ", node.Fields.Select(kvp => $".{kvp.Key} = {kvp.Value.Accept(this)}")) + " }"
                 : "{0}";
 
-            return $"({{ {cType}* {tmp} = malloc(sizeof({cType})); *{tmp} = ({cType}){initList}; {tmp}; }})";
+            return $"({{ {cType}* {tmp} = malloc(sizeof({cType})); if (!{tmp}) abort(); *{tmp} = ({cType}){initList}; {tmp}; }})";
         }
 
         /// <summary>Releases a safe heap reference produced by <c>new</c>.</summary>
-        public string Visit(DeleteNode node) => $"{Indent}free({node.Target.Accept(this)});\n";
+        public string Visit(DeleteNode node)
+        {
+            string target = node.Target.Accept(this);
+            string clear = node.Target is IdentifierNode ? $"{Indent}{target} = NULL;\n" : "";
+            return $"{Indent}free({target});\n{clear}";
+        }
 
         public string Visit(BinaryExpressionNode node)
         {
+            if (node.IsResourceNullComparison)
+            {
+                string PresenceOperand(AstNode operand) => operand.VariableType == "null"
+                    ? "NULL" : $"({operand.Accept(this)})._sage_handle";
+                return $"({PresenceOperand(node.Left)} {(node.Operator == TokenType.EqualEqual ? "==" : "!=")} {PresenceOperand(node.Right)})";
+            }
             string op = node.Operator switch
             {
                 TokenType.Plus => "+",
@@ -241,7 +445,15 @@ namespace Sage.Core
             return $"({node.Left.Accept(this)} {op} {node.Right.Accept(this)})";
         }
 
-        public string Visit(CastExpressionNode node) => $"(({TypeSystem.ToCType(node.TargetType)}){node.Expression.Accept(this)})";
+        public string Visit(CastExpressionNode node)
+        {
+            string expression = node.Expression.Accept(this);
+            if (TypeSystem.IsNativeResource(node.TargetType))
+                return $"({node.TargetType}){{ ._sage_handle = {expression} }}";
+            if (node.Expression.VariableType != null && TypeSystem.IsNativeResource(node.Expression.VariableType))
+                return $"({expression}._sage_handle)";
+            return $"(({TypeSystem.ToCType(node.TargetType)}){expression})";
+        }
 
         public string Visit(IfNode node)
         {
@@ -276,12 +488,17 @@ namespace Sage.Core
         public string Visit(ForNode node)
         {
             var sb = new StringBuilder();
-            string init = node.Initializer != null ? node.Initializer.Accept(this).Trim().TrimEnd(';') : "";
+            sb.AppendLine($"{Indent}{{");
+            _indent++;
+            if (node.Initializer is VariableDeclarationNode declaration) sb.Append(declaration.Accept(this));
+            else if (node.Initializer != null) sb.AppendLine($"{Indent}{node.Initializer.Accept(this)};");
             string cond = node.Condition != null ? node.Condition.Accept(this) : "";
             string inc = node.Increment != null ? node.Increment.Accept(this).Trim().TrimEnd(';') : "";
 
-            sb.AppendLine($"{Indent}for ({init}; {cond}; {inc})");
+            sb.AppendLine($"{Indent}for (; {cond}; {inc})");
             sb.Append(node.Body.Accept(this));
+            _indent--;
+            sb.AppendLine($"{Indent}}}");
             return sb.ToString();
         }
 
@@ -345,7 +562,7 @@ namespace Sage.Core
 
             // Each interpolation gets a uniquely named buffer so several interpolated strings can
             // coexist within a single expression without aliasing one another.
-            string buf = $"_buf{_tempCounter++}";
+            string buf = MintName("_buf");
             string argsC = arguments.Count > 0 ? ", " + string.Join(", ", arguments) : "";
             return $"({{ static char {buf}[512]; snprintf({buf}, sizeof({buf}), \"{formatString}\"{argsC}); {buf}; }})";
         }
@@ -359,7 +576,12 @@ namespace Sage.Core
             sb.Append("{ ");
             var initList = new List<string>();
             foreach (var kvp in node.Fields)
-                initList.Add($".{kvp.Key} = {kvp.Value.Accept(this)}");
+            {
+                string value = kvp.Value.Accept(this);
+                if (kvp.Value is IdentifierNode && kvp.Value.VariableType != null && IsOwnedValueType(kvp.Value.VariableType))
+                    value = MoveResource(value, kvp.Value.VariableType);
+                initList.Add($".{kvp.Key} = {value}");
+            }
 
             sb.Append(string.Join(", ", initList));
             sb.Append(" }");
@@ -375,10 +597,170 @@ namespace Sage.Core
 
         public string Visit(ArrayInitializationNode node)
         {
-            var elements = node.Elements.Select(e => e.Accept(this));
+            if (node.Elements.Count == 0)
+                return !string.IsNullOrEmpty(node.VariableType) && !TypeSystem.IsArrayType(node.VariableType)
+                    ? $"({TypeSystem.ToCType(node.VariableType)}){{0}}" : "{0}";
+            var elements = node.Elements.Select(element =>
+            {
+                string value = element.Accept(this);
+                return element is IdentifierNode && (TypeSystem.IsNativeResourceArray(node.VariableType ?? "") || IsResourceAggregateArray(node.VariableType ?? ""))
+                    ? MoveResource(value, TypeSystem.GetArrayBaseType(node.VariableType!)) : value;
+            });
             return $"{{ {string.Join(", ", elements)} }}";
         }
 
-        public string Visit(ArrayAccessNode node) => $"{node.Array.Accept(this)}[{node.Index.Accept(this)}]";
+        public string Visit(ArrayAccessNode node)
+        {
+            if (node.CheckedLength is not int length)
+                return $"{node.Array.Accept(this)}[{node.Index.Accept(this)}]";
+            string array = MintName("_array");
+            string index = MintName("_index");
+            // Yield an element pointer, then dereference outside the statement expression to preserve an lvalue.
+            return $"(*({{ __auto_type {array} = {node.Array.Accept(this)}; __auto_type {index} = {node.Index.Accept(this)}; " +
+                $"if ({index} < 0 || (uintmax_t){index} >= {length}) {{ " +
+                $"fputs(\"Sage runtime error S186: Array index is outside [0,{length}) at ({node.Line},{node.Column}).\\n\", stderr); " +
+                $"exit(EXIT_FAILURE); }} &{array}[{index}]; }}))";
+        }
+
+        private string MintName(string prefix)
+        {
+            string name;
+            do { name = $"{prefix}{_tempCounter++}"; } while (!_usedNames.Add(name));
+            return name;
+        }
+
+        /// <summary>
+        /// Moves a validated named owner into an unowned C carrier. A resource clears its handle; a resource
+        /// struct is zeroed so every nested handle is null and the source's scope cleanup becomes a no-op.
+        /// </summary>
+        private string MoveResource(string expression, string type)
+        {
+            string result = MintName("_resource_transfer");
+            string clear = IsResourceAggregate(type) ? $"{expression} = ({type}){{0}}" : $"{expression}._sage_handle = NULL";
+            return $"({{ {type} {result} = {expression}; {clear}; {result}; }})";
+        }
+
+        /// <summary>True for values that carry a destructor obligation: native resources and resource structs.</summary>
+        private bool IsOwnedValueType(string type) => TypeSystem.IsNativeResource(type) || IsResourceAggregate(type);
+
+        private string OwnedCleanupHelper(string type) => TypeSystem.IsNativeResource(type)
+            ? ResourceCleanupHelper(type) : AggregateCleanupHelper(type, _structures[type]);
+
+        private string ResourceCleanupHelper(string type)
+        {
+            if (_resourceCleanupHelpers.TryGetValue(type, out string? helper)) return helper;
+            helper = MintName("_sage_resource_drop_");
+            _resourceCleanupHelpers.Add(type, helper);
+            return helper;
+        }
+
+        private string ResourceArrayCleanupHelper(string type)
+        {
+            if (_resourceArrayCleanupHelpers.TryGetValue(type, out string? helper)) return helper;
+            ResourceCleanupHelper(TypeSystem.GetArrayBaseType(type));
+            helper = MintName("_sage_resource_array_drop_");
+            _resourceArrayCleanupHelpers.Add(type, helper);
+            return helper;
+        }
+
+        private string AggregateCleanupHelper(string type, StructDeclarationNode structure)
+        {
+            if (_aggregateCleanupHelpers.TryGetValue(type, out string? helper)) return helper;
+            foreach (var field in structure.Fields)
+            {
+                if (TypeSystem.IsNativeResource(field.Type)) ResourceCleanupHelper(field.Type);
+                else if (IsResourceAggregate(field.Type)) AggregateCleanupHelper(field.Type, _structures[field.Type]);
+            }
+            helper = MintName("_sage_aggregate_drop_");
+            _aggregateCleanupHelpers.Add(type, helper);
+            _aggregateCleanupOrder.Add(type);
+            return helper;
+        }
+
+        private string AggregateArrayCleanupHelper(string type)
+        {
+            if (_aggregateArrayCleanupHelpers.TryGetValue(type, out string? helper)) return helper;
+            string elementType = TypeSystem.GetArrayBaseType(type);
+            AggregateCleanupHelper(elementType, _structures[elementType]);
+            helper = MintName("_sage_aggregate_array_drop_");
+            _aggregateArrayCleanupHelpers.Add(type, helper);
+            return helper;
+        }
+
+        private bool IsResourceAggregateArray(string type) =>
+            TypeSystem.IsArrayType(type) && IsResourceAggregate(TypeSystem.GetArrayBaseType(type));
+
+        private bool IsResourceAggregate(string type) => IsResourceAggregate(type, new HashSet<string>(StringComparer.Ordinal));
+
+        private bool IsResourceAggregate(string type, HashSet<string> path)
+        {
+            if (!_structures.TryGetValue(type, out var structure) || !path.Add(type)) return false;
+            bool ownsResource = structure.Fields.Any(field => TypeSystem.IsNativeResource(field.Type) ||
+                IsResourceAggregate(field.Type, path));
+            path.Remove(type);
+            return ownsResource;
+        }
+
+        /// <summary>
+        /// The C symbol a call targets: a generated C++ adapter, the bare native name for extern
+        /// calls (<c>alias::name</c> → <c>name</c>), or the flattened module name (<c>module_name</c>).
+        /// </summary>
+        private static string CallSymbol(FunctionCallNode call)
+        {
+            if (call.NativeSymbol != null) return call.NativeSymbol;
+            string resolved = call.ResolvedName ?? call.Name;
+            return call.IsExternCall ? resolved.Split("::")[^1] : resolved.Replace("::", "_");
+        }
+
+        /// <summary>Reserve source identifiers before introducing backend cleanup helpers or temporaries.</summary>
+        private void ReserveNames(AstNode node)
+        {
+            switch (node)
+            {
+                case VariableDeclarationNode variable: _usedNames.Add(variable.Name); break;
+                case IdentifierNode identifier: _usedNames.Add(identifier.Name.Replace("::", "_")); break;
+                case FunctionDeclarationNode function:
+                    _usedNames.Add(CNaming.ResolveFunctionName(function));
+                    foreach (var parameter in function.Parameters) _usedNames.Add(parameter.Name);
+                    break;
+                case FunctionCallNode call: _usedNames.Add(CallSymbol(call)); break;
+                case StructDeclarationNode structure: _usedNames.Add(structure.Name); break;
+                case ExternTypeNode opaque: _usedNames.Add(opaque.Name); break;
+                case NativeResourceDeclarationNode resource: _usedNames.Add(resource.Name); break;
+            }
+
+            IEnumerable<AstNode> children = node switch
+            {
+                ProgramNode program => program.Statements,
+                ModuleNode module => module.Members,
+                FunctionDeclarationNode function => new AstNode?[] { function.Body }.OfType<AstNode>(),
+                BlockNode block => block.Statements,
+                ExternBlockNode external => external.Declarations,
+                StructDeclarationNode structure => structure.Fields,
+                VariableDeclarationNode variable => new AstNode?[] { variable.Initializer }.OfType<AstNode>(),
+                IfNode conditional => new[] { conditional.Condition, conditional.ThenBranch, conditional.ElseBranch }.OfType<AstNode>(),
+                WhileNode loop => new[] { loop.Condition, loop.Body },
+                ForNode loop => new[] { loop.Initializer, loop.Condition, loop.Increment, loop.Body }.OfType<AstNode>(),
+                UnsafeBlockNode block => new[] { block.Body },
+                BinaryExpressionNode binary => new[] { binary.Left, binary.Right },
+                AssignmentNode assignment => new[] { assignment.Target, assignment.Expression },
+                UnaryExpressionNode unary => new[] { unary.Operand },
+                CastExpressionNode cast => new[] { cast.Expression },
+                BorrowExpressionNode borrow => new[] { borrow.Target },
+                ReturnNode returned => new[] { returned.Expression },
+                ExpressionStatementNode statement => new[] { statement.Expression },
+                DeleteNode deleted => new[] { deleted.Target },
+                FunctionCallNode call => call.Arguments,
+                MethodCallNode method => method.Lowered != null ? [method.Lowered] : [method.Receiver, .. method.Arguments],
+                MemberAccessNode member => new[] { member.Object },
+                ArrayAccessNode access => new[] { access.Array, access.Index },
+                ArrayInitializationNode array => array.Elements,
+                StructInitializationNode structure => structure.Fields.Values,
+                NewExpressionNode allocation => allocation.Fields.Values,
+                InterpolatedStringNode text => text.Parts,
+                _ => []
+            };
+            foreach (var child in children) ReserveNames(child);
+        }
     }
 }

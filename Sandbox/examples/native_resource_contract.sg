@@ -1,0 +1,9 @@
+// Native resource declaration; Sage 0.13.0 also supports unsafe local adoption.
+extern native("stdio.h")
+{
+    type FILE;
+    func fclose(value: FILE*): c_int;
+    resource OwnedFile: FILE* drop fclose;
+}
+
+func main(): none {}
