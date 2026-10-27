@@ -340,8 +340,8 @@ The bundled standard library (`Sandbox/std/`) doubles as the reference for idiom
 | `byte_buffer` | Owned fixed-capacity byte storage, checked initialized-prefix access and consuming release. |
 | `text`    | Owned fixed-capacity text: append, compare, print and bounded line input without `unsafe`. |
 | `int_vector` | Owned growable `i32` vector with a fixed limit, checked access and explicit growth outcomes. |
-| `http_client` | Legacy shell-based `curl` helpers (`unsafe`; caller must validate inputs). |
-| `http_server` | Minimal HTTP server on Winsock (links `ws2_32`).                        |
+| `http_client` | Safe `get`/`post`/`download` over `Text`: curl started without a shell, bounded responses. Legacy `str` helpers stay `unsafe`. |
+| `http_server` | Owned `HttpListener` (Winsock, links `ws2_32`): bounded `accept`, `respond`, automatic socket cleanup. |
 | `test`    | Unit-testing assertions that emit `[PASS]`/`[FAIL]` lines.              |
 
 The `std` directory contains only `.sg` files. Native support ships with the
@@ -352,7 +352,7 @@ The [owned byte buffer](docs/byte-buffers.md) supports safe creation, shared rea
 exclusive mutation, and automatic cleanup without exposing native storage.
 [Owned text](docs/text.md) adds safe strings and bounded `read_line`, [`int_vector`](docs/int-vector.md)
 a bounded growable collection; the
-[std migration audit](docs/std-migration.md) tracks the remaining unsafe APIs.
+[std migration audit](docs/std-migration.md) tracks the remaining unsafe APIs. Safe HTTP is described in [HTTP](docs/http.md).
 
 Direct native calls and legacy unbounded input helpers require an explicit
 `unsafe` context; see [migration and remaining contracts](docs/native-boundaries.md).
@@ -379,7 +379,7 @@ file directly with `sage <file>.test.sg` and read the `[PASS]`/`[FAIL]` output.
 
 ## Project Status
 
-The project is currently in **v0.33.2 (Alpha)**.
+The project is currently in **v0.33.3 (Alpha)**.
 
 Phase 5 resolves callables only through direct `use` imports and rejects
 callables whose generated C symbols would collide (S212); see [modules](docs/modules.md).

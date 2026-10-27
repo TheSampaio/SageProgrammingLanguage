@@ -37,6 +37,9 @@ boundary explicitly; ownership, borrowing and bounds checks remain enabled there
   unbounded token read and has no capacity contract. A string literal is not a
   writable buffer. Since v0.33.0 the bounded, ownership-aware replacement is
   `Text.read_line()` in the [`text` module](text.md).
+- Since v0.33.3 the safe `http_client.get`/`post`/`download` take `Text` and start curl
+  without a shell, and `http_server` offers an owned `HttpListener`; see [HTTP](http.md).
+  The legacy shell helpers were renamed `post_shell`/`download_shell`.
 - Legacy `http_client.fetch`, `post`, and `download` are now `unsafe func`: they interpolate
   caller data into shell commands without escaping it. This increment does not
   harden that transport. `get_into`, file, memory, and http_server raw interfaces already

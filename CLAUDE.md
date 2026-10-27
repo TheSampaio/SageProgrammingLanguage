@@ -160,6 +160,11 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
 - `byte_file` also takes `&Text` paths (`create_text`, `open_read_text`) and
   moves Text contents (`write_text`, `read_text`). The raw `file` module is
   deprecated for apps; `memory` stays unsafe for FFI. Status: `docs/std-migration.md`.
+- HTTP never goes through a shell: `http_client.get/post/download(&Text...)`
+  start curl via `CreateProcess` with argv quoting (POST data over stdin) and
+  return `HttpResult`; `http_server.HttpListener` is a resource (drop closes
+  sockets + WSACleanup). Legacy `str` helpers are unsafe `fetch`, `post_shell`,
+  `download_shell`, `get_into`, `serve`. Windows-only backends; see `docs/http.md`.
 - `extern cpp alias("header.hpp") { ... }` binds explicit C++ targets (`= ns::f`,
   `= "ns::f<int>"`, `= .member`, `= new`, `= delete`; `class H = ns::T;` handles)
   through generated `extern "C"` adapters (`CppAdapterGenerator`, validated by
