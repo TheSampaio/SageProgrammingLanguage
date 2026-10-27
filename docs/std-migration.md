@@ -39,3 +39,4 @@ The rows below record each migration increment as it lands.
 | --- | --- | --- |
 | 0.33.0 | New `text` module: owned `Text` with fixed capacity, append/compare/print and bounded `read_line` ([text](text.md)) | owned strings: enforced; `console.read_line`: migrated to `Text.read_line` |
 | 0.33.1 | New `int_vector` module: owned growable `IntVector` with a fixed limit, checked `get`/`set`/`pop` and `VectorGrow` outcomes ([int vector](int-vector.md)) | dynamic collections: enforced (`i32` only) |
+| 0.33.2 | `byte_file` gains `create_text`/`open_read_text` paths and `write_text`/`read_text` contents ([byte files](byte-files.md)); `file` and `memory` doc comments point to the owned alternatives | `file`: migrated (deprecated, kept unsafe for FFI demos); `memory`: unsafe-by-design with safe alternatives (`text`, `int_vector`, `byte_buffer`, plain values) |

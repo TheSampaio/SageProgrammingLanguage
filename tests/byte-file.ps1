@@ -12,6 +12,8 @@ $cases = @(
     @{ Name = 'byte_path_requires_exact_capacity'; Code = 'func main(): none { var path: u8[2]; var length: u16 = 1; var value: ByteFile = byte_file::create_bytes(path, length); }'; Error = 'S161' },
     @{ Name = 'byte_path_cannot_be_fabricated'; Code = 'func main(): none { var length: u16 = 1; var value: ByteFile = byte_file::create_bytes(0 as u8[260], length); }'; Error = 'S188' },
     @{ Name = 'write_requires_explicit_borrow'; Code = 'func main(): none { var value: ByteFile = byte_file::empty(); var byte: u8 = 1; byte_file::write_byte(value, byte); }'; Error = 'S170' },
+    @{ Name = 'text_path_requires_borrow'; Code = 'use text; func main(): none { var path: Text = text::from("a.bin"); var value: ByteFile = byte_file::create_text(path); }'; Error = 'S170' },
+    @{ Name = 'read_text_shared_target'; Code = 'use text; func load(file: &mut ByteFile, target: &Text): none { byte_file::read_text(&mut file, &mut target); } func main(): none {}'; Error = 'S171' },
     @{ Name = 'shared_write_rejected'; Code = 'func mutate(value: &ByteFile): none { var byte: u8 = 1; byte_file::write_byte(&mut value, byte); } func main(): none {}'; Error = 'S171' },
     @{ Name = 'close_cannot_consume_borrow'; Code = 'func close_borrow(value: &mut ByteFile): b8 { return byte_file::close(value); } func main(): none {}'; Error = 'S191' },
     @{ Name = 'close_invalidates_owner'; Code = 'func main(): none { var value: ByteFile = byte_file::empty(); var closed: b8 = byte_file::close(value); byte_file::is_open(&value); }'; Error = 'S140' },
@@ -22,7 +24,7 @@ $cases = @(
     @{ Name = 'wide_byte_not_implicitly_narrowed'; Code = 'func main(): none { var value: ByteFile = byte_file::empty(); var byte: i32 = 300; byte_file::write_byte(&mut value, byte); }'; Error = 'S161' }
 )
 try {
-    foreach ($name in @('byte_file.sg', 'byte_buffer.sg', 'test.sg', 'console.sg', 'file.sg')) {
+    foreach ($name in @('byte_file.sg', 'byte_buffer.sg', 'text.sg', 'test.sg', 'console.sg', 'file.sg')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot "../Sandbox/std/$name") -Destination $stdDir
     }
     $headerPath = (Join-Path (Split-Path -Parent $compilerPath) 'Runtime/include/sage_byte_file.h').Replace('\', '/')

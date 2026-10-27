@@ -19,7 +19,7 @@ $cases = @(
     @{ Name = 'direct_native_requires_unsafe'; Code = 'func main(): none { byte_file_buffer_native::sage_byte_file_read_buffer(0, 0, 1); }'; Error = 'S164' }
 )
 try {
-    foreach ($name in @('byte_file.sg', 'byte_buffer.sg', 'test.sg', 'console.sg')) {
+    foreach ($name in @('byte_file.sg', 'byte_buffer.sg', 'text.sg', 'test.sg', 'console.sg')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot "../Sandbox/std/$name") -Destination $stdDir
     }
     $header = (Join-Path (Split-Path -Parent $compilerPath) 'Runtime/include/sage_byte_file_buffer.h').Replace('\', '/')

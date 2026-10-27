@@ -334,9 +334,9 @@ The bundled standard library (`Sandbox/std/`) doubles as the reference for idiom
 | Module    | Purpose                                                                 |
 |-----------|-------------------------------------------------------------------------|
 | `console` | Terminal I/O (`print`, `print_line`, `read`, `run`).                    |
-| `memory`  | Raw heap primitives (`alloc`/`release`, `unsafe`). Prefer plain values.  |
-| `file`    | File I/O over `<stdio.h>` (opaque `FILE`, `c_*` aliases).               |
-| `byte_file` | Owned binary byte/block I/O, bounded ASCII paths, existing read-only input, explicit outcomes and consuming close. |
+| `memory`  | Raw heap primitives (`alloc`/`release`, `unsafe`). Prefer plain values, `text`, `int_vector`. |
+| `file`    | Legacy raw `FILE*` I/O (`unsafe`). Deprecated: use `byte_file` with `Text` paths. |
+| `byte_file` | Owned binary byte/block/Text I/O, bounded ASCII byte or `Text` paths, read-only input, explicit outcomes and consuming close. |
 | `byte_buffer` | Owned fixed-capacity byte storage, checked initialized-prefix access and consuming release. |
 | `text`    | Owned fixed-capacity text: append, compare, print and bounded line input without `unsafe`. |
 | `int_vector` | Owned growable `i32` vector with a fixed limit, checked access and explicit growth outcomes. |
@@ -379,7 +379,7 @@ file directly with `sage <file>.test.sg` and read the `[PASS]`/`[FAIL]` output.
 
 ## Project Status
 
-The project is currently in **v0.33.1 (Alpha)**.
+The project is currently in **v0.33.2 (Alpha)**.
 
 Phase 5 resolves callables only through direct `use` imports and rejects
 callables whose generated C symbols would collide (S212); see [modules](docs/modules.md).

@@ -6,6 +6,10 @@
 /// and must be called from within an `unsafe` block. Safe code should not allocate manually:
 /// use plain struct values, which are copied, moved, and cleaned up automatically. The `new` /
 /// `delete` keywords are likewise restricted to `unsafe` code.
+///
+/// Safe owned alternatives: `text` (strings), `int_vector` (growable i32 sequence),
+/// `byte_buffer` (fixed byte storage). They allocate explicitly, report failure as
+/// an empty owner or outcome, and free automatically. Keep this module for FFI work.
 module memory
 {
     // --- Native C Bindings (Private to this module) ---

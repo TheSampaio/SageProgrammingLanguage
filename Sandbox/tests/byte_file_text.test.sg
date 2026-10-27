@@ -1,0 +1,38 @@
+use test;
+use text;
+use byte_file;
+
+func main(): none
+{
+    var path: Text = text::from("sage_text_roundtrip.txt");
+    var file: ByteFile = byte_file::create_text(&path);
+    test::assert_true("text_path_create", byte_file::is_open(&file));
+    var line: Text = text::from("Hello from Text\n");
+    var written: ByteTransfer = byte_file::write_text(&mut file, &line);
+    test::assert_true("text_write_all", written.count == 16 && !written.failed);
+    test::assert_true("text_close", byte_file::close(file));
+
+    var input: ByteFile = byte_file::open_read_text(&path);
+    test::assert_false("text_read_only_handle", byte_file::can_write(&input));
+    var contents: Text = text::create(64);
+    var read: ByteTransfer = byte_file::read_text(&mut input, &mut contents);
+    test::assert_true("text_read_back", read.count == 16 && read.eof && !read.failed);
+    test::assert_true("text_roundtrip_equal", contents.equals(&line));
+    var denied: ByteTransfer = byte_file::write_text(&mut input, &line);
+    test::assert_true("text_write_read_only_fails", denied.failed && denied.count == 0);
+
+    var small: Text = text::create(5);
+    byte_file::seek_start(&mut input);
+    read = byte_file::read_text(&mut input, &mut small);
+    test::assert_true("text_read_bounded_by_capacity", read.count == 5 && !read.eof && small.equals_str("Hello"));
+
+    var missing: Text = text::from("sage_missing_text_input.txt");
+    var absent: ByteFile = byte_file::open_read_text(&missing);
+    test::assert_false("text_open_missing_fails", byte_file::is_open(&absent));
+    var invalid: Text = text::from("bad\npath");
+    var rejected: ByteFile = byte_file::create_text(&invalid);
+    test::assert_false("text_path_control_rejected", byte_file::is_open(&rejected));
+    var empty_path: Text = text::from("");
+    var none_file: ByteFile = byte_file::create_text(&empty_path);
+    test::assert_false("text_path_empty_rejected", byte_file::is_open(&none_file));
+}

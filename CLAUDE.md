@@ -157,6 +157,9 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
 - `int_vector` (`IntVector`) is the growable collection: fixed `limit`, stable
   owner handle with separately reallocated storage, checked `get`/`set`/`pop`,
   and `VectorGrow { ok, full, out_of_memory }` that never mutates on failure.
+- `byte_file` also takes `&Text` paths (`create_text`, `open_read_text`) and
+  moves Text contents (`write_text`, `read_text`). The raw `file` module is
+  deprecated for apps; `memory` stays unsafe for FFI. Status: `docs/std-migration.md`.
 - `extern cpp alias("header.hpp") { ... }` binds explicit C++ targets (`= ns::f`,
   `= "ns::f<int>"`, `= .member`, `= new`, `= delete`; `class H = ns::T;` handles)
   through generated `extern "C"` adapters (`CppAdapterGenerator`, validated by

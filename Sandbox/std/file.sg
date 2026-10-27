@@ -7,6 +7,10 @@
 ///     without knowing their layout; the definition comes from the included header.
 ///
 /// Because file handles are raw pointers (FILE*), the wrappers are `unsafe func`.
+///
+/// Deprecated for application code: use `byte_file` with `text` paths
+/// (`byte_file::create_text(&path)`, `write_text`, `read_text`, consuming `close`),
+/// which owns the handle, closes it automatically, and reports explicit outcomes.
 module file
 {
     extern libc_stdio("stdio.h")
