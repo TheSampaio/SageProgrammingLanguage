@@ -41,3 +41,18 @@ The rows below record each migration increment as it lands.
 | 0.33.1 | New `int_vector` module: owned growable `IntVector` with a fixed limit, checked `get`/`set`/`pop` and `VectorGrow` outcomes ([int vector](int-vector.md)) | dynamic collections: enforced (`i32` only) |
 | 0.33.2 | `byte_file` gains `create_text`/`open_read_text` paths and `write_text`/`read_text` contents ([byte files](byte-files.md)); `file` and `memory` doc comments point to the owned alternatives | `file`: migrated (deprecated, kept unsafe for FFI demos); `memory`: unsafe-by-design with safe alternatives (`text`, `int_vector`, `byte_buffer`, plain values) |
 | 0.33.3 | Safe `http_client.get/post/download` over `Text` without a shell; owned `http_server.HttpListener` with bounded `accept` and `respond` ([HTTP](http.md)); legacy `post`/`download` renamed `post_shell`/`download_shell` | `http_client` shell helpers: migrated (kept unsafe); `http_server.serve`: migrated to `HttpListener` (kept unsafe) |
+| (apps) | `Sandbox/src/main.sg` uses `text`, `int_vector` and `byte_file` Text I/O; new `examples/greeting.sg` (bounded input) and `examples/http_echo.sg` (owned listener); `tests/sandbox-apps.ps1` builds/runs them and rejects `unsafe` in app code | Sandbox apps: safe |
+
+## Status after Phase 4
+
+| API | Status |
+| --- | --- |
+| `text`, `int_vector`, `byte_buffer`, `byte_file` (Text/byte paths), `http_client.get/post/download`, `http_server.HttpListener`, `console.print*`/`read`, `test` | enforced (safe) |
+| `memory.alloc/release` | unsafe-by-design (FFI); safe alternatives listed above |
+| `file.*`, `byte_file.create(str)` | unsafe-by-design, deprecated for apps (use `byte_file` Text paths) |
+| `console.read_line(str)` | unsafe legacy; migrated to `Text.read_line` |
+| `http_client.fetch/post_shell/download_shell/get_into`, `http_server.serve` | unsafe legacy; migrated to the Text/listener APIs |
+| `console.run(str)` | safe signature, executes a shell command by design; never pass untrusted text |
+
+Open: collections for other element types (no generics), Text slicing/formatting
+and UTF-8 validation, non-Windows HTTP backends, HTTP status reporting.

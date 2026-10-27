@@ -381,6 +381,10 @@ file directly with `sage <file>.test.sg` and read the `[PASS]`/`[FAIL]` output.
 
 The project is currently in **v0.33.3 (Alpha)**.
 
+Phase 4 migrates the standard library to owned, safe APIs: `text`, `int_vector`,
+`Text` file paths, shell-free HTTP, and an owned HTTP listener. The Sandbox app and
+examples use no `unsafe`. See the [std migration audit](docs/std-migration.md).
+
 Phase 5 resolves callables only through direct `use` imports and rejects
 callables whose generated C symbols would collide (S212); see [modules](docs/modules.md).
 Opt-in `method func` declarations add statically resolved extension methods
