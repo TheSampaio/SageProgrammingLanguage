@@ -119,13 +119,34 @@ int main(int argc, char** argv)
     if (written) fclose(written);
     CHECK(printed && count == 6 && memcmp(bytes, "ababz\n", 6) == 0, "print_writes_exact_bytes");
 
+    /* Formatting sizes the owner exactly, keeps no shared buffer, and keeps a C terminator. */
+    SageTextState* formatted = sage_text_format("%s-%lld-%.2f", sage_text_cstr_or_empty(NULL), 7LL, 1.5);
+    CHECK(formatted && sage_text_length(formatted) == 7 && sage_text_capacity(formatted) == 7 &&
+        strcmp(sage_text_cstr(formatted), "-7-1.50") == 0, "format_exact_capacity");
+    SageTextState* second = sage_text_format("%lld", 42LL);
+    CHECK(second && strcmp(sage_text_cstr(formatted), "-7-1.50") == 0 && strcmp(sage_text_cstr(second), "42") == 0, "format_results_independent");
+    SageTextState* nothing = sage_text_format("");
+    CHECK(nothing && sage_text_length(nothing) == 0 && sage_text_capacity(nothing) == 0 && sage_text_cstr(nothing)[0] == 0, "format_empty");
+    fail_allocate = 1;
+    CHECK(sage_text_format("%d", 1) == NULL, "format_allocation_failure");
+    fail_allocate = 0;
+    CHECK(strcmp(sage_text_cstr(NULL), "") == 0 && strcmp(sage_text_cstr_or_empty(NULL), "") == 0, "cstr_of_empty_owner");
+    SageTextState* terminated = sage_text_create(3);
+    CHECK(terminated && sage_text_push(terminated, 'a') && strcmp(sage_text_cstr(terminated), "a") == 0, "terminator_after_push");
+    sage_text_clear(terminated);
+    CHECK(strcmp(sage_text_cstr(terminated), "") == 0, "terminator_after_clear");
+    sage_text_drop(terminated);
+    sage_text_drop(nothing);
+    sage_text_drop(second);
+    sage_text_drop(formatted);
+
     sage_text_drop(text);
     sage_text_drop(copy);
     sage_text_drop(high);
     sage_text_drop(low);
     sage_text_drop(none);
     sage_text_drop(line);
-    CHECK(live == 0 && releases == 6, "every_owner_released_once");
+    CHECK(live == 0 && releases == 10, "every_owner_released_once");
     /* Success is silent: stdout now points at the output file. */
     return assertions > 0 ? 0 : 4;
     return 0;
