@@ -38,3 +38,4 @@ The rows below record each migration increment as it lands.
 | Version | Change | Resulting status |
 | --- | --- | --- |
 | 0.33.0 | New `text` module: owned `Text` with fixed capacity, append/compare/print and bounded `read_line` ([text](text.md)) | owned strings: enforced; `console.read_line`: migrated to `Text.read_line` |
+| 0.33.1 | New `int_vector` module: owned growable `IntVector` with a fixed limit, checked `get`/`set`/`pop` and `VectorGrow` outcomes ([int vector](int-vector.md)) | dynamic collections: enforced (`i32` only) |

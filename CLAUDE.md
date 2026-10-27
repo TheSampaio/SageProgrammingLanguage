@@ -154,6 +154,9 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
   bounded `read_line` (replaces unsafe `console.read_line`). Read-only/mutating
   operations are `method func` with `&`/`&mut` receivers; consuming `release`
   stays qualified. New std containers follow this shape; see `docs/text.md`.
+- `int_vector` (`IntVector`) is the growable collection: fixed `limit`, stable
+  owner handle with separately reallocated storage, checked `get`/`set`/`pop`,
+  and `VectorGrow { ok, full, out_of_memory }` that never mutates on failure.
 - `extern cpp alias("header.hpp") { ... }` binds explicit C++ targets (`= ns::f`,
   `= "ns::f<int>"`, `= .member`, `= new`, `= delete`; `class H = ns::T;` handles)
   through generated `extern "C"` adapters (`CppAdapterGenerator`, validated by

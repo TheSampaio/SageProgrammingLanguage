@@ -1,0 +1,78 @@
+use test;
+use int_vector;
+
+func total(values: &IntVector): i32
+{
+    var sum: i32 = 0;
+    var index: u32 = 0;
+    while (index < values.length())
+    {
+        var item: IntRead = values.get(index);
+        sum = sum + item.value;
+        index = index + 1;
+    }
+    return sum;
+}
+
+func consume(values: IntVector): u32 { return values.length(); }
+
+func main(): none
+{
+    var numbers: IntVector = int_vector::create(6);
+    test::assert_true("vector_created", numbers.is_allocated());
+    test::assert_true("vector_starts_empty", numbers.length() == 0 && numbers.capacity() == 0);
+    test::assert_true("vector_limit", numbers.limit() == 6);
+
+    var grow: VectorGrow = numbers.push(10);
+    test::assert_true("vector_push_ok", grow.ok && !grow.full && !grow.out_of_memory);
+    test::assert_true("vector_first_growth_capacity", numbers.capacity() == 4);
+    numbers.push(20);
+    numbers.push(30);
+    numbers.push(40);
+    grow = numbers.push(50);
+    test::assert_true("vector_growth_clamped_to_limit", grow.ok && numbers.capacity() == 6);
+    numbers.push(60);
+    grow = numbers.push(70);
+    test::assert_true("vector_push_at_limit_full", !grow.ok && grow.full && !grow.out_of_memory);
+    test::assert_true("vector_full_preserves_length", numbers.length() == 6);
+    test::assert_eq_i32("vector_sum_through_borrow", total(&numbers), 210);
+
+    var first: IntRead = numbers.get(0);
+    test::assert_true("vector_get_first", first.has_value && first.value == 10);
+    var outside: IntRead = numbers.get(6);
+    test::assert_false("vector_get_out_of_bounds", outside.has_value);
+    test::assert_true("vector_get_missing_zero", outside.value == 0);
+    test::assert_true("vector_set_existing", numbers.set(1, -5));
+    test::assert_false("vector_set_out_of_bounds", numbers.set(6, 1));
+    var replaced: IntRead = numbers.get(1);
+    test::assert_true("vector_set_visible", replaced.has_value && replaced.value == -5);
+
+    var last: IntRead = numbers.pop();
+    test::assert_true("vector_pop_last", last.has_value && last.value == 60 && numbers.length() == 5);
+    numbers.clear();
+    test::assert_true("vector_clear_keeps_capacity", numbers.length() == 0 && numbers.capacity() == 6);
+    var nothing: IntRead = numbers.pop();
+    test::assert_false("vector_pop_empty", nothing.has_value);
+
+    var reserved: IntVector = int_vector::create(100);
+    grow = reserved.reserve(50);
+    test::assert_true("vector_reserve_ok", grow.ok && reserved.capacity() == 50 && reserved.length() == 0);
+    grow = reserved.reserve(101);
+    test::assert_true("vector_reserve_over_limit_full", grow.full && reserved.capacity() == 50);
+    var moved: IntVector = reserved;
+    moved.push(7);
+    test::assert_true("vector_move_preserves_state", moved.capacity() == 50 && moved.length() == 1);
+    test::assert_true("vector_consuming_parameter", consume(moved) == 1);
+
+    var zero: IntVector = int_vector::create(0);
+    grow = zero.push(1);
+    test::assert_true("vector_zero_limit_full", zero.is_allocated() && grow.full);
+
+    var absent: IntVector = int_vector::empty();
+    grow = absent.push(1);
+    test::assert_true("vector_empty_owner_push_fails", !grow.ok && !grow.full && !grow.out_of_memory);
+    test::assert_true("vector_empty_owner_length_zero", absent.length() == 0 && absent.limit() == 0);
+    var empty_read: IntRead = absent.get(0);
+    test::assert_false("vector_empty_owner_get_fails", empty_read.has_value);
+    int_vector::release(numbers);
+}
