@@ -22,6 +22,8 @@
 	<ItemGroup>
 	  <Folder Include="Assets\Images\" />
 	  <Content Include="Runtime\include\**\*.h" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+	  <!-- The distributed std: projects without a local 'std' folder resolve it beside the compiler. -->
+	  <Content Include="Sandbox\std\*.sg" Link="std\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
 	</ItemGroup>
 
 </Project>

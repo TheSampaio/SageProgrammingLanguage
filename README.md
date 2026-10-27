@@ -384,7 +384,7 @@ file directly with `sage <file>.test.sg` and read the `[PASS]`/`[FAIL]` output.
 
 ## Project Status
 
-The project is currently in **v0.38.0 (Alpha)**.
+The project is currently in **v0.38.1 (Alpha)**.
 
 Builds compile each generated module, declared native source, and C++ adapter into its own
 object and reuse unchanged objects from a content-addressed cache; `--clean` forces a full

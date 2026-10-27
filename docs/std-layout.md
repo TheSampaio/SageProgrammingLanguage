@@ -4,8 +4,10 @@ Since v0.19.0, every file under `Sandbox/std` is a Sage source (`.sg`). Native
 runtime headers belong to `Runtime/include` beside the compiler sources. Build
 and publish copy that directory beside `Sage.dll`; the native compiler resolves
 it relative to the running compiler, independently of the project's location.
-Distribute the compiler with its `Runtime` directory and copy only `.sg` sources
-into a project's `std` directory. Generated C and binaries remain build outputs.
+Since v0.38.1 build and publish also copy the `.sg` sources of `Sandbox/std`
+into `std/` beside `Sage.dll`. A project without a local `std` folder (for
+example one created by `sage new`) imports from there; a project's own `std`
+folder still takes precedence. `tests/cli-new-project.ps1` validates this. Generated C and binaries remain build outputs.
 
 The HTTP files and their module names have changed:
 
