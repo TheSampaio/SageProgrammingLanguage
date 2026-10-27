@@ -788,7 +788,8 @@ namespace Sage.Core
                     exprStr = exprStr[..lastColonIdx];
                 }
 
-                var subLexer = new Lexer(exprStr);
+                // Offset past '$"' and the preceding text so diagnostics point into the literal.
+                var subLexer = new Lexer(exprStr, startToken.Line, startToken.Column + 3 + i);
                 var subTokens = subLexer.Tokenize();
                 var subParser = new Parser(subTokens, _fileName);
 

@@ -8,6 +8,15 @@ func label(n: i32): str
     return "item";
 }
 
+var ticks: i32 = 0;
+
+/// Side-effecting call used to check evaluation order and count.
+func tick(): i32
+{
+    ticks = ticks + 1;
+    return ticks;
+}
+
 /// Builds an interpolated Text and returns its ownership to the caller.
 func describe(n: i32): Text
 {
@@ -54,6 +63,10 @@ func main(): none
     // Several calls inside one literal are all evaluated before formatting.
     var calls: Text = $"{label(1)} and {label(2)}";
     test::assert_true("interp_nested_calls", calls.equals_str("item and item"));
+
+    // Each expression runs once, left to right.
+    var ordered: Text = $"{tick()}{tick()}{tick()} ticks={ticks}";
+    test::assert_true("interp_left_to_right_once", ordered.equals_str("123 ticks=3"));
 
     // Results returned through a function keep their contents.
     var made_a: Text = describe(1);

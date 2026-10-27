@@ -1,4 +1,4 @@
-# Strings (v0.39.0)
+# Strings (v0.39.1)
 
 Sage has two string literal forms and nothing else:
 
@@ -23,8 +23,8 @@ func main(): none
 
 ## How interpolation behaves
 
-* Each `{expression}` is evaluated **exactly once**, left to right, as an argument of
-  one `sage_text_format` call. The C result is measured first and then written into a
+* Each `{expression}` is evaluated **exactly once**, left to right (ordered temporaries),
+  and the values are passed to one `sage_text_format` call. The C result is measured first and then written into a
   fresh allocation, so there is no fixed buffer, no truncation and no overflow.
 * There is no shared or static state. Nested calls, loops, recursion and several
   interpolations in one function each get an independent owner. (Before v0.39.0 every
@@ -37,8 +37,11 @@ func main(): none
 * An expression must be a number, `b8` or `str`; anything else is S216. A `NULL` `str`
   prints as an empty string. Resources, borrows and structs keep their usual S191/S173/S196
   rejections.
-* Escapes such as `\n` and `\"` behave as in plain literals. `{` always opens an
-  expression inside `$"..."`, and there is no brace escape yet.
+* Escapes follow C because literal text reaches the C format string: `\n` and `\"` work, but
+  `\0` ends the result early, C trigraphs such as `??/` are rewritten by the C compiler, and a
+  backslash directly before `{` is not a brace escape. Plain `"..."` literals share these
+  C escape rules. `{` always opens an expression inside `$"..."`, there is no brace escape
+  yet, and an expression cannot contain `"` (a nested string literal ends the literal, S010).
 
 Passing a result straight to a call (`show($"x{n}")`) is rejected by the existing
 "bind producer results before the call" rule (S194). Bind it, then pass `&text`.

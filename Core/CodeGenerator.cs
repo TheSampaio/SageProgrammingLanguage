@@ -523,6 +523,7 @@ namespace Sage.Core
         {
             var formatString = new StringBuilder();
             var arguments = new List<string>();
+            var temporaries = new StringBuilder();
 
             foreach (var part in node.Parts)
             {
@@ -535,11 +536,15 @@ namespace Sage.Core
                 InterpolationFormat.TryResolve(part.VariableType!, part.FormatSpecifier, out string conversion, out string cast, out _);
                 formatString.Append(conversion);
                 string argument = part.Accept(this);
-                arguments.Add(part.VariableType == "str" ? $"sage_text_cstr_or_empty({argument})" : $"{cast}({argument})");
+                string value = part.VariableType == "str" ? $"sage_text_cstr_or_empty({argument})" : $"{cast}({argument})";
+                // C leaves argument evaluation order unspecified; ordered temporaries make it left to right.
+                string temporary = MintName("_interp");
+                temporaries.Append($"__auto_type {temporary} = {value}; ");
+                arguments.Add(temporary);
             }
 
             string argsC = arguments.Count > 0 ? ", " + string.Join(", ", arguments) : "";
-            return $"({InterpolationText.TypeName}){{ sage_text_format(\"{formatString}\"{argsC}) }}";
+            return $"({{ {temporaries}({InterpolationText.TypeName}){{ sage_text_format(\"{formatString}\"{argsC}) }}; }})";
         }
 
         public string Visit(StructInitializationNode node)

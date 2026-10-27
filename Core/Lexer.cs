@@ -11,12 +11,14 @@ namespace Sage.Core
     /// based on the Sage language grammar.
     /// </summary>
     /// <param name="text">The raw source code to be tokenized.</param>
-    public class Lexer(string text) : ILexer
+    /// <param name="line">Line of the first character, for text embedded in a larger source.</param>
+    /// <param name="column">Column of the first character, for text embedded in a larger source.</param>
+    public class Lexer(string text, int line = 1, int column = 1) : ILexer
     {
         private readonly string _text = text;
         private int _pos = 0;
-        private int _line = 1;
-        private int _col = 1;
+        private int _line = line;
+        private int _col = column;
 
         /// <summary>Gets the character at the current scanner position.</summary>
         private char Current => _pos < _text.Length ? _text[_pos] : '\0';
