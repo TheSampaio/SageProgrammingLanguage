@@ -158,6 +158,21 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
   (path relative to the declaring .sg; S211 if missing/unsupported) via
   `NativeSourceSet`; see `tests/native-sources.ps1`.
 
+## Incremental native builds
+
+- `Core/Build/ModuleGraph` holds the `use` dependency graph (discovery order,
+  cycles tolerated); `--verbose` prints it. See `docs/incremental-build.md`.
+- `Core/Build/NativeBuilder` compiles each `NativeTranslationUnit` (source + compiler +
+  flags + include dirs) with `-c` into `obj/<name>.o`, then links. New native sources
+  (e.g. C++ adapters) plug in as extra units in `CompilationPipeline.LinkNativeBinary`.
+- Objects/links are cached in `obj/sage-build-cache.json` (content-addressed: generated C +
+  transitive headers + `SageInfo.Version` + compiler/flags + `gcc -v` identity). `--clean`
+  forces a rebuild. Anything new that affects object code must enter the unit's key.
+- Development metrics: `dotnet build -c Instrumented` defines `SAGE_INSTRUMENTATION`;
+  `CompilerInstrumentation` calls are `[Conditional]`, so Debug/Release stay quiet.
+- `tools/bench-incremental.ps1 -CompilerDll <dll>` benchmarks clean vs incremental builds;
+  record measured results in `docs/incremental-build.md` (PCH was measured and rejected).
+
 ## Generated C
 
 - A single shared prelude `sage.h` holds the type aliases; every module header includes it (no

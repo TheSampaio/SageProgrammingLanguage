@@ -352,6 +352,11 @@ exclusive mutation, and automatic cleanup without exposing native storage.
 Direct native calls and legacy unbounded input helpers require an explicit
 `unsafe` context; see [migration and remaining contracts](docs/native-boundaries.md).
 
+Native builds are incremental: each generated C module is compiled to its own
+object in `obj/` and reused while its generated C, included headers, compiler
+version, flags and toolchain are unchanged. `sage build --clean` (also `run`
+or an explicit file) forces a full rebuild; see [incremental builds](docs/incremental-build.md).
+
 ## Testing
 
 Execution commands propagate the native application's exit status; see
@@ -374,7 +379,11 @@ file directly with `sage <file>.test.sg` and read the `[PASS]`/`[FAIL]` output.
 
 ## Project Status
 
-The project is currently in **v0.37.2 (Alpha)**.
+The project is currently in **v0.37.3 (Alpha)**.
+
+Builds compile each generated module, declared native source, and C++ adapter into its own
+object and reuse unchanged objects from a content-addressed cache; `--clean` forces a full
+rebuild. See [incremental builds](docs/incremental-build.md).
 
 Diagnostics are available as structured JSON with `--diagnostics json`; see
 [diagnostics](docs/diagnostics.md) for the stable code table and the JSON fields.

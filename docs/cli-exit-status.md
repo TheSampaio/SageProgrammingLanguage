@@ -10,6 +10,11 @@ zero on success. Version and project-initialization commands also return zero
 on success. Compilation, missing input, linking, or process-start failures return
 one through the existing diagnostic handler.
 
+Since v0.36.2, `build`, `run` and explicit-file builds reuse unchanged native
+objects from `obj/`. Add `--clean` to any of them to discard the cache and
+rebuild every unit; exit statuses are unchanged. See
+[incremental builds](incremental-build.md).
+
 This lets scripts and the VS Code extension detect runtime failures using the
 process result. It does not convert native termination into a recoverable Sage
 error or unwind owned resources when the entire process exits. Test assertion

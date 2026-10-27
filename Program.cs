@@ -29,6 +29,11 @@ namespace Sage
                 CompilerLogger.LogFatal(ex);
                 return 1;
             }
+            finally
+            {
+                // Compiled away unless the compiler is built with SAGE_INSTRUMENTATION.
+                CompilerInstrumentation.Report();
+            }
         }
 
         /// <summary>

@@ -20,6 +20,29 @@ namespace Sage.Core
         /// <exception cref="InvalidOperationException">Thrown if the process returns a non-zero exit code, indicating failure.</exception>
         public static void Run(string fileName, string arguments)
         {
+            string output = Execute(fileName, arguments).Output;
+
+            // Log the tool's output for debugging if the compiler is running in Verbose/Debug mode
+            if (output.Length > 0)
+            {
+                CompilerLogger.LogDebug($"[{fileName}] {output}");
+            }
+        }
+
+        /// <summary>
+        /// Executes an external tool and returns everything it wrote to standard output and standard error.
+        /// Used for toolchain probes such as <c>gcc -v</c>, which reports on standard error.
+        /// </summary>
+        /// <exception cref="FileNotFoundException">Thrown if the tool is not found in the system PATH.</exception>
+        /// <exception cref="InvalidOperationException">Thrown if the process returns a non-zero exit code.</exception>
+        public static string Capture(string fileName, string arguments)
+        {
+            var (output, error) = Execute(fileName, arguments);
+            return output + error;
+        }
+
+        private static (string Output, string Error) Execute(string fileName, string arguments)
+        {
             var startInfo = new ProcessStartInfo
             {
                 FileName = fileName,
@@ -61,11 +84,7 @@ namespace Sage.Core
                 throw new InvalidOperationException($"Process failed ({fileName}):\n{error}\n{output}");
             }
 
-            // Log the tool's output for debugging if the compiler is running in Verbose/Debug mode
-            if (output.Length > 0)
-            {
-                CompilerLogger.LogDebug($"[{fileName}] {output}");
-            }
+            return (output.ToString(), error.ToString());
         }
     }
 }

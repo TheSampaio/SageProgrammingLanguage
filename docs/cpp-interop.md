@@ -101,9 +101,12 @@ Paths are relative to the declaring `.sg` file, so imported and std modules
 carry their own sources. Supported extensions are `.c`, `.cpp`, `.cc`, and
 `.cxx`; a missing file or other extension is S211, reported before code
 generation. A file declared by several blocks is compiled once, and each
-source directory joins the include path. Any C++ source links `-lstdc++`.
-Sources are rebuilt on every build; compiler flags and incremental native
-caching are not configurable yet. Native symbols share the C namespace with
+source directory joins the include path. Any C++ unit (a source or the
+generated adapters) makes `g++` the link driver, so the C++ runtime follows
+user libraries. Since v0.37.3 each source and the adapters are cached
+translation units of the [incremental build](incremental-build.md): they are
+recompiled only when their content, included headers, flags, or toolchain
+change. Per-source compiler flags are not configurable yet. Native symbols share the C namespace with
 flattened Sage names (`module_function`); declared collisions are S212 (below).
 
 ## Native symbol collisions (v0.31.2)

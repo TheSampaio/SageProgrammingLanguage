@@ -40,7 +40,11 @@ try {
     Clear-Objects
     $cOnly = Invoke-Sage 'c_only' ($report + $report + 'func main(): none { unsafe { report::report_value("c" as c_char*, 7); } }')
     if ($cOnly.Status -ne 0 -or !$cOnly.Text.Contains('c=7')) { throw "A repeated C source must link once.`n$($cOnly.Text)" }
-    if (Get-ChildItem -LiteralPath $objDir -Filter '*.o') { throw 'A C-only build must not produce C++ objects.' }
+    # Separate compilation gives every C unit an object; C++ adapters and C++ source objects must not exist.
+    if (Get-ChildItem -LiteralPath $objDir | Where-Object { $_.Name -like 'sage_cpp_adapters*' -or $_.Name -match '^sage_native_\d+_' }) {
+        throw 'A C-only build must not produce C++ objects.'
+    }
+    if (!(Test-Path -LiteralPath (Join-Path $objDir 'sage_native_c_0_report.o'))) { throw 'A declared C source must compile to its own object.' }
 
     # Sources resolve next to the module that declares them, here an std module.
     # Its header resolves too: source directories join the include path.
