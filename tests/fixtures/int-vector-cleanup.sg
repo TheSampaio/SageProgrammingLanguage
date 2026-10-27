@@ -1,0 +1,46 @@
+use int_vector;
+use test;
+
+func make(count: i32): IntVector
+{
+    var owner: IntVector = int_vector::create(64);
+    var index: i32 = 0;
+    while (index < count)
+    {
+        owner.push(index);
+        index = index + 1;
+    }
+    return owner;
+}
+func early_return(): u32
+{
+    var owner: IntVector = make(9);
+    if (owner.length() == 9) { return owner.capacity(); }
+    return 0;
+}
+func consume(values: IntVector): none
+{
+    test::assert_true("vector_consumed_owner_live", values.length() == 5);
+}
+
+func main(): none
+{
+    var first: IntVector = make(20);
+    var moved: IntVector = first;
+    test::assert_true("vector_returned_then_moved", moved.length() == 20);
+    int_vector::release(moved);
+    test::assert_true("vector_early_return_capacity", early_return() == 16);
+    var consumed: IntVector = make(5);
+    consume(consumed);
+    var unused: IntVector = make(0);
+    var index: i32 = 0;
+    while (index < 3)
+    {
+        var scoped: IntVector = make(index);
+        index = index + 1;
+    }
+    var replaced: IntVector = make(4);
+    var replacement: IntVector = make(1);
+    replaced = replacement;
+    test::assert_true("vector_reassignment_moves", replaced.length() == 1);
+}

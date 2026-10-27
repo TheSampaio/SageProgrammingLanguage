@@ -1,0 +1,44 @@
+use text;
+use test;
+
+func make(): Text
+{
+    var owner: Text = text::from("abc");
+    return owner;
+}
+func early_return(): u32
+{
+    var owner: Text = make();
+    return owner.length();
+}
+func consume(value: Text): none
+{
+    test::assert_true("text_consumed_owner_live", value.is_allocated());
+}
+func identity(value: Text): Text { return value; }
+
+func main(): none
+{
+    var first: Text = make();
+    var moved: Text = first;
+    test::assert_true("text_returned_then_moved", moved.equals_str("abc"));
+    text::release(moved);
+    test::assert_true("text_early_return_length", early_return() == 3);
+    var consumed: Text = make();
+    consume(consumed);
+    var input: Text = make();
+    var returned: Text = identity(input);
+    var copy: Text = returned.copy();
+    test::assert_true("text_copy_is_second_owner", copy.equals(&returned));
+    var index: i32 = 0;
+    while (index < 3)
+    {
+        var scoped: Text = text::create(8);
+        scoped.append(&copy);
+        index = index + 1;
+    }
+    var replaced: Text = text::create(1);
+    var replacement: Text = text::from("new");
+    replaced = replacement;
+    test::assert_true("text_reassignment_moves", replaced.equals_str("new"));
+}

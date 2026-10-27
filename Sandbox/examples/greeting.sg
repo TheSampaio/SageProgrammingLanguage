@@ -1,0 +1,20 @@
+/// Reads a name from standard input with a bounded, owned buffer and greets it.
+use text;
+use console;
+
+func main(): none
+{
+    console::print("What is your name? ");
+    var name: Text = text::create(32);
+    var line: LineRead = name.read_line();
+    if (line.failed || (line.eof && line.count == 0)) { console::print_line("No input."); }
+    else
+    {
+        var greeting: Text = text::create(64);
+        greeting.append_str("Hello, ");
+        greeting.append(&name);
+        greeting.append_str("!");
+        greeting.print_line();
+        if (line.truncated) { console::print_line("(name shortened to 32 bytes)"); }
+    }
+}

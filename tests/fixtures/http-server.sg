@@ -1,0 +1,38 @@
+use http_server;
+use text;
+use console;
+
+// Serves two requests on 127.0.0.1:@PORT@, echoing each request head.
+func main(): none
+{
+    var server: HttpListener = http_server::listen_local(@PORT@);
+    var clash: HttpListener = http_server::listen_local(@PORT@);
+    var listening: b8 = server.is_listening();
+    var port_matches: b8 = server.port() == @PORT@;
+    var clashed: b8 = clash.is_listening();
+    console::print_line("listening={listening} port_matches={port_matches} clash={clashed}");
+    if (true)
+    {
+        var scoped: HttpListener = http_server::listen_local(0);
+        var ephemeral: b8 = scoped.is_listening() && scoped.port() != 0;
+        console::print_line("ephemeral={ephemeral}");
+    }
+    var request: Text = text::create(64);
+    var body: Text = text::create(256);
+    var served: i32 = 0;
+    var attempts: i32 = 0;
+    while (served < 2 && attempts < 10)
+    {
+        attempts = attempts + 1;
+        if (server.accept(&mut request))
+        {
+            body.clear();
+            body.append_str("you sent: ");
+            body.append(&request);
+            if (server.respond(200, &body)) { served = served + 1; }
+        }
+    }
+    var invalid: b8 = server.respond(200, &body);
+    console::print_line("served={served} respond_without_client={invalid}");
+    http_server::close(server);
+}

@@ -10,6 +10,9 @@ and follows normal move, borrow, return, and cleanup contracts. Existing unsafe
 | `create(path: str)` | **unsafe**, returns an owner | Creates/truncates a binary `w+b` file; empty on failure |
 | `create_bytes(path: u8[260], length: u16)` | Safe fixed-array value parameter, returns an owner | Creates/truncates using 1..259 printable ASCII bytes; empty on failure |
 | `open_read_bytes(path: u8[260], length: u16)` | Safe fixed-array value parameter, returns an owner | Opens an existing binary file for reading (`rb`), without creating/truncating it |
+| `create_text(path: &Text)`, `open_read_text(path: &Text)` | Shared [`Text`](text.md) borrow (v0.33.2) | Same modes and 1..259 printable ASCII path contract as the byte-path forms |
+| `write_text(value: &mut ByteFile, text: &Text)` | Exclusive file, shared text | `ByteTransfer`; writes every text byte, count may be partial on failure |
+| `read_text(value: &mut ByteFile, text: &mut Text)` | Exclusive file and target | `ByteTransfer`; replaces the text with up to its capacity bytes |
 | `is_open(value: &ByteFile)` | Shared borrow | Whether its native stream is open |
 | `can_write(value: &ByteFile)` | Shared borrow | Whether the open handle's mode permits output |
 | `read_byte(value: &mut ByteFile)` | Mutable borrow | A `ByteRead` value |

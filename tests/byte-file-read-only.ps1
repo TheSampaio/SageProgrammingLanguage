@@ -17,7 +17,7 @@ $cases = @(
     @{ Name = 'query_after_close'; Code = 'func main(): none { var file: ByteFile = byte_file::empty(); byte_file::close(file); byte_file::can_write(&file); }'; Error = 'S140' }
 )
 try {
-    foreach ($name in @('byte_file.sg', 'byte_buffer.sg', 'test.sg', 'console.sg')) {
+    foreach ($name in @('byte_file.sg', 'byte_buffer.sg', 'text.sg', 'test.sg', 'console.sg')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot "../Sandbox/std/$name") -Destination $stdDir
     }
     $includeDir = Join-Path (Split-Path -Parent $compilerPath) 'Runtime/include'

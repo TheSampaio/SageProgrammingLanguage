@@ -1,51 +1,86 @@
 /// Sage Savings Calculator
-/// A small, useful program that projects compound-interest growth of a savings
-/// account year by year. Showcases plain struct values (cleaned up automatically),
-/// floating-point math, loops, and formatted string interpolation.
+/// Projects compound-interest growth of a savings account year by year, keeps the
+/// yearly balances in an owned vector, and saves a text report to disk.
+/// Everything here is safe Sage: owned values (Text, IntVector, ByteFile) are
+/// cleaned up automatically and every fallible operation reports an outcome.
 use console;
+use text;
+use int_vector;
+use byte_file;
 
 struct Account
 {
-    name: str;
     principal: f64;
     rate: f64;     // annual interest rate, e.g. 0.07 = 7%
     years: i32;
 }
 
+/// Appends one report line; returns false when the report is full.
+func add_line(report: &mut Text, line: str): b8
+{
+    return report.append_str(line) && report.append_str("\n");
+}
+
+/// Largest year-over-year gain, in cents, from the recorded balances.
+func best_gain(balances: &IntVector): i32
+{
+    var best: i32 = 0;
+    var year: u32 = 1;
+    while (year < balances.length())
+    {
+        var previous: IntRead = balances.get(year - 1);
+        var current: IntRead = balances.get(year);
+        var gain: i32 = current.value - previous.value;
+        if (gain > best) { best = gain; }
+        year = year + 1;
+    }
+    return best;
+}
+
 func main(): none
 {
-    console::print_line("===== Sage Savings Calculator =====");
+    var name: Text = text::from("Retirement Fund");
+    var acc: Account = { principal = 1000.00, rate = 0.07, years = 10 };
 
-    // A plain struct value: no manual allocation or release is needed.
-    var acc: Account = {
-        name = "Retirement Fund",
-        principal = 1000.00,
-        rate = 0.07,
-        years = 10
-    };
-
-    console::print_line("Account:    {acc.name}");
+    var title: Text = text::create(64);
+    title.append_str("===== ");
+    title.append(&name);
+    title.append_str(" =====");
+    title.print_line();
     console::print_line("Principal:  ${acc.principal:2f}");
     console::print_line("Rate:       {acc.rate:2f} per year");
     console::print_line("Horizon:    {acc.years} years");
-    console::print_line("-----------------------------------");
 
+    // Balance per year in cents, bounded to the horizon plus the opening balance.
+    var balances: IntVector = int_vector::create(acc.years as u32 + 1);
     var balance: f64 = acc.principal;
-    var interest_total: f64 = 0.0;
+    balances.push((balance * 100.0) as i32);
 
+    var report: Text = text::create(1024);
+    add_line(&mut report, "year,balance");
     for (var year: i32 = 1; year <= acc.years; year++)
     {
-        var interest: f64 = balance * acc.rate;
-        balance = balance + interest;
-        interest_total = interest_total + interest;
-
-        console::print_line("Year {year}: ${balance:2f}  (+${interest:2f})");
+        balance = balance + balance * acc.rate;
+        var grow: VectorGrow = balances.push((balance * 100.0) as i32);
+        if (!grow.ok) { console::print_line("Could not record year {year}."); }
+        console::print_line("Year {year}: ${balance:2f}");
+        var row: str = "{year},{balance:2f}";
+        add_line(&mut report, row);
     }
 
     var growth: f64 = ((balance - acc.principal) / acc.principal) * 100.0;
-
-    console::print_line("-----------------------------------");
+    var gain: i32 = best_gain(&balances);
     console::print_line("Final balance:  ${balance:2f}");
-    console::print_line("Total interest: ${interest_total:2f}");
     console::print_line("Total growth:   {growth:2f}%");
+    console::print_line("Best year gain: {gain} cents");
+
+    var path: Text = text::from("savings_report.csv");
+    var file: ByteFile = byte_file::create_text(&path);
+    var saved: ByteTransfer = byte_file::write_text(&mut file, &report);
+    if (byte_file::close(file) && !saved.failed)
+    {
+        console::print("Report saved to ");
+        path.print_line();
+    }
+    else { console::print_line("Report could not be saved."); }
 }

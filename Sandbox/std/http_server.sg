@@ -1,11 +1,15 @@
 /// Standard Library: HTTP Server (Windows / Winsock)
-/// A minimal, single-threaded, blocking HTTP/1.1 server built on Winsock. It replies to
-/// every request with a fixed body — enough to expose an endpoint or a health check.
+/// A minimal, single-threaded, blocking HTTP/1.1 server built on Winsock.
 ///
-/// The extern block links against ws2_32 via the second argument of `extern`. All socket
-/// work is raw FFI, so the entry point is an `unsafe func`. SOCKET handles are `c_uintptr`
-/// (they are pointer-width on 64-bit Windows).
+/// Safe API: `listen_local`/`listen` return an owned `HttpListener` (a native
+/// resource whose drop closes its sockets and balances WSAStartup), `accept` reads
+/// a bounded request head into a `Text`, and `respond` sends a complete text/plain
+/// response and closes the connection. No unsafe code is needed.
+///
+/// The legacy `serve` below is raw FFI (unchecked errors, never returns) and stays
+/// an `unsafe func`. SOCKET handles there are `c_uintptr` (pointer-width on Win64).
 use console;
+use text;
 
 /// Mirror of C's `struct sockaddr_in` (16 bytes: family, port, addr, 8 bytes padding).
 /// A `new` reference to this struct gives us a pointer to hand to bind().
@@ -79,4 +83,64 @@ module http_server
         winsock::closesocket(sock);
         winsock::WSACleanup();
     }
+
+    // --- Owned listener API (safe) ---
+
+    extern http_server_native("sage_http_server.h", "ws2_32")
+    {
+        type SageHttpListenerState;
+        func sage_http_listen(port: c_ushort, loopback_only: c_int): SageHttpListenerState*;
+        func sage_http_listener_port(value: SageHttpListenerState*): c_ushort;
+        func sage_http_accept(value: SageHttpListenerState*, request: SageTextState*): c_int;
+        func sage_http_respond(value: SageHttpListenerState*, status: c_uint, body: SageTextState*): c_int;
+        func sage_http_listener_drop(value: SageHttpListenerState*): none;
+        resource HttpListener: SageHttpListenerState* drop sage_http_listener_drop;
+    }
+
+    /// Listens on 127.0.0.1 only. Port 0 picks a free port (see `port`).
+    /// Returns an empty owner when Winsock, bind, or listen fails.
+    func listen_local(port: u16): HttpListener
+    {
+        unsafe
+        {
+            var owner: HttpListener = http_server_native::sage_http_listen(port as c_ushort, 1) as HttpListener;
+            return owner;
+        }
+    }
+
+    /// Listens on every IPv4 interface (may trigger a firewall prompt).
+    func listen(port: u16): HttpListener
+    {
+        unsafe
+        {
+            var owner: HttpListener = http_server_native::sage_http_listen(port as c_ushort, 0) as HttpListener;
+            return owner;
+        }
+    }
+
+    method func is_listening(value: &HttpListener): b8 { return value != null; }
+
+    /// The bound port (the chosen one when listening on port 0); 0 for an empty owner.
+    method func port(value: &HttpListener): u16
+    {
+        unsafe { return http_server_native::sage_http_listener_port(value as SageHttpListenerState*) as u16; }
+    }
+
+    /// Blocks for the next connection; replaces request with its head (request line
+    /// and headers) bounded by capacity. A client left unanswered is closed first.
+    /// Returns false for an empty owner/request or an accept failure.
+    method func accept(value: &mut HttpListener, request: &mut Text): b8
+    {
+        unsafe { return http_server_native::sage_http_accept(value as SageHttpListenerState*, request as SageTextState*) != 0; }
+    }
+
+    /// Sends a text/plain response (status 100..599) to the accepted client and
+    /// closes the connection. Returns true only when every byte was sent.
+    method func respond(value: &mut HttpListener, status: u16, body: &Text): b8
+    {
+        unsafe { return http_server_native::sage_http_respond(value as SageHttpListenerState*, status as c_uint, body as SageTextState*) != 0; }
+    }
+
+    /// Consumes the listener; cleanup closes the sockets and releases Winsock once.
+    func close(value: HttpListener): none {}
 }

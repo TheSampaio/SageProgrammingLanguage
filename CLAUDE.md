@@ -149,6 +149,22 @@ Pipeline: Lexer → Parser (recursive descent → AST) → SemanticAnalyzer → 
   Native mode fixes output capability: `can_write` reports it; read-only handles
   reject byte/block writes and flush before stdio, including zero-limit writes.
   Do not add input-only modes without keeping incompatible output guarded.
+- `text` (`Text`) is the safe owned string: fixed capacity, all-or-nothing
+  appends with `b8` outcomes, byte-wise compare, `print`/`print_line`, and
+  bounded `read_line` (replaces unsafe `console.read_line`). Read-only/mutating
+  operations are `method func` with `&`/`&mut` receivers; consuming `release`
+  stays qualified. New std containers follow this shape; see `docs/text.md`.
+- `int_vector` (`IntVector`) is the growable collection: fixed `limit`, stable
+  owner handle with separately reallocated storage, checked `get`/`set`/`pop`,
+  and `VectorGrow { ok, full, out_of_memory }` that never mutates on failure.
+- `byte_file` also takes `&Text` paths (`create_text`, `open_read_text`) and
+  moves Text contents (`write_text`, `read_text`). The raw `file` module is
+  deprecated for apps; `memory` stays unsafe for FFI. Status: `docs/std-migration.md`.
+- HTTP never goes through a shell: `http_client.get/post/download(&Text...)`
+  start curl via `CreateProcess` with argv quoting (POST data over stdin) and
+  return `HttpResult`; `http_server.HttpListener` is a resource (drop closes
+  sockets + WSACleanup). Legacy `str` helpers are unsafe `fetch`, `post_shell`,
+  `download_shell`, `get_into`, `serve`. Windows-only backends; see `docs/http.md`.
 - `extern cpp alias("header.hpp") { ... }` binds explicit C++ targets (`= ns::f`,
   `= "ns::f<int>"`, `= .member`, `= new`, `= delete`; `class H = ns::T;` handles)
   through generated `extern "C"` adapters (`CppAdapterGenerator`, validated by

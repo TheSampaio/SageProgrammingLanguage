@@ -55,6 +55,7 @@ module console
 
     /// Reads a whitespace-delimited token from standard input into the provided buffer.
     /// Caller must supply writable storage with sufficient capacity; this legacy API has no length contract.
+    /// Deprecated: for bounded input use `text` (`var line: Text = text::create(80); line.read_line();`).
     unsafe func read_line(buffer: str): none
     {
         libc_stdio::scanf("%s", buffer);

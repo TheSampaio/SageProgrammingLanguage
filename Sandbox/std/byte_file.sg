@@ -1,6 +1,7 @@
 /// Owned, seekable binary files with explicit write capability.
-/// Byte paths support bounded printable ASCII; legacy str acquisition is unsafe.
+/// Byte and Text paths support bounded printable ASCII; legacy str acquisition is unsafe.
 use byte_buffer;
+use text;
 
 struct ByteRead { value: u8; has_value: b8; failed: b8; }
 struct ByteTransfer { count: u32; eof: b8; failed: b8; }
@@ -154,5 +155,61 @@ module byte_file
     {
         if (value == null) { return false; }
         unsafe { return byte_file_native::sage_byte_file_close(value as SageByteFileState*) == 0; }
+    }
+
+    // --- Owned Text paths and contents ---
+
+    extern byte_file_text_native("sage_byte_file_text.h")
+    {
+        func sage_byte_file_create_text(path: SageTextState*): SageByteFileState*;
+        func sage_byte_file_open_read_text(path: SageTextState*): SageByteFileState*;
+        func sage_byte_file_write_text(value: SageByteFileState*, text: SageTextState*): c_size_t;
+        func sage_byte_file_read_text(value: SageByteFileState*, text: SageTextState*): c_size_t;
+    }
+
+    /// Creates/truncates a file named by 1..259 printable ASCII bytes of path.
+    /// Empty owner on invalid path, allocation, or native open failure.
+    func create_text(path: &Text): ByteFile
+    {
+        unsafe
+        {
+            var owner: ByteFile = byte_file_text_native::sage_byte_file_create_text(path as SageTextState*) as ByteFile;
+            return owner;
+        }
+    }
+
+    /// Opens an existing file read-only (no create/truncate); same path contract.
+    func open_read_text(path: &Text): ByteFile
+    {
+        unsafe
+        {
+            var owner: ByteFile = byte_file_text_native::sage_byte_file_open_read_text(path as SageTextState*) as ByteFile;
+            return owner;
+        }
+    }
+
+    /// Writes every byte of text at the current position. Count can be partial on failure.
+    func write_text(value: &mut ByteFile, text: &Text): ByteTransfer
+    {
+        if (value == null) { return { count = 0, eof = false, failed = true }; }
+        unsafe
+        {
+            var count: c_size_t = byte_file_text_native::sage_byte_file_write_text(value as SageByteFileState*, text as SageTextState*);
+            var failed: b8 = byte_file_buffer_native::sage_byte_file_transfer_failed(value as SageByteFileState*) != 0;
+            return { count = count as u32, eof = false, failed = failed };
+        }
+    }
+
+    /// Replaces text with up to its capacity bytes read from the current position.
+    func read_text(value: &mut ByteFile, text: &mut Text): ByteTransfer
+    {
+        if (value == null) { return { count = 0, eof = false, failed = true }; }
+        unsafe
+        {
+            var count: c_size_t = byte_file_text_native::sage_byte_file_read_text(value as SageByteFileState*, text as SageTextState*);
+            var ended: b8 = byte_file_buffer_native::sage_byte_file_transfer_eof(value as SageByteFileState*) != 0;
+            var failed: b8 = byte_file_buffer_native::sage_byte_file_transfer_failed(value as SageByteFileState*) != 0;
+            return { count = count as u32, eof = ended, failed = failed };
+        }
     }
 }

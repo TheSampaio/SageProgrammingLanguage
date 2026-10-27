@@ -1,0 +1,25 @@
+/// Echo server: answers every request on http://127.0.0.1:8080/ with the request
+/// line and headers it received. Safe Sage: no unsafe, sockets close automatically.
+use http_server;
+use text;
+use console;
+
+func main(): none
+{
+    var server: HttpListener = http_server::listen_local(8080);
+    if (!server.is_listening()) { console::print_line("Could not listen on port 8080."); }
+    else { console::print_line("Echo server on http://127.0.0.1:8080/ (Ctrl+C to stop)"); }
+    var request: Text = text::create(2048);
+    var body: Text = text::create(2100);
+    var running: b8 = server.is_listening();
+    while (running)
+    {
+        if (server.accept(&mut request))
+        {
+            body.clear();
+            body.append_str("You sent:\n");
+            body.append(&request);
+            server.respond(200, &body);
+        }
+    }
+}

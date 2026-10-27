@@ -334,12 +334,14 @@ The bundled standard library (`Sandbox/std/`) doubles as the reference for idiom
 | Module    | Purpose                                                                 |
 |-----------|-------------------------------------------------------------------------|
 | `console` | Terminal I/O (`print`, `print_line`, `read`, `run`).                    |
-| `memory`  | Raw heap primitives (`alloc`/`release`, `unsafe`). Prefer plain values.  |
-| `file`    | File I/O over `<stdio.h>` (opaque `FILE`, `c_*` aliases).               |
-| `byte_file` | Owned binary byte/block I/O, bounded ASCII paths, existing read-only input, explicit outcomes and consuming close. |
+| `memory`  | Raw heap primitives (`alloc`/`release`, `unsafe`). Prefer plain values, `text`, `int_vector`. |
+| `file`    | Legacy raw `FILE*` I/O (`unsafe`). Deprecated: use `byte_file` with `Text` paths. |
+| `byte_file` | Owned binary byte/block/Text I/O, bounded ASCII byte or `Text` paths, read-only input, explicit outcomes and consuming close. |
 | `byte_buffer` | Owned fixed-capacity byte storage, checked initialized-prefix access and consuming release. |
-| `http_client` | Legacy shell-based `curl` helpers (`unsafe`; caller must validate inputs). |
-| `http_server` | Minimal HTTP server on Winsock (links `ws2_32`).                        |
+| `text`    | Owned fixed-capacity text: append, compare, print and bounded line input without `unsafe`. |
+| `int_vector` | Owned growable `i32` vector with a fixed limit, checked access and explicit growth outcomes. |
+| `http_client` | Safe `get`/`post`/`download` over `Text`: curl started without a shell, bounded responses. Legacy `str` helpers stay `unsafe`. |
+| `http_server` | Owned `HttpListener` (Winsock, links `ws2_32`): bounded `accept`, `respond`, automatic socket cleanup. |
 | `test`    | Unit-testing assertions that emit `[PASS]`/`[FAIL]` lines.              |
 
 The `std` directory contains only `.sg` files. Native support ships with the
@@ -348,6 +350,9 @@ compiler in `Runtime/include`. Since v0.19.0, import `http_client` and
 
 The [owned byte buffer](docs/byte-buffers.md) supports safe creation, shared reads,
 exclusive mutation, and automatic cleanup without exposing native storage.
+[Owned text](docs/text.md) adds safe strings and bounded `read_line`, [`int_vector`](docs/int-vector.md)
+a bounded growable collection; the
+[std migration audit](docs/std-migration.md) tracks the remaining unsafe APIs. Safe HTTP is described in [HTTP](docs/http.md).
 
 Direct native calls and legacy unbounded input helpers require an explicit
 `unsafe` context; see [migration and remaining contracts](docs/native-boundaries.md).
@@ -379,7 +384,7 @@ file directly with `sage <file>.test.sg` and read the `[PASS]`/`[FAIL]` output.
 
 ## Project Status
 
-The project is currently in **v0.37.3 (Alpha)**.
+The project is currently in **v0.38.0 (Alpha)**.
 
 Builds compile each generated module, declared native source, and C++ adapter into its own
 object and reuse unchanged objects from a content-addressed cache; `--clean` forces a full
@@ -391,6 +396,10 @@ Diagnostics are available as structured JSON with `--diagnostics json`; see
 `sage graphify build` persists a deterministic, incremental, compiler-derived semantic index
 under `obj/graphify`, and `sage graphify query symbol|refs|callers|callees|deps|contract|module <name>`
 answers focused JSON questions about it; see [Graphify](docs/graphify.md).
+
+Phase 4 migrates the standard library to owned, safe APIs: `text`, `int_vector`,
+`Text` file paths, shell-free HTTP, and an owned HTTP listener. The Sandbox app and
+examples use no `unsafe`. See the [std migration audit](docs/std-migration.md).
 
 Phase 5 resolves callables only through direct `use` imports and rejects
 callables whose generated C symbols would collide (S212); see [modules](docs/modules.md).

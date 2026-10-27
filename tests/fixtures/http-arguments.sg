@@ -1,0 +1,50 @@
+use http_client;
+use text;
+use console;
+
+func show(label: str, result: HttpResult, body: &Text): none
+{
+    console::print_line("{label}: ok={result.ok} exit={result.exit_code} truncated={result.truncated} rejected={result.rejected} unavailable={result.unavailable}");
+    body.print();
+}
+
+// Arguments reach curl verbatim: quotes, ampersands, carets, percent signs and
+// backslashes are data, never shell syntax.
+func main(): none
+{
+    var body: Text = text::create(512);
+    var url: Text = text::from("http://example.invalid/a?x=\"q\"&echo&INJECTED|^%PATH%\\");
+    var result: HttpResult = http_client::get(&url, &mut body);
+    show("get", result, &body);
+
+    var data: Text = text::from("name=\"sage\" & more");
+    result = http_client::post(&url, &data, &mut body);
+    show("post", result, &body);
+
+    var path: Text = text::from("out dir\\file name.txt");
+    var empty_body: Text = text::create(0);
+    result = http_client::download(&url, &path);
+    show("download", result, &empty_body);
+
+    var small: Text = text::create(4);
+    result = http_client::get(&url, &mut small);
+    show("truncated", result, &small);
+    console::print_line("");
+
+    var failing: Text = text::from("https://example.invalid/exit7");
+    result = http_client::get(&failing, &mut body);
+    show("exit", result, &empty_body);
+
+    var ftp: Text = text::from("ftp://example.invalid/");
+    result = http_client::get(&ftp, &mut body);
+    show("scheme", result, &empty_body);
+    var spaced: Text = text::from("http://example.invalid/a b");
+    result = http_client::get(&spaced, &mut body);
+    show("space", result, &empty_body);
+    var option: Text = text::from("-o");
+    result = http_client::download(&url, &option);
+    show("option_path", result, &empty_body);
+    var absent: Text = text::empty();
+    result = http_client::get(&url, &mut absent);
+    show("empty_response", result, &empty_body);
+}

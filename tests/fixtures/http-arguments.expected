@@ -1,0 +1,27 @@
+get: ok=1 exit=0 truncated=0 rejected=0 unavailable=0
+<-q>
+<--silent>
+<--proto>
+<=http,https>
+<--proto-redir>
+<=http,https>
+<http://example.invalid/a?x="q"&echo&INJECTED|^%PATH%\>
+post: ok=1 exit=0 truncated=0 rejected=0 unavailable=0
+<-q>
+<--silent>
+<--proto>
+<=http,https>
+<--proto-redir>
+<=http,https>
+<--data-binary>
+<@->
+<http://example.invalid/a?x="q"&echo&INJECTED|^%PATH%\>
+stdin:name="sage" & more
+download: ok=1 exit=0 truncated=0 rejected=0 unavailable=0
+truncated: ok=1 exit=0 truncated=1 rejected=0 unavailable=0
+<-q>
+exit: ok=0 exit=7 truncated=0 rejected=0 unavailable=0
+scheme: ok=0 exit=-1 truncated=0 rejected=1 unavailable=0
+space: ok=0 exit=-1 truncated=0 rejected=1 unavailable=0
+option_path: ok=0 exit=-1 truncated=0 rejected=1 unavailable=0
+empty_response: ok=0 exit=-1 truncated=0 rejected=1 unavailable=0

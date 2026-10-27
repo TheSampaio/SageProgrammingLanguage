@@ -20,7 +20,7 @@ $cases = @(
     @{ Name = 'private_storage'; Code = 'func main(): none { var owner: ByteBuffer = byte_buffer::empty(); owner.data; }'; Error = 'S109' }
 )
 try {
-    foreach ($name in @('byte_buffer.sg', 'byte_file.sg', 'test.sg', 'console.sg')) {
+    foreach ($name in @('byte_buffer.sg', 'byte_file.sg', 'text.sg', 'test.sg', 'console.sg')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot "../Sandbox/std/$name") -Destination $stdDir
     }
     $headerPath = (Join-Path (Split-Path -Parent $compilerPath) 'Runtime/include/sage_byte_buffer.h').Replace('\', '/')
