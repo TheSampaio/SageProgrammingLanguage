@@ -201,6 +201,7 @@ To run `gcc` from any terminal (PowerShell, CMD, or VS Code), you must add it to
 
 ```rust
 use console;
+use text;
 
 struct Person
 {
@@ -220,11 +221,13 @@ func main(): none
     {
         if (i % 2 == 0)
         {
-            console::print_line("Even: {i}");
+            var line1: Text = $"Even: {i}";
+            line1.print_line();
         }
         else
         {
-            console::print_line("Odd: {i}");
+            var line2: Text = $"Odd: {i}";
+            line2.print_line();
         }
     }
 
@@ -239,19 +242,24 @@ func main(): none
         female = true
     };
 
-    console::print_line("Hi, I'm {person.name}.");
+    var line3: Text = $"Hi, I'm {person.name}.";
+    line3.print_line();
 
     if (person.female)
     {
-        console::print_line("I am female, {person.age} years old.");
+        var line4: Text = $"I am female, {person.age} years old.";
+        line4.print_line();
     }
     else
     {
-        console::print_line("I am male, {person.age} years old.");
+        var line5: Text = $"I am male, {person.age} years old.";
+        line5.print_line();
     }
 
-    console::print_line("Height: {person.height:2f}m");
-    console::print_line("Balance: ${person.money:2f}");
+    var line6: Text = $"Height: {person.height:2f}m";
+    line6.print_line();
+    var line7: Text = $"Balance: ${person.money:2f}";
+    line7.print_line();
 }
 ```
 
@@ -267,13 +275,16 @@ aliases created inside `unsafe` remain the programmer's responsibility.
 ### Plain values instead of `new` / `delete`
 
 ```rust
+use text;
+
 struct Person { name: str; age: i32; }
 
 func main(): none
 {
     // A plain struct value: no manual allocation or release.
     var hero: Person = { name = "Zelda", age = 118 };
-    console::print_line("{hero.name} is {hero.age}");
+    var line8: Text = $"{hero.name} is {hero.age}";
+    line8.print_line();
 }
 ```
 
@@ -350,7 +361,7 @@ compiler in `Runtime/include`. Since v0.19.0, import `http_client` and
 
 The [owned byte buffer](docs/byte-buffers.md) supports safe creation, shared reads,
 exclusive mutation, and automatic cleanup without exposing native storage.
-[Owned text](docs/text.md) adds safe strings and bounded `read_line`, [`int_vector`](docs/int-vector.md)
+[Strings](docs/strings.md) explains literals and `$"..."` interpolation. [Owned text](docs/text.md) adds safe strings and bounded `read_line`, [`int_vector`](docs/int-vector.md)
 a bounded growable collection; the
 [std migration audit](docs/std-migration.md) tracks the remaining unsafe APIs. Safe HTTP is described in [HTTP](docs/http.md).
 
@@ -384,7 +395,7 @@ file directly with `sage <file>.test.sg` and read the `[PASS]`/`[FAIL]` output.
 
 ## Project Status
 
-The project is currently in **v0.38.1 (Alpha)**.
+The project is currently in **v0.39.0 (Alpha)**.
 
 Builds compile each generated module, declared native source, and C++ adapter into its own
 object and reuse unchanged objects from a content-addressed cache; `--clean` forces a full
@@ -430,7 +441,7 @@ Header parsing with Clang is deferred; see [C++ interop](docs/cpp-interop.md).
 * [x] **Header Tree-Shaking** (Normalized & Optimized C output)
 * [x] **Logical & Comparison Operators** (`&&`, `||`, `!`, `==`, etc.)
 * [x] **Modules & Namespaces** (`::`)
-* [x] **String Interpolation** (Transpiled to `snprintf` with static buffers)
+* [x] **String Interpolation** (`$"Hello {name}"` builds an owned `Text`; no shared buffers, see [strings](docs/strings.md))
 * [x] **Native Compilation** (GCC Integration)
 * [x] **Structs and Custom Types**
 * [x] **Arrays and Pointers**

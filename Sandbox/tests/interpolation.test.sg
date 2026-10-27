@@ -1,15 +1,70 @@
-/// Unit tests: string interpolation and format specifiers.
+/// Unit tests: string interpolation ($"...") and format specifiers.
 use test;
+use text;
+
+/// Plain function returning a literal; used to check nested calls inside interpolation.
+func label(n: i32): str
+{
+    return "item";
+}
+
+/// Builds an interpolated Text and returns its ownership to the caller.
+func describe(n: i32): Text
+{
+    var made: Text = $"n={n}";
+    return made;
+}
 
 func main(): none
 {
     var n: i32 = 42;
     var name: str = "Sage";
 
-    test::assert_eq_str("interp_int", "n={n}", "n=42");
-    test::assert_eq_str("interp_str", "hi {name}", "hi Sage");
-    test::assert_eq_str("interp_mixed", "{name} is {n}", "Sage is 42");
+    var plain: Text = $"n={n}";
+    test::assert_true("interp_int", plain.equals_str("n=42"));
+    var greeting: Text = $"hi {name}";
+    test::assert_true("interp_str", greeting.equals_str("hi Sage"));
+    var mixed: Text = $"{name} is {n}";
+    test::assert_true("interp_mixed", mixed.equals_str("Sage is 42"));
 
     var pi: f64 = 3.14159;
-    test::assert_eq_str("interp_format", "{pi:2f}", "3.14");
+    var shorthand: Text = $"{pi:2f}";
+    test::assert_true("interp_format", shorthand.equals_str("3.14"));
+    var padded: Text = $"[{pi:8.3f}]";
+    test::assert_true("interp_float_width", padded.equals_str("[   3.142]"));
+    var wide: Text = $"[{n:5}] [{n:-5}] [{n:05}]";
+    test::assert_true("interp_int_width", wide.equals_str("[   42] [42   ] [00042]"));
+    var hex: Text = $"{255 as u32:x}";
+    test::assert_true("interp_hex_unsigned", hex.equals_str("ff"));
+
+    // A literal-only and an empty literal are valid; '%' in text is data, not a conversion.
+    var empty: Text = $"";
+    test::assert_eq_i32("interp_empty_length", empty.length() as i32, 0);
+    var percent: Text = $"100% of {n}";
+    test::assert_true("interp_percent", percent.equals_str("100% of 42"));
+    var only_text: Text = $"no parts";
+    test::assert_true("interp_text_only", only_text.equals_str("no parts"));
+
+    // Consecutive results are independent owners (no shared buffer).
+    var first: Text = $"first {n}";
+    var second: Text = $"second {n}";
+    test::assert_true("interp_consecutive_first", first.equals_str("first 42"));
+    test::assert_true("interp_consecutive_second", second.equals_str("second 42"));
+
+    // Several calls inside one literal are all evaluated before formatting.
+    var calls: Text = $"{label(1)} and {label(2)}";
+    test::assert_true("interp_nested_calls", calls.equals_str("item and item"));
+
+    // Results returned through a function keep their contents.
+    var made_a: Text = describe(1);
+    var made_b: Text = describe(2);
+    test::assert_true("interp_returned_a", made_a.equals_str("n=1"));
+    test::assert_true("interp_returned_b", made_b.equals_str("n=2"));
+
+    // Long output is sized exactly; nothing is truncated at the old 512-byte limit.
+    var long_text: Text = $"{name}{name}{name}{name}{name}{name}{name}{name}{name}{name}";
+    test::assert_eq_i32("interp_exact_capacity", long_text.capacity() as i32, 40);
+
+    // Plain literals no longer interpolate: braces are ordinary text.
+    test::assert_eq_str("plain_braces_are_text", "n={n}", "n={n}");
 }

@@ -515,7 +515,9 @@ namespace Sage.Core
         }
 
         /// <summary>
-        /// Transpiles interpolated strings into a scoped C block using snprintf and a static buffer.
+        /// Transpiles <c>$"..."</c> into one <c>sage_text_format</c> call that returns a new, exactly sized
+        /// <c>Text</c> owner. Each expression is an argument, so it is evaluated once; there is no shared buffer.
+        /// Arguments are cast to the width their checked conversion expects.
         /// </summary>
         public string Visit(InterpolatedStringNode node)
         {
@@ -524,47 +526,20 @@ namespace Sage.Core
 
             foreach (var part in node.Parts)
             {
-                if (part is LiteralNode lit && lit.TypeName == "str")
+                if (InterpolationText.IsSegment(part))
                 {
-                    string safeLiteral = lit.Value!.ToString()!.Replace("%", "%%");
-                    formatString.Append(safeLiteral);
+                    formatString.Append(((LiteralNode)part).Value!.ToString()!.Replace("%", "%%"));
+                    continue;
                 }
-                else
-                {
-                    string specifier;
-                    if (!string.IsNullOrEmpty(part.FormatSpecifier))
-                    {
-                        if (TypeSystem.IsFloatingPoint(part.VariableType!))
-                        {
-                            if (part.FormatSpecifier.StartsWith('.')) specifier = $"%{part.FormatSpecifier}";
-                            else if (part.FormatSpecifier.EndsWith('f')) specifier = $"%.{part.FormatSpecifier}";
-                            else specifier = $"%{part.FormatSpecifier}";
-                        }
-                        else specifier = $"%{part.FormatSpecifier}";
-                    }
-                    else
-                    {
-                        specifier = part.VariableType switch
-                        {
-                            "i32" or "i16" or "i8" => "%d",
-                            "u32" or "u16" or "u8" => "%u",
-                            "i64" => "%lld",
-                            "u64" => "%llu",
-                            "f32" or "f64" => "%f",
-                            "str" => "%s",
-                            _ => "%d"
-                        };
-                    }
-                    formatString.Append(specifier);
-                    arguments.Add(part.Accept(this));
-                }
+
+                InterpolationFormat.TryResolve(part.VariableType!, part.FormatSpecifier, out string conversion, out string cast, out _);
+                formatString.Append(conversion);
+                string argument = part.Accept(this);
+                arguments.Add(part.VariableType == "str" ? $"sage_text_cstr_or_empty({argument})" : $"{cast}({argument})");
             }
 
-            // Each interpolation gets a uniquely named buffer so several interpolated strings can
-            // coexist within a single expression without aliasing one another.
-            string buf = MintName("_buf");
             string argsC = arguments.Count > 0 ? ", " + string.Join(", ", arguments) : "";
-            return $"({{ static char {buf}[512]; snprintf({buf}, sizeof({buf}), \"{formatString}\"{argsC}); {buf}; }})";
+            return $"({InterpolationText.TypeName}){{ sage_text_format(\"{formatString}\"{argsC}) }}";
         }
 
         public string Visit(StructInitializationNode node)

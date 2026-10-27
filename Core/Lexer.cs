@@ -94,6 +94,12 @@ namespace Sage.Core
                     continue;
                 }
 
+                if (c == '$' && _pos + 1 < _text.Length && _text[_pos + 1] == '"')
+                {
+                    tokens.Add(LexString(TokenType.InterpolatedString));
+                    continue;
+                }
+
                 Token? symbol = LexSymbol();
                 if (symbol != null) tokens.Add(symbol);
             }
@@ -168,11 +174,12 @@ namespace Sage.Core
         /// Consumes a string literal enclosed in double quotes.
         /// </summary>
         /// <returns>A token containing the string content without the quotes.</returns>
-        private Token LexString()
+        private Token LexString(TokenType type = TokenType.String)
         {
             int startCol = _col;
             int startLine = _line;
 
+            if (type == TokenType.InterpolatedString) Advance(); // Skip the '$' prefix
             Advance(); // Skip opening "
 
             var sb = new StringBuilder();
@@ -199,7 +206,7 @@ namespace Sage.Core
 
             if (_pos >= _text.Length)
             {
-                CompilerLogger.LogError(new Token(TokenType.String, sb.ToString(), startLine, startCol),
+                CompilerLogger.LogError(new Token(type, sb.ToString(), startLine, startCol),
                     "S013", "Unterminated string literal.");
             }
             else
@@ -207,7 +214,7 @@ namespace Sage.Core
                 Advance(); // Skip closing "
             }
 
-            return new Token(TokenType.String, sb.ToString(), startLine, startCol);
+            return new Token(type, sb.ToString(), startLine, startCol);
         }
 
         /// <summary>

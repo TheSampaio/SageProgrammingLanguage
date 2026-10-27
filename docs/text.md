@@ -96,7 +96,7 @@ allocation, checks capacity arithmetic before allocating, measures `str`
 arguments with a `u32` bound, and copies with `memmove`. Capacity is limited to
 `u32`. There is no resize, slicing, formatting into `Text`, encoding validation
 (bytes are not checked as UTF-8), conversion to `str`, or thread safety yet.
-String interpolation still produces `str`; print a `Text` with `print`/`print_line`.
+A `$"..."` literal now builds a `Text` (see [strings](strings.md)); print it with `print`/`print_line`. Every owner keeps one extra terminator byte past its capacity, so `unsafe text::as_str(&value)` can lend a NUL-terminated view to legacy `str` APIs.
 
 Validated by `tests/text.ps1` (native contract incl. allocation failure and line
 input edge cases, 40 Sage assertions, a real stdin pipe, exactly-once cleanup

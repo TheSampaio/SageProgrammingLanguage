@@ -90,6 +90,7 @@
         Integer,      // Numeric literal
         Float,        // Floating-point literal
         String,       // String literal
+        InterpolatedString, // $"..." literal with {expression} parts
 
         // --- Special ---
         Unknown,      // Error fallback

@@ -1,0 +1,33 @@
+use text;
+use console;
+
+// Returns an interpolated owner; each call must yield an independent result.
+func describe(n: i32): Text
+{
+    var made: Text = $"item {n}";
+    return made;
+}
+
+func main(): none
+{
+    var first: Text = describe(1);
+    var second: Text = describe(2);
+    first.print_line();
+    second.print_line();
+
+    var total: i32 = 0;
+    for (var i: i32 = 0; i < 100; i++)
+    {
+        var row: Text = $"row {i}";
+        total = total + row.length() as i32;
+    }
+
+    // Two 302-byte padded fields exceed the old 512-byte static buffer.
+    var name: str = "x";
+    var big: Text = $"[{name:-300}][{name:-300}]";
+    var rows: Text = $"rows total={total}";
+    rows.print_line();
+    var size: Text = $"long={big.length()} capacity={big.capacity()}";
+    size.print_line();
+    console::print_line("braces stay {text} here");
+}

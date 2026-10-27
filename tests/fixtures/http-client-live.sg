@@ -7,6 +7,7 @@ func main(): none
     var url: Text = text::from("http://127.0.0.1:@PORT@/from-sage?q=a&b=%22c%22");
     var body: Text = text::create(1024);
     var result: HttpResult = http_client::get(&url, &mut body);
-    console::print_line("ok={result.ok} exit={result.exit_code} truncated={result.truncated}");
+    var out1: Text = $"ok={result.ok} exit={result.exit_code} truncated={result.truncated}";
+    out1.print_line();
     body.print_line();
 }

@@ -755,6 +755,58 @@ namespace Sage.Core
             return expr;
         }
 
+        /// <summary>
+        /// Parses a <c>$"..."</c> literal into literal and <c>{expression[:format]}</c> parts.
+        /// Plain string literals never interpolate.
+        /// </summary>
+        private InterpolatedStringNode ParseInterpolatedString(Token startToken)
+        {
+            string value = Consume(TokenType.InterpolatedString).Value;
+            var interpNode = CreateNode(new InterpolatedStringNode(), startToken);
+            int lastClose = 0;
+
+            for (int i = 0; i < value.Length; i++)
+            {
+                if (value[i] != '{') continue;
+
+                if (i > lastClose)
+                    interpNode.Parts.Add(CreateNode(new LiteralNode(value[lastClose..i], "str"), startToken));
+
+                int end = value.IndexOf('}', i);
+                if (end == -1) throw new CompilerException(startToken, "S010", "Unclosed interpolation brace '}'.");
+
+                string exprStr = value[(i + 1)..end];
+                if (string.IsNullOrWhiteSpace(exprStr))
+                    throw new CompilerException(startToken, "S011", "Empty interpolation expression.");
+
+                string? format = null;
+                int lastColonIdx = exprStr.LastIndexOf(':');
+
+                if (lastColonIdx != -1 && (lastColonIdx == 0 || exprStr[lastColonIdx - 1] != ':'))
+                {
+                    format = exprStr[(lastColonIdx + 1)..];
+                    exprStr = exprStr[..lastColonIdx];
+                }
+
+                var subLexer = new Lexer(exprStr);
+                var subTokens = subLexer.Tokenize();
+                var subParser = new Parser(subTokens, _fileName);
+
+                var parsedExpr = subParser.ParseExpression();
+                parsedExpr.FormatSpecifier = format;
+
+                interpNode.Parts.Add(parsedExpr);
+
+                i = end;
+                lastClose = end + 1;
+            }
+
+            if (lastClose < value.Length)
+                interpNode.Parts.Add(CreateNode(new LiteralNode(value[lastClose..], "str"), startToken));
+
+            return interpNode;
+        }
+
         /// <summary>Parses primary expressions: literals, identifiers, and parenthesized expressions.</summary>
         private AstNode ParsePrimary()
         {
@@ -766,64 +818,9 @@ namespace Sage.Core
             if (Current.Type == TokenType.Integer) return CreateNode(new LiteralNode(Consume(TokenType.Integer).Value, "i32"), startToken);
             if (Current.Type == TokenType.Float) return CreateNode(new LiteralNode(Consume(TokenType.Float).Value, "f64"), startToken);
 
+            if (Current.Type == TokenType.InterpolatedString) return ParseInterpolatedString(startToken);
             if (Current.Type == TokenType.String)
-            {
-                string value = Consume(TokenType.String).Value;
-
-                if (value.Contains('{') && value.Contains('}'))
-                {
-                    var interpNode = CreateNode(new InterpolatedStringNode(), startToken);
-                    int lastClose = 0;
-
-                    for (int i = 0; i < value.Length; i++)
-                    {
-                        if (value[i] == '{')
-                        {
-                            if (i > lastClose)
-                            {
-                                interpNode.Parts.Add(CreateNode(new LiteralNode(value[lastClose..i], "str"), startToken));
-                            }
-
-                            int end = value.IndexOf('}', i);
-                            if (end == -1) throw new CompilerException(startToken, "S010", "Unclosed interpolation brace '}'.");
-
-                            string exprStr = value[(i + 1)..end];
-                            if (string.IsNullOrWhiteSpace(exprStr))
-                                throw new CompilerException(startToken, "S011", "Empty interpolation expression.");
-
-                            string? format = null;
-                            int lastColonIdx = exprStr.LastIndexOf(':');
-
-                            if (lastColonIdx != -1 && (lastColonIdx == 0 || exprStr[lastColonIdx - 1] != ':'))
-                            {
-                                format = exprStr[(lastColonIdx + 1)..];
-                                exprStr = exprStr[..lastColonIdx];
-                            }
-
-                            var subLexer = new Lexer(exprStr);
-                            var subTokens = subLexer.Tokenize();
-                            var subParser = new Parser(subTokens, _fileName);
-
-                            var parsedExpr = subParser.ParseExpression();
-                            parsedExpr.FormatSpecifier = format;
-
-                            interpNode.Parts.Add(parsedExpr);
-
-                            i = end;
-                            lastClose = end + 1;
-                        }
-                    }
-
-                    if (lastClose < value.Length)
-                    {
-                        interpNode.Parts.Add(CreateNode(new LiteralNode(value[lastClose..], "str"), startToken));
-                    }
-
-                    return interpNode;
-                }
-
-                return CreateNode(new LiteralNode(value, "str"), startToken);
-            }
+                return CreateNode(new LiteralNode(Consume(TokenType.String).Value, "str"), startToken);
 
             if (Current.Type == TokenType.Identifier)
             {

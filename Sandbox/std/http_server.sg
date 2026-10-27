@@ -62,7 +62,8 @@ module http_server
         winsock::bind(sock, addr as none*, 16);
         winsock::listen(sock, 8);
 
-        console::print_line("Sage HTTP server listening on http://localhost:{port}");
+        var banner: Text = $"Sage HTTP server listening on http://localhost:{port}";
+        banner.print_line();
 
         var running: b8 = true;
         while (running)
@@ -73,7 +74,8 @@ module http_server
             winsock::recv(client, request as none*, 2048, 0);
 
             var body_len: c_int = libc_string::strlen(body) as c_int;
-            var response: str = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\nContent-Length: {body_len}\r\n\r\n{body}";
+            var reply: Text = $"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\nContent-Length: {body_len}\r\n\r\n{body}";
+            var response: str = text::as_str(&reply);
             var response_len: c_int = libc_string::strlen(response) as c_int;
 
             winsock::send(client, response as none*, response_len, 0);

@@ -30,7 +30,7 @@ try {
     $env:SAGE_GPP_MARKER = $marker
     $env:PATH = $shimDir + [IO.Path]::PathSeparator + $originalPath
 
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../Sandbox/std/console.sg') -Destination $stdDir
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../Sandbox/std/console.sg'), (Join-Path $PSScriptRoot '../Sandbox/std/text.sg') -Destination $stdDir
     Copy-Item -LiteralPath (Join-Path $fixtures 'cpp-interop.hpp') -Destination $sourceDir
     Set-Content -LiteralPath (Join-Path $sourceDir 'plain.h') -Value 'int plain_double(int value);'
     Set-Content -LiteralPath (Join-Path $sourceDir 'plain.c') -Value 'int plain_double(int value) { return value * 2; }'
@@ -39,7 +39,7 @@ try {
     $programs = @(
         @{ Name = 'plain_console'; Code = 'use console; func main(): none { console::print_line("[PASS] plain"); }'; Expect = '[PASS] plain' },
         @{ Name = 'plain_alias'; Code = 'extern cpp("stdlib.h") { func abs(value: c_int): c_int; } func main(): none { unsafe { cpp::abs(-2); } }'; Expect = '' },
-        @{ Name = 'plain_source'; Code = 'use console; extern plain("plain.h") { source "plain.c"; func plain_double(value: c_int): c_int; } func main(): none { unsafe { var x: i32 = plain::plain_double(21) as i32; console::print_line("x={x}"); } }'; Expect = 'x=42' }
+        @{ Name = 'plain_source'; Code = 'use text; extern plain("plain.h") { source "plain.c"; func plain_double(value: c_int): c_int; } func main(): none { unsafe { var x: i32 = plain::plain_double(21) as i32; var line: Text = $"x={x}"; line.print_line(); } }'; Expect = 'x=42' }
     )
     foreach ($program in $programs) {
         $result = Invoke-Sage $program.Name $program.Code

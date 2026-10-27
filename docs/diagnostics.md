@@ -196,6 +196,10 @@ are not language diagnostics, such as a missing entry point or a native toolchai
 | S211 | A declared native source must exist and be a .c, .cpp, .cc, or .cxx file. |  |
 | S212 | Distinct declarations must not lower to the same C symbol. | Rename one of the declarations. |
 | S213 | A native parameter cannot have type 'none'. | Use 'none*' for an untyped pointer. |
+| S214 | An interpolated string creates an owned 'Text' and must directly initialize a local 'Text' variable. | Bind it first: var message: Text = $"Hello {name}"; |
+| S215 | An interpolated string produces 'Text', which needs the text module. | Add 'use text;' to the file. |
+| S216 | Only numbers, 'b8' and 'str' values can be interpolated. | Interpolate a field or a converted value instead. |
+| S217 | A format specifier must fit the interpolated value's type. | Use flags, width, precision and a conversion allowed for that type; see docs/strings.md. |
 
 ### Tooling
 
