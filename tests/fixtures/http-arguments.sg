@@ -4,7 +4,8 @@ use console;
 
 func show(label: str, result: HttpResult, body: &Text): none
 {
-    console::print_line("{label}: ok={result.ok} exit={result.exit_code} truncated={result.truncated} rejected={result.rejected} unavailable={result.unavailable}");
+    var out1: Text = $"{label}: ok={result.ok} exit={result.exit_code} truncated={result.truncated} rejected={result.rejected} unavailable={result.unavailable}";
+    out1.print_line();
     body.print();
 }
 

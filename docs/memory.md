@@ -151,8 +151,8 @@ any C is generated:
   and raw handle exposure from owners or borrows.
 - Native declarations: the ABI signature, the declared destructor's behavior,
   and what native code does with any pointer it receives.
-- `str` is a C `char*` without an ownership or lifetime contract; interpolation
-  uses static buffers (Phase 4 work).
+- `str` is a C `char*` without an ownership or lifetime contract. Interpolation no
+  longer uses shared buffers: `$"..."` builds an owned `Text` ([strings](strings.md)).
 - Process termination (`exit`, `abort`, native crashes, runtime S186) does not
   run scope cleanup. Allocation failure inside `new` aborts.
 - Not yet supported (rejected rather than unchecked): borrows of resource

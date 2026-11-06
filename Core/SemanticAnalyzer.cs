@@ -464,7 +464,7 @@ namespace Sage.Core
                 throw new CompilerException(node, "S102", $"Variable '{node.Name}' is already defined.");
             if (TypeSystem.IsBorrowType(node.Type)) return AnalyzeBorrowedBinding(node);
 
-            if (isResource && node.Initializer is not (IdentifierNode or FunctionCallNode or MethodCallNode) &&
+            if (isResource && node.Initializer is not (IdentifierNode or FunctionCallNode or MethodCallNode or InterpolatedStringNode) &&
                 (node.Initializer is not CastExpressionNode adoption || adoption.TargetType != node.Type))
                 throw new CompilerException(node, "S192", "A resource local requires a named owner move, a direct owning call, or direct unsafe adoption from its declared native pointer.");
 
@@ -1111,14 +1111,28 @@ namespace Sage.Core
 
         public string Visit(UseNode node) => "none";
 
+        /// <summary>
+        /// A <c>$"..."</c> literal builds a new owned <c>Text</c>, so it follows the owning-result rule:
+        /// it must directly initialize a local owner and is never an ordinary value.
+        /// </summary>
         public string Visit(InterpolatedStringNode node)
         {
             foreach (var part in node.Parts)
             {
                 part.VariableType = part.Accept(this);
                 RequireValueContract(part);
+                if (InterpolationText.IsSegment(part)) continue;
+                if (!InterpolationFormat.IsSupported(part.VariableType))
+                    throw new CompilerException(part, "S216", $"A value of type '{part.VariableType}' cannot be interpolated. Use a number, 'b8', or 'str'.");
+                if (!InterpolationFormat.TryResolve(part.VariableType, part.FormatSpecifier, out _, out _, out string error))
+                    throw new CompilerException(part, "S217", error);
             }
-            return "str";
+
+            if (_functionDepth == 0 || !ReferenceEquals(node, _owningInitializer))
+                throw new CompilerException(node, "S214", "An interpolated string creates an owned 'Text' and must directly initialize a local 'Text' variable.");
+            if (TypeSystem.GetNativeResource(InterpolationText.TypeName) is not { NativeType: "SageTextState*" })
+                throw new CompilerException(node, "S215", "An interpolated string produces 'Text'. Add 'use text;' to the file.");
+            return InterpolationText.TypeName;
         }
 
         public string Visit(StructDeclarationNode node)

@@ -26,7 +26,7 @@ $cases = @(
     @{ Name = 'borrowed_array_binding'; Code = 'func main(): none { var x: i32 = 1; var views: &i32[1] = &x; }'; Error = 'S170' },
     @{ Name = 'borrowed_resource_into_field'; Code = 'func main(): none { var owner: OwnedFile = make(); var view: &OwnedFile = &owner; var box: Box = { item = view }; }'; Error = 'S191' },
     @{ Name = 'borrowed_resource_into_array'; Code = 'func main(): none { var owner: OwnedFile = make(); var view: &OwnedFile = &owner; var items: OwnedFile[1] = { view }; }'; Error = 'S191' },
-    @{ Name = 'borrow_in_interpolation'; Code = 'func main(): none { var x: i32 = 1; var text: str = "{&x}"; }'; Error = 'S173' },
+    @{ Name = 'borrow_in_interpolation'; Code = 'func main(): none { var x: i32 = 1; var text: str = $"{&x}"; }'; Error = 'S173' },
 
     # Rebinding a borrow to a shorter-lived owner or fabricating one.
     @{ Name = 'rebind_to_inner_scope'; Code = 'func main(): none { var x: Item = {}; var view: &mut Item = &mut x; if (true) { var inner: Item = {}; view = &mut inner; } }'; Error = 'S173' },

@@ -2,6 +2,7 @@
 #define SAGE_TEXT_H
 
 #include <limits.h>
+#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,8 +11,10 @@
 _Static_assert(CHAR_BIT == 8, "Sage text requires 8-bit bytes");
 _Static_assert(SIZE_MAX >= UINT32_MAX, "Sage text requires at least 32-bit size_t");
 
-/* Private storage. Only data[0..length) is initialized; there is no terminator.
-   Every byte value is data. Capacity is fixed at creation. */
+/* Private storage. Only data[0..length) is user data and every byte value is data.
+   One extra byte past the capacity holds a terminator that is rewritten after each
+   mutation, so data is also a valid C string while it has no embedded zero byte.
+   Capacity is fixed at creation. */
 typedef struct SageTextState
 {
     size_t length;
@@ -22,10 +25,11 @@ typedef struct SageTextState
 static SageTextState* sage_text_create(size_t capacity)
 {
     if (capacity > UINT32_MAX || capacity > SIZE_MAX - sizeof(SageTextState)) return NULL;
-    SageTextState* state = malloc(sizeof(*state) + capacity);
+    SageTextState* state = malloc(sizeof(*state) + capacity + 1);
     if (!state) return NULL;
     state->length = 0;
     state->capacity = capacity;
+    state->data[0] = '\0';
     return state;
 }
 
@@ -51,6 +55,7 @@ static SageTextState* sage_text_from_cstr(const char* value)
     if (!state) return NULL;
     memcpy(state->data, value, length);
     state->length = length;
+    state->data[length] = '\0';
     return state;
 }
 
@@ -62,6 +67,7 @@ static SageTextState* sage_text_copy(const SageTextState* source)
     if (!state) return NULL;
     memcpy(state->data, source->data, source->length);
     state->length = source->length;
+    state->data[state->length] = '\0';
     return state;
 }
 
@@ -88,6 +94,7 @@ static int sage_text_append_bytes(SageTextState* state, const unsigned char* byt
     if (!state || length > state->capacity - state->length) return 0;
     if (length > 0) memmove(state->data + state->length, bytes, length);
     state->length += length;
+    state->data[state->length] = '\0';
     return 1;
 }
 
@@ -111,7 +118,9 @@ static int sage_text_push(SageTextState* state, unsigned char byte)
 
 static void sage_text_clear(SageTextState* state)
 {
-    if (state) state->length = 0;
+    if (!state) return;
+    state->length = 0;
+    state->data[0] = '\0';
 }
 
 /* Lexicographic unsigned-byte order; empty owners compare as empty text. */
@@ -186,7 +195,46 @@ static int sage_text_read_line(SageTextState* state)
         else if (value == '\r') pending_carriage = 1;
         else flags |= SAGE_TEXT_LINE_TRUNCATED;
     }
+    state->data[state->length] = '\0';
     return flags;
+}
+
+/* Borrowed C string view of the contents: valid until the next mutation or drop, and
+   shorter than length if the data holds a zero byte. Empty owners read as "". */
+static const char* sage_text_cstr(const SageTextState* state)
+{
+    return state ? (const char*)state->data : "";
+}
+
+/* Keeps a NULL legacy string from reaching "%s". */
+static const char* sage_text_cstr_or_empty(const char* value)
+{
+    return value ? value : "";
+}
+
+/* Interpolation target: formats into a new owner sized exactly to the result, so there
+   is no shared buffer and no truncation. Arguments are evaluated once by the caller.
+   Returns NULL (an empty owner) on a formatting error, allocation failure, or a result
+   larger than UINT32_MAX bytes. */
+static SageTextState* sage_text_format(const char* format, ...)
+{
+    va_list measure, write;
+    va_start(measure, format);
+    va_copy(write, measure);
+    int needed = vsnprintf(NULL, 0, format, measure);
+    va_end(measure);
+    SageTextState* state = needed < 0 ? NULL : sage_text_create((size_t)needed);
+    if (state)
+    {
+        if (vsnprintf((char*)state->data, (size_t)needed + 1, format, write) == needed) state->length = (size_t)needed;
+        else
+        {
+            free(state);
+            state = NULL;
+        }
+    }
+    va_end(write);
+    return state;
 }
 
 static void sage_text_drop(SageTextState* state)

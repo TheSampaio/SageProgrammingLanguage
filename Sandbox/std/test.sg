@@ -7,7 +7,7 @@
 ///
 /// Tooling (e.g. the VS Code Test Explorer) discovers `.sg` files under a `tests/`
 /// folder, runs them, and parses these lines into individual test results.
-use console;
+use text;
 
 module test
 {
@@ -21,11 +21,13 @@ module test
     {
         if (passed)
         {
-            console::print_line("[PASS] {name}");
+            var line: Text = $"[PASS] {name}";
+            line.print_line();
         }
         else
         {
-            console::print_line("[FAIL] {name}");
+            var line: Text = $"[FAIL] {name}";
+            line.print_line();
         }
     }
 
@@ -46,11 +48,13 @@ module test
     {
         if (actual == expected)
         {
-            console::print_line("[PASS] {name}");
+            var line: Text = $"[PASS] {name}";
+            line.print_line();
         }
         else
         {
-            console::print_line("[FAIL] {name} (expected {expected}, got {actual})");
+            var line: Text = $"[FAIL] {name} (expected {expected}, got {actual})";
+            line.print_line();
         }
     }
 
@@ -59,11 +63,13 @@ module test
     {
         if (actual == expected)
         {
-            console::print_line("[PASS] {name}");
+            var line: Text = $"[PASS] {name}";
+            line.print_line();
         }
         else
         {
-            console::print_line("[FAIL] {name} (expected {expected}, got {actual})");
+            var line: Text = $"[FAIL] {name} (expected {expected}, got {actual})";
+            line.print_line();
         }
     }
 
@@ -78,11 +84,13 @@ module test
 
         if (diff < 0.0001)
         {
-            console::print_line("[PASS] {name}");
+            var line: Text = $"[PASS] {name}";
+            line.print_line();
         }
         else
         {
-            console::print_line("[FAIL] {name} (expected {expected:6f}, got {actual:6f})");
+            var line: Text = $"[FAIL] {name} (expected {expected:6f}, got {actual:6f})";
+            line.print_line();
         }
     }
 
@@ -94,11 +102,13 @@ module test
         {
             if (libc_string::strcmp(actual, expected) == 0)
             {
-                console::print_line("[PASS] {name}");
+                var line: Text = $"[PASS] {name}";
+                line.print_line();
             }
             else
             {
-                console::print_line("[FAIL] {name} (expected '{expected}', got '{actual}')");
+                var line: Text = $"[FAIL] {name} (expected '{expected}', got '{actual}')";
+                line.print_line();
             }
         }
     }

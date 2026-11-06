@@ -21,7 +21,7 @@ $cases = @(
     @{ Name = 'wide_index_requires_conversion'; Code = 'func main(): none { var a: IntVector = int_vector::create(4); var i: u64 = 0; a.get(i); }'; Error = 'S161' }
 )
 try {
-    foreach ($name in @('int_vector.sg', 'test.sg', 'console.sg')) {
+    foreach ($name in @('int_vector.sg', 'test.sg', 'text.sg', 'console.sg')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot "../Sandbox/std/$name") -Destination $stdDir
     }
     $headerPath = (Join-Path (Split-Path -Parent $compilerPath) 'Runtime/include/sage_int_vector.h').Replace('\', '/')

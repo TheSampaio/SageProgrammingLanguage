@@ -16,9 +16,9 @@ struct Account
 }
 
 /// Appends one report line; returns false when the report is full.
-func add_line(report: &mut Text, line: str): b8
+func add_line(report: &mut Text, line: &Text): b8
 {
-    return report.append_str(line) && report.append_str("\n");
+    return report.append(&line) && report.append_str("\n");
 }
 
 /// Largest year-over-year gain, in cents, from the recorded balances.
@@ -47,9 +47,12 @@ func main(): none
     title.append(&name);
     title.append_str(" =====");
     title.print_line();
-    console::print_line("Principal:  ${acc.principal:2f}");
-    console::print_line("Rate:       {acc.rate:2f} per year");
-    console::print_line("Horizon:    {acc.years} years");
+    var line1: Text = $"Principal:  ${acc.principal:2f}";
+    line1.print_line();
+    var line2: Text = $"Rate:       {acc.rate:2f} per year";
+    line2.print_line();
+    var line3: Text = $"Horizon:    {acc.years} years";
+    line3.print_line();
 
     // Balance per year in cents, bounded to the horizon plus the opening balance.
     var balances: IntVector = int_vector::create(acc.years as u32 + 1);
@@ -57,22 +60,27 @@ func main(): none
     balances.push((balance * 100.0) as i32);
 
     var report: Text = text::create(1024);
-    add_line(&mut report, "year,balance");
+    var header: Text = text::from("year,balance");
+    add_line(&mut report, &header);
     for (var year: i32 = 1; year <= acc.years; year++)
     {
         balance = balance + balance * acc.rate;
         var grow: VectorGrow = balances.push((balance * 100.0) as i32);
-        if (!grow.ok) { console::print_line("Could not record year {year}."); }
-        console::print_line("Year {year}: ${balance:2f}");
-        var row: str = "{year},{balance:2f}";
-        add_line(&mut report, row);
+        if (!grow.ok) { var line8: Text = $"Could not record year {year}."; line8.print_line(); }
+        var line4: Text = $"Year {year}: ${balance:2f}";
+        line4.print_line();
+        var row: Text = $"{year},{balance:2f}";
+        add_line(&mut report, &row);
     }
 
     var growth: f64 = ((balance - acc.principal) / acc.principal) * 100.0;
     var gain: i32 = best_gain(&balances);
-    console::print_line("Final balance:  ${balance:2f}");
-    console::print_line("Total growth:   {growth:2f}%");
-    console::print_line("Best year gain: {gain} cents");
+    var line5: Text = $"Final balance:  ${balance:2f}";
+    line5.print_line();
+    var line6: Text = $"Total growth:   {growth:2f}%";
+    line6.print_line();
+    var line7: Text = $"Best year gain: {gain} cents";
+    line7.print_line();
 
     var path: Text = text::from("savings_report.csv");
     var file: ByteFile = byte_file::create_text(&path);

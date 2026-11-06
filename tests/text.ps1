@@ -92,7 +92,8 @@ try {
             $active.Remove($pointer); $releases++
         } else { throw "Unknown tracker event: $line" }
     }
-    if ($active.Count -ne 0 -or $allocations -ne 10 -or $releases -ne 10) { throw "Text cleanup mismatch: $allocations allocations, $releases releases, $($active.Count) live." }
+    # 10 owners from the fixture plus one interpolated report line per assertion (5), all released exactly once.
+    if ($active.Count -ne 0 -or $allocations -ne 15 -or $releases -ne 15) { throw "Text cleanup mismatch: $allocations allocations, $releases releases, $($active.Count) live." }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../Sandbox/std/text.sg') -Destination $modulePath
 
     foreach ($case in $cases) {

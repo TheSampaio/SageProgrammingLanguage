@@ -23,6 +23,7 @@ module text
         func sage_text_compare_cstr(left: SageTextState*, right: c_char*): c_int;
         func sage_text_print(value: SageTextState*, newline: c_int): c_int;
         func sage_text_read_line(value: SageTextState*): c_int;
+        func sage_text_cstr(value: SageTextState*): c_char*;
         func sage_text_drop(value: SageTextState*): none;
         resource Text: SageTextState* drop sage_text_drop;
     }
@@ -152,6 +153,13 @@ module text
             var count: u32 = text_native::sage_text_length(value as SageTextState*) as u32;
             return { count = count, eof = flags % 2 == 1, truncated = (flags / 2) % 2 == 1, failed = (flags / 4) % 2 == 1 };
         }
+    }
+
+    /// Borrowed NUL-terminated view of the contents for legacy `str` APIs. Valid only
+    /// while the owner is live and unmodified; it stops early at a zero byte. Never store it.
+    unsafe func as_str(value: &Text): str
+    {
+        return text_native::sage_text_cstr(value as SageTextState*) as str;
     }
 
     /// Consumes ownership; the parameter's automatic cleanup frees storage once.

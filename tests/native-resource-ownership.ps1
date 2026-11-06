@@ -22,7 +22,7 @@ $cases = @(
     @{ Name = 'const_overwrite'; Code = 'unsafe func main(): none { const owner: OwnedFile = (0 as FILE*) as OwnedFile; owner = owner; }'; Error = 'S103' },
     @{ Name = 'delete_resource'; Code = 'unsafe func main(): none { ' + $adopt + 'delete owner; }'; Error = 'S132' },
     @{ Name = 'resource_comparison'; Code = 'unsafe func main(): none { ' + $adopt + 'var same: b8 = owner == owner; }'; Error = 'S191' },
-    @{ Name = 'resource_interpolation'; Code = 'unsafe func main(): none { ' + $adopt + 'var text: str = "${owner}"; }'; Error = 'S191' },
+    @{ Name = 'resource_interpolation'; Code = 'unsafe func main(): none { ' + $adopt + 'var text: str = $"${owner}"; }'; Error = 'S191' },
     @{ Name = 'native_argument_no_copy'; Code = 'unsafe func main(): none { ' + $adopt + 'native::fclose(owner); }'; Error = 'S191' },
     @{ Name = 'resource_cast_no_clone'; Code = 'unsafe func main(): none { ' + $adopt + 'var clone: OwnedFile = owner as OwnedFile; }'; Error = 'S192' },
     @{ Name = 'resource_cast_no_scalar'; Code = 'unsafe func main(): none { ' + $adopt + 'var value: i32 = owner as i32; }'; Error = 'S192' },

@@ -14,7 +14,7 @@ $cases = @(
     @{ Name = 'direct_imports'; Code = "use gamma; use alpha; use helpers; $io unsafe func main(): none { if (gamma::total() == 18 && alpha::value() == 11 && helper() == 7) { io::puts(""[PASS] visibility""); } else { io::puts(""[FAIL] visibility""); } }"; Pass = $true },
     @{ Name = 'transitive_module'; Code = 'use gamma; func main(): none { var x: i32 = alpha::value(); }'; Error = 'S153' },
     @{ Name = 'transitive_top_level'; Code = 'use gamma; func main(): none { var x: i32 = helper(); }'; Error = 'S153' },
-    @{ Name = 'transitive_interpolation'; Code = 'use gamma; func main(): none { var text: str = "{alpha::value()}"; }'; Error = 'S153' },
+    @{ Name = 'transitive_interpolation'; Code = 'use gamma; func main(): none { var text: str = $"{alpha::value()}"; }'; Error = 'S153' },
     @{ Name = 'imported_native_alias'; Code = 'use alpha; unsafe func main(): none { alpha_native::abs(-1); }'; Error = 'S153' },
     @{ Name = 'same_file_module'; Code = "module local { func value(): i32 { return 4; } } $io unsafe func main(): none { if (local::value() == 4) { io::puts(""[PASS] visibility""); } }"; Pass = $true },
     @{ Name = 'flattened_module_names'; Code = 'module a_b { func c(): i32 { return 1; } } module a { func b_c(): i32 { return 2; } } func main(): none {}'; Error = 'S212' },

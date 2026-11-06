@@ -1,5 +1,6 @@
 use byte_buffer;
 use console;
+use text;
 
 func main(): none
 {
@@ -11,7 +12,7 @@ func main(): none
         var pushed: b8 = byte_buffer::push(&mut owner, byte);
         var index: u32 = 0;
         var read: BufferRead = byte_buffer::read(&owner, index);
-        if (pushed && read.has_value) { console::print_line("Buffer value: {read.value}"); }
+        if (pushed && read.has_value) { var line: Text = $"Buffer value: {read.value}"; line.print_line(); }
     }
     else { console::print_line("Buffer allocation failed."); }
     byte_buffer::release(owner);

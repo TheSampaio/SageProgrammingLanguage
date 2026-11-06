@@ -14,7 +14,8 @@ func main(): none
         {
             console::print("[");
             line.print();
-            console::print_line("] count={result.count} eof={result.eof} truncated={result.truncated} failed={result.failed}");
+            var out1: Text = $"] count={result.count} eof={result.eof} truncated={result.truncated} failed={result.failed}";
+            out1.print_line();
             reading = !result.eof;
         }
     }

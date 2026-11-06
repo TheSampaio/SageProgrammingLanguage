@@ -35,7 +35,7 @@ $cases = @(
     @{ Name = 'native_parameter'; Code = 'extern lib("lib.h") { func sink(box: Box): none; } func main(): none { var box: Box = {}; unsafe { lib::sink(box); } }'; Error = 'S196'; Raw = $true },
     @{ Name = 'borrowed_struct_parameter'; Code = 'func view(box: &Box): none {} func main(): none {}'; Error = 'S196'; Raw = $true },
     @{ Name = 'whole_array_copy_still_rejected'; Code = 'var items: Box[1] = {}; var copy: Box[1] = items;'; Error = 'S196' },
-    @{ Name = 'struct_copy_into_scalar_context'; Code = $box + 'var text: str = "{box}";'; Error = 'S196' },
+    @{ Name = 'struct_copy_into_scalar_context'; Code = $box + 'var text: str = $"{box}";'; Error = 'S196' },
     @{ Name = 'element_replacement'; Code = $box + 'var items: Box[2] = {}; items[1] = box;' },
     @{ Name = 'element_field_replacement'; Code = 'var items: Box[2] = {}; var owner: OwnedFile = make(); items[0].item = owner;' },
     @{ Name = 'resource_element_replacement'; Code = 'var handles: OwnedFile[2] = {}; var owner: OwnedFile = make(); handles[0] = owner;' },

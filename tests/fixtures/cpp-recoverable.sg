@@ -1,3 +1,4 @@
+use text;
 use console;
 
 extern cpp safe("cpp-recoverable.hpp") {
@@ -16,8 +17,8 @@ func report_failure(label: str): none
 {
     unsafe
     {
-        if (safe::failed()) { console::print_line("{label}: failed ({safe::reason()})"); }
-        else { console::print_line("{label}: ok"); }
+        if (safe::failed()) { var out4: Text = $"{label}: failed ({safe::reason()})"; out4.print_line(); }
+        else { var out5: Text = $"{label}: ok"; out5.print_line(); }
     }
 }
 
@@ -26,10 +27,12 @@ func main(): none
     unsafe
     {
         var quotient: i32 = safe::divide(12, 4) as i32;
-        console::print_line("quotient={quotient}");
+        var out1: Text = $"quotient={quotient}";
+        out1.print_line();
         report_failure("divide ok");
         var zero: i32 = safe::divide(1, 0) as i32;
-        console::print_line("recovered={zero}");
+        var out2: Text = $"recovered={zero}";
+        out2.print_line();
         report_failure("divide zero");
         safe::check(-1);
         report_failure("check unknown");
@@ -47,6 +50,7 @@ func main(): none
         report_failure("take 99");
         var none_handle: i32 = safe::take(0 as Gate*, 1) as i32;
         report_failure("take null");
-        console::print_line("left={left} over={over} none={none_handle}");
+        var out3: Text = $"left={left} over={over} none={none_handle}";
+        out3.print_line();
     }
 }

@@ -35,7 +35,7 @@ $negative = @(
 
 try {
     Copy-Item -LiteralPath (Join-Path $fixtures 'cpp-recoverable.hpp'), (Join-Path $fixtures 'cpp-recoverable.sg') -Destination $sourceDir
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../Sandbox/std/console.sg') -Destination $stdDir
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../Sandbox/std/console.sg'), (Join-Path $PSScriptRoot '../Sandbox/std/text.sg') -Destination $stdDir
 
     # Opted-in bindings return zero results and report the failure instead of aborting.
     $run = Invoke-Sage 'cpp-recoverable' (Get-Content -LiteralPath (Join-Path $fixtures 'cpp-recoverable.sg') -Raw)

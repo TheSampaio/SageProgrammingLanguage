@@ -10,12 +10,14 @@ func main(): none
     var listening: b8 = server.is_listening();
     var port_matches: b8 = server.port() == @PORT@;
     var clashed: b8 = clash.is_listening();
-    console::print_line("listening={listening} port_matches={port_matches} clash={clashed}");
+    var out1: Text = $"listening={listening} port_matches={port_matches} clash={clashed}";
+    out1.print_line();
     if (true)
     {
         var scoped: HttpListener = http_server::listen_local(0);
         var ephemeral: b8 = scoped.is_listening() && scoped.port() != 0;
-        console::print_line("ephemeral={ephemeral}");
+        var out2: Text = $"ephemeral={ephemeral}";
+        out2.print_line();
     }
     var request: Text = text::create(64);
     var body: Text = text::create(256);
@@ -33,6 +35,7 @@ func main(): none
         }
     }
     var invalid: b8 = server.respond(200, &body);
-    console::print_line("served={served} respond_without_client={invalid}");
+    var out3: Text = $"served={served} respond_without_client={invalid}";
+    out3.print_line();
     http_server::close(server);
 }
